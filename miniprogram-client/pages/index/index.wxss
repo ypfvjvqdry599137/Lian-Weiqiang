@@ -2,6 +2,27 @@
   padding-bottom: 40rpx;
 }
 
+.nav-bar {
+  display: flex;
+  background: white;
+  padding: 20rpx;
+  justify-content: space-around;
+  box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
+}
+
+.nav-item {
+  padding: 15rpx 30rpx;
+  font-size: 28rpx;
+  color: #666;
+  border-radius: 30rpx;
+}
+
+.nav-item.active {
+  background: #4CAF50;
+  color: white;
+  font-weight: bold;
+}
+
 .header {
   padding: 20rpx;
   background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);

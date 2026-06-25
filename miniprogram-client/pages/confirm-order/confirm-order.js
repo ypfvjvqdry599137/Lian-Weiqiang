@@ -120,7 +120,7 @@ Page({
           duration: 2000
         });
         setTimeout(() => {
-          wx.switchTab({
+          wx.navigateTo({
             url: '/pages/orders/orders'
           });
         }, 2000);
@@ -130,5 +130,9 @@ Page({
         wx.showToast({ title: '支付失败', icon: 'none' });
       }
     });
+  },
+
+  goBack() {
+    wx.navigateBack();
   }
 })

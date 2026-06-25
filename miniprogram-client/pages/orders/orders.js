@@ -44,5 +44,12 @@ Page({
     wx.navigateTo({
       url: `/pages/order-detail/order-detail?sn=${orderSn}`
     });
+  },
+
+  goToPage(e) {
+    const url = e.currentTarget.dataset.url;
+    wx.navigateTo({
+      url: url
+    });
   }
 })

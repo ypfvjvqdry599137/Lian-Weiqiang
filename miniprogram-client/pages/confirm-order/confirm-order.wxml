@@ -1,4 +1,10 @@
 <view class="container">
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-item back-btn" bindtap="goBack">← 返回</view>
+    <view class="nav-item active">确认订单</view>
+  </view>
+  
   <!-- 自提点信息 -->
   <view class="section">
     <view class="section-title">自提点</view>

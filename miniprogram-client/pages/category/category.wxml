@@ -1,4 +1,12 @@
 <view class="container">
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/index/index">首页</view>
+    <view class="nav-item active">分类</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/cart/cart">购物车</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/orders/orders">订单</view>
+  </view>
+  
   <view class="category-wrapper">
     <!-- 左侧分类导航 -->
     <scroll-view class="category-nav" scroll-y="true">

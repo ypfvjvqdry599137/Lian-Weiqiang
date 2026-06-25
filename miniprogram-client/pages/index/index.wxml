@@ -1,4 +1,12 @@
 <view class="container">
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-item active">首页</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/category/category">分类</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/cart/cart">购物车</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/orders/orders">订单</view>
+  </view>
+  
   <!-- 顶部搜索栏和自提点 -->
   <view class="header">
     <view class="station">

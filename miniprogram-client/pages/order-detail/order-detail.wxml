@@ -1,4 +1,10 @@
 <view class="container" wx:if="{{order}}">
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-item back-btn" bindtap="goBack">← 返回</view>
+    <view class="nav-item active">订单详情</view>
+  </view>
+  
   <!-- 订单状态 -->
   <view class="status-section">
     <view class="status-text">{{order.status_text}}</view>

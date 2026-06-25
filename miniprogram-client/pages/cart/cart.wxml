@@ -1,4 +1,12 @@
 <view class="container">
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/index/index">首页</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/category/category">分类</view>
+    <view class="nav-item active">购物车</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/orders/orders">订单</view>
+  </view>
+  
   <!-- 空购物车 -->
   <view class="empty-cart" wx:if="{{cartItems.length === 0}}">
     <image src="/images/empty-cart.png" class="empty-img" />

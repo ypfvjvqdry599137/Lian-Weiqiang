@@ -12,7 +12,7 @@ Page({
   },
 
   loadOrderDetail(orderSn) {
-    wx.showLoading({ title: '加载中' });
+    wx.showLoading({ title: '加载中...' });
     app.request({
       url: `/client/orders/${orderSn}`,
       success: (res) => {
@@ -27,5 +27,9 @@ Page({
         wx.hideLoading();
       }
     });
+  },
+
+  goBack() {
+    wx.navigateBack();
   }
 })

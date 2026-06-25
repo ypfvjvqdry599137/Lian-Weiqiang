@@ -1,4 +1,12 @@
 <view class="container">
+  <!-- 顶部导航 -->
+  <view class="nav-bar">
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/index/index">首页</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/category/category">分类</view>
+    <view class="nav-item" bindtap="goToPage" data-url="/pages/cart/cart">购物车</view>
+    <view class="nav-item active">订单</view>
+  </view>
+  
   <view class="tabs">
     <view class="tab-item {{currentTab === 'all' ? 'active' : ''}}" bindtap="switchTab" data-tab="all">全部</view>
     <view class="tab-item {{currentTab === 'pending' ? 'active' : ''}}" bindtap="switchTab" data-tab="pending">待自提</view>
