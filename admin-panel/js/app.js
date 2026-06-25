@@ -4,6 +4,9 @@ const BASE_URL = 'http://xianpeiju.site'; // 替换为您的后端域名
 // ==================== 辅助函数 ====================
 
 async function fetchData(url, method = 'GET', data = null) {
+    const fullUrl = BASE_URL + url;
+    console.log('正在请求:', fullUrl, method, data);
+    
     const options = {
         method: method,
         headers: {
@@ -15,14 +18,25 @@ async function fetchData(url, method = 'GET', data = null) {
     }
 
     try {
-        const response = await fetch(BASE_URL + url, options);
+        const response = await fetch(fullUrl, options);
+        console.log('响应状态:', response.status);
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            let errorMsg = `HTTP error! status: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.message || errorMsg;
+            } catch (e) {
+                // 忽略JSON解析错误
+            }
+            throw new Error(errorMsg);
         }
-        return await response.json();
+        
+        const result = await response.json();
+        console.log('请求成功:', result);
+        return result;
     } catch (error) {
-        console.error('Fetch error:', error);
+        console.error('请求失败:', error);
         alert('操作失败: ' + error.message);
         return null;
     }
