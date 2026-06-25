@@ -14,6 +14,9 @@ def create_app(config_class=Config):
 
     from admin_routes import admin_bp
     app.register_blueprint(admin_bp)
+    
+    from client_routes import client_bp
+    app.register_blueprint(client_bp)
 
     @app.route('/')
     def index():
