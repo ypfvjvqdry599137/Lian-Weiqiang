@@ -69,7 +69,21 @@ def update_station(station_id):
     station.station_name = data.get('station_name', station.station_name)
     station.address = data.get('address', station.address)
     station.commission_rate = data.get('commission_rate', station.commission_rate)
-    # Password update would typically be a separate endpoint for security
+    
+    # 如果传了新密码，更新密码
+    if 'merchant_password' in data and data['merchant_password']:
+        station.merchant_password = data['merchant_password']
+    
+    # 如果传了新的用户名，检查是否已被使用
+    if 'merchant_username' in data:
+        existing = CommunityStation.query.filter(
+            CommunityStation.merchant_username == data['merchant_username'],
+            CommunityStation.id != station_id
+        ).first()
+        if existing:
+            return jsonify({"message": "Merchant username already exists"}), 409
+        station.merchant_username = data['merchant_username']
+        
     db.session.commit()
     return jsonify({"message": "Community station updated successfully"}), 200
 
@@ -85,7 +99,13 @@ def delete_station(station_id):
 @admin_bp.route('/orders', methods=['GET'])
 def get_all_orders():
     """获取所有订单（总后台）"""
-    orders = OrderMaster.query.order_by(OrderMaster.created_at.desc()).all()
+    status_filter = request.args.get('status')
+    query = OrderMaster.query
+    
+    if status_filter and status_filter.isdigit():
+        query = query.filter_by(order_status=int(status_filter))
+        
+    orders = query.order_by(OrderMaster.created_at.desc()).all()
     output = []
     for order in orders:
         status_text = {
@@ -97,12 +117,27 @@ def get_all_orders():
             60: '已关闭'
         }.get(order.order_status, '未知')
         
+        items_output = []
+        if order.items:
+            for item in order.items:
+                items_output.append({
+                    'product_name': item.product_name,
+                    'product_image': item.product_image,
+                    'price': str(item.price),
+                    'quantity': item.quantity,
+                    'unit': item.unit
+                })
+        
         output.append({
             'order_sn': order.order_sn,
             'station_id': order.station_id,
             'order_status': order.order_status,
             'status_text': status_text,
             'total_amount': str(order.total_amount),
+            'receiver_name': order.receiver_name,
+            'receiver_phone': order.receiver_phone,
+            'pickup_time': order.pickup_time,
+            'items': items_output,
             'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
         })
     return jsonify({"orders": output}), 200
@@ -187,6 +222,17 @@ def update_category(category_id):
 
     db.session.commit()
     return jsonify({"message": "Category updated successfully"}), 200
+
+@admin_bp.route('/categories/<int:category_id>', methods=['GET'])
+def get_category(category_id):
+    category = Category.query.get_or_404(category_id)
+    return jsonify({
+        'id': category.id,
+        'name': category.name,
+        'icon': category.icon,
+        'sort_order': category.sort_order,
+        'is_active': category.is_active
+    }), 200
 
 @admin_bp.route('/categories/<int:category_id>', methods=['DELETE'])
 def delete_category(category_id):
@@ -274,8 +320,12 @@ def get_products():
             'unit': product.unit,
             'is_active': product.is_active,
             'is_recommend': product.is_recommend,
+            'sort_order': product.sort_order,
             'sales_count': product.sales_count,
-            'stock': stock_info
+            # 直接把库存字段放在主对象，方便管理后台显示
+            'total_stock': product.stock.total_stock if product.stock else 0,
+            'warning_stock': product.stock.warning_stock if product.stock else 10,
+            'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
         })
     return jsonify({"products": output}), 200
 
@@ -303,7 +353,11 @@ def get_product(product_id):
         'is_recommend': product.is_recommend,
         'sort_order': product.sort_order,
         'sales_count': product.sales_count,
-        'stock': stock_info
+        # 直接把库存字段放在主对象
+        'total_stock': product.stock.total_stock if product.stock else 0,
+        'warning_stock': product.stock.warning_stock if product.stock else 10,
+        'lock_stock': product.stock.lock_stock if product.stock else 0,
+        'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
     }), 200
 
 @admin_bp.route('/products/<int:product_id>', methods=['PUT'])
@@ -325,6 +379,17 @@ def update_product(product_id):
     product.is_active = data.get('is_active', product.is_active)
     product.is_recommend = data.get('is_recommend', product.is_recommend)
     product.sort_order = data.get('sort_order', product.sort_order)
+    
+    # 同时更新库存
+    if 'total_stock' in data or 'warning_stock' in data:
+        stock = product.stock
+        if not stock:
+            stock = ProductStock(product_id=product.id)
+            db.session.add(stock)
+        if 'total_stock' in data:
+            stock.total_stock = data['total_stock']
+        if 'warning_stock' in data:
+            stock.warning_stock = data['warning_stock']
 
     db.session.commit()
     return jsonify({"message": "Product updated successfully"}), 200
