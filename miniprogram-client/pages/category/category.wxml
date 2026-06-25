@@ -1,0 +1,28 @@
+<view class="container">
+  <view class="category-wrapper">
+    <!-- 左侧分类导航 -->
+    <scroll-view class="category-nav" scroll-y="true">
+      <view 
+        class="nav-item {{index === currentCategory ? 'active' : ''}}" 
+        wx:for="{{categories}}" 
+        wx:key="id"
+        bindtap="selectCategory"
+        data-index="{{index}}"
+      >
+        {{item.name}}
+      </view>
+    </scroll-view>
+
+    <!-- 右侧商品列表 -->
+    <scroll-view class="product-wrapper" scroll-y="true">
+      <view class="product-card" wx:for="{{products}}" wx:key="id">
+        <image src="{{item.image_url || '/images/placeholder.png'}}" class="product-img" />
+        <view class="product-info">
+          <view class="product-name">{{item.name}}</view>
+          <view class="price">¥{{item.price}}/{{item.unit}}</view>
+          <view class="add-btn" bindtap="addToCart" data-id="{{item.id}}">+</view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

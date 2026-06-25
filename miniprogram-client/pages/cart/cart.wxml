@@ -1,0 +1,39 @@
+<view class="container">
+  <!-- 空购物车 -->
+  <view class="empty-cart" wx:if="{{cartItems.length === 0}}">
+    <image src="/images/empty-cart.png" class="empty-img" />
+    <text class="empty-text">购物车是空的</text>
+    <button class="go-shopping" bindtap="goShopping">去逛逛</button>
+  </view>
+
+  <!-- 购物车列表 -->
+  <view class="cart-list" wx:else>
+    <view class="cart-item" wx:for="{{cartItems}}" wx:key="id">
+      <view class="item-left">
+        <image src="{{item.product_image || '/images/placeholder.png'}}" class="item-img" />
+      </view>
+      <view class="item-right">
+        <view class="item-name">{{item.product_name}}</view>
+        <view class="item-bottom">
+          <view class="price-section">
+            <text class="price">¥{{item.price}}</text>
+          </view>
+          <view class="quantity-control">
+            <view class="btn-minus" bindtap="updateQuantity" data-id="{{item.id}}" data-quantity="{{item.quantity - 1}}">-</view>
+            <text class="quantity">{{item.quantity}}</text>
+            <view class="btn-plus" bindtap="updateQuantity" data-id="{{item.id}}" data-quantity="{{item.quantity + 1}}">+</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 底部结算栏 -->
+  <view class="checkout-bar" wx:if="{{cartItems.length > 0}}">
+    <view class="total-section">
+      <text class="total-label">合计</text>
+      <text class="total-price">¥{{totalPrice}}</text>
+    </view>
+    <button class="checkout-btn" bindtap="goCheckout">去结算 ({{totalQuantity}})</button>
+  </view>
+</view>

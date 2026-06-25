@@ -1,0 +1,30 @@
+<view class="container">
+  <view class="tabs">
+    <view class="tab-item {{currentTab === 'all' ? 'active' : ''}}" bindtap="switchTab" data-tab="all">全部</view>
+    <view class="tab-item {{currentTab === 'pending' ? 'active' : ''}}" bindtap="switchTab" data-tab="pending">待自提</view>
+    <view class="tab-item {{currentTab === 'completed' ? 'active' : ''}}" bindtap="switchTab" data-tab="completed">已完成</view>
+  </view>
+
+  <view class="order-list">
+    <view class="order-card" wx:for="{{orders}}" wx:key="order_sn" bindtap="goToDetail" data-id="{{item.order_sn}}">
+      <view class="order-header">
+        <text class="order-sn">订单号：{{item.order_sn}}</text>
+        <text class="order-status">{{item.status_text}}</text>
+      </view>
+      <view class="order-content">
+        <view class="product-mini" wx:for="{{item.items}}" wx:key="product_name" wx:for-item="product">
+          <view class="product-name">{{product.product_name}}</view>
+          <view class="product-qty">×{{product.quantity}}</view>
+        </view>
+      </view>
+      <view class="order-footer">
+        <text class="order-time">{{item.created_at}}</text>
+        <text class="order-price">合计：¥{{item.total_amount}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{orders.length === 0}}">
+    <text>暂无订单</text>
+  </view>
+</view>

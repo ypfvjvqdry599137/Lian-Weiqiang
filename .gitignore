@@ -38,3 +38,14 @@ instance/
 *.swp
 *.swo
 *~
+
+# Miniprogram - WeChat DevTools
+miniprogram-client/node_modules/
+miniprogram-client/project.config.json
+miniprogram-client/project.private.config.json
+miniprogram-client/.DS_Store
+
+# Miniprogram - Images placeholder (we don't need to track actual images yet)
+miniprogram-client/images/*.png
+miniprogram-client/images/*.jpg
+miniprogram-client/images/*.jpeg

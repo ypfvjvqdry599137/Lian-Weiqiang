@@ -1,0 +1,111 @@
+.container {
+  padding-bottom: 40rpx;
+}
+
+.status-section {
+  background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+  padding: 60rpx 40rpx;
+  color: white;
+}
+
+.status-text {
+  font-size: 40rpx;
+  font-weight: bold;
+  margin-bottom: 10rpx;
+}
+
+.status-desc {
+  font-size: 28rpx;
+  opacity: 0.9;
+}
+
+.card {
+  background: white;
+  margin: 20rpx;
+  padding: 30rpx;
+  border-radius: 16rpx;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 15rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 28rpx;
+  color: #666;
+}
+
+.value {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.card-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 20rpx;
+}
+
+.product-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+}
+
+.product-img {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 12rpx;
+  background: #f5f5f5;
+  margin-right: 20rpx;
+}
+
+.product-info {
+  flex: 1;
+}
+
+.product-name {
+  font-size: 28rpx;
+  color: #333;
+  margin-bottom: 10rpx;
+}
+
+.product-meta {
+  display: flex;
+  justify-content: space-between;
+}
+
+.price {
+  color: #e64340;
+  font-size: 32rpx;
+  font-weight: bold;
+}
+
+.quantity {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 20rpx;
+  margin-top: 20rpx;
+  border-top: 1rpx solid #f0f0f0;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.total-price {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #e64340;
+}

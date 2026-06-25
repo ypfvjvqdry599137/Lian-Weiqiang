@@ -1,0 +1,57 @@
+<view class="container">
+  <!-- 自提点信息 -->
+  <view class="section">
+    <view class="section-title">自提点</view>
+    <view class="station-info">
+      <view class="station-name">{{stationName}}</view>
+      <view class="station-address">{{stationAddress}}</view>
+    </view>
+  </view>
+
+  <!-- 商品列表 -->
+  <view class="section">
+    <view class="section-title">商品清单</view>
+    <view class="product-item" wx:for="{{products}}" wx:key="product_id">
+      <image src="{{item.product_image || '/images/placeholder.png'}}" class="product-img" />
+      <view class="product-detail">
+        <view class="product-name">{{item.product_name}}</view>
+        <view class="product-meta">
+          <text class="price">¥{{item.price}}</text>
+          <text class="quantity">× {{item.quantity}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 自提时间 -->
+  <view class="section">
+    <view class="section-title">自提时间</view>
+    <picker mode="selector" range="{{timeSlots}}" bindchange="onTimeChange">
+      <view class="picker">
+        {{selectedTime || '请选择自提时间'}}
+      </view>
+    </picker>
+  </view>
+
+  <!-- 收货人信息 -->
+  <view class="section">
+    <view class="section-title">收货人信息</view>
+    <input class="input" placeholder="姓名" bindinput="onNameInput" value="{{receiverName}}" />
+    <input class="input" placeholder="手机号" bindinput="onPhoneInput" value="{{receiverPhone}}" />
+  </view>
+
+  <!-- 备注 -->
+  <view class="section">
+    <view class="section-title">备注</view>
+    <textarea class="textarea" placeholder="选填，可以填写特殊要求..." bindinput="onRemarkInput" />
+  </view>
+
+  <!-- 底部 -->
+  <view class="footer">
+    <view class="total">
+      <text>合计：</text>
+      <text class="total-price">¥{{totalPrice}}</text>
+    </view>
+    <button class="submit-btn" bindtap="submitOrder">提交订单</button>
+  </view>
+</view>
