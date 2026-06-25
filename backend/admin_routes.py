@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from models import CommunityStation, Category, Product, ProductStock
+from models import CommunityStation, Category, Product, ProductStock, OrderMaster
 from decimal import Decimal
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -79,6 +79,62 @@ def delete_station(station_id):
     db.session.delete(station)
     db.session.commit()
     return jsonify({"message": "Community station deleted successfully"}), 200
+
+# ==================== 订单状态管理（总后台） ====================
+
+@admin_bp.route('/orders', methods=['GET'])
+def get_all_orders():
+    """获取所有订单（总后台）"""
+    orders = OrderMaster.query.order_by(OrderMaster.created_at.desc()).all()
+    output = []
+    for order in orders:
+        status_text = {
+            10: '待付款',
+            20: '待配货',
+            30: '配送中',
+            40: '待自提',
+            50: '已完成',
+            60: '已关闭'
+        }.get(order.order_status, '未知')
+        
+        output.append({
+            'order_sn': order.order_sn,
+            'station_id': order.station_id,
+            'order_status': order.order_status,
+            'status_text': status_text,
+            'total_amount': str(order.total_amount),
+            'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    return jsonify({"orders": output}), 200
+
+@admin_bp.route('/orders/<order_sn>/status', methods=['PUT'])
+def update_order_status(order_sn):
+    """更新订单状态（总后台）"""
+    order = OrderMaster.query.get_or_404(order_sn)
+    data = request.get_json()
+    
+    new_status = data.get('status')
+    if new_status not in [10, 20, 30, 40, 50, 60]:
+        return jsonify({"message": "无效的订单状态"}), 400
+    
+    order.order_status = new_status
+    db.session.commit()
+    
+    status_text = {
+        10: '待付款',
+        20: '待配货',
+        30: '配送中',
+        40: '待自提',
+        50: '已完成',
+        60: '已关闭'
+    }.get(new_status, '未知')
+    
+    return jsonify({
+        "message": "订单状态已更新",
+        "order_sn": order_sn,
+        "new_status": new_status,
+        "status_text": status_text
+    }), 200
 
 # ==================== 商品分类管理 ====================
 
