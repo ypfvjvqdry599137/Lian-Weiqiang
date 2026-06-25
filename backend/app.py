@@ -17,6 +17,9 @@ def create_app(config_class=Config):
     
     from client_routes import client_bp
     app.register_blueprint(client_bp)
+    
+    from merchant_routes import merchant_bp
+    app.register_blueprint(merchant_bp)
 
     @app.route('/')
     def index():
