@@ -3,7 +3,7 @@ App({
     userInfo: null,
     cartCount: 0,
     stationId: 1, // 默认自提点ID
-    baseUrl: 'http://您的服务器IP:5000' // 替换为您服务器的实际IP
+    baseUrl: 'http://119.28.159.16:5000' // 服务器地址
   },
 
   onLaunch() {
