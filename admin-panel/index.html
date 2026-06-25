@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鲜优多 - 管理后台</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🍎 鲜优多管理后台</h1>
+        </header>
+
+        <nav class="sidebar">
+            <ul class="menu">
+                <li class="menu-item active" data-page="dashboard">首页概览</li>
+                <li class="menu-item" data-page="products">商品管理</li>
+                <li class="menu-item" data-page="categories">分类管理</li>
+                <li class="menu-item" data-page="stations">自提点管理</li>
+                <li class="menu-item" data-page="orders">订单管理</li>
+            </ul>
+        </nav>
+
+        <main class="content">
+            <!-- 首页概览 -->
+            <div id="page-dashboard" class="page active">
+                <h2>📊 数据概览</h2>
+                <div class="stats">
+                    <div class="stat-card">
+                        <h3>今日订单</h3>
+                        <p id="stat-today-orders" class="number">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>今日成交</h3>
+                        <p id="stat-today-revenue" class="number">¥0.00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>商品总数</h3>
+                        <p id="stat-products" class="number">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>自提点数量</h3>
+                        <p id="stat-stations" class="number">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 商品管理 -->
+            <div id="page-products" class="page">
+                <div class="page-header">
+                    <h2>📦 商品管理</h2>
+                    <button class="btn btn-primary" onclick="showProductModal()">+ 添加商品</button>
+                </div>
+                <div id="products-list" class="data-list"></div>
+            </div>
+
+            <!-- 分类管理 -->
+            <div id="page-categories" class="page">
+                <div class="page-header">
+                    <h2>📁 分类管理</h2>
+                    <button class="btn btn-primary" onclick="showCategoryModal()">+ 添加分类</button>
+                </div>
+                <div id="categories-list" class="data-list"></div>
+            </div>
+
+            <!-- 自提点管理 -->
+            <div id="page-stations" class="page">
+                <div class="page-header">
+                    <h2>🏪 自提点管理</h2>
+                    <button class="btn btn-primary" onclick="showStationModal()">+ 添加自提点</button>
+                </div>
+                <div id="stations-list" class="data-list"></div>
+            </div>
+
+            <!-- 订单管理 -->
+            <div id="page-orders" class="page">
+                <h2>🛒 订单管理</h2>
+                <div class="tabs">
+                    <button class="tab active" data-status="all">全部</button>
+                    <button class="tab" data-status="10">待付款</button>
+                    <button class="tab" data-status="20">待配货</button>
+                    <button class="tab" data-status="30">配送中</button>
+                    <button class="tab" data-status="40">待自提</button>
+                    <button class="tab" data-status="50">已完成</button>
+                </div>
+                <div id="orders-list" class="data-list"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 商品编辑弹窗 -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('product-modal')">&times;</span>
+            <h2 id="product-modal-title">添加商品</h2>
+            <form id="product-form">
+                <input type="hidden" id="product-id">
+                <div class="form-group">
+                    <label>商品名称</label>
+                    <input type="text" id="product-name" required>
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <textarea id="product-desc"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>分类ID</label>
+                    <input type="number" id="product-category-id">
+                </div>
+                <div class="form-group">
+                    <label>价格</label>
+                    <input type="number" step="0.01" id="product-price" required>
+                </div>
+                <div class="form-group">
+                    <label>原价</label>
+                    <input type="number" step="0.01" id="product-original-price">
+                </div>
+                <div class="form-group">
+                    <label>图片URL</label>
+                    <input type="url" id="product-image">
+                </div>
+                <div class="form-group">
+                    <label>单位</label>
+                    <input type="text" id="product-unit" placeholder="如：斤、个、盒">
+                </div>
+                <div class="form-group">
+                    <label>库存</label>
+                    <input type="number" id="product-stock" required>
+                </div>
+                <div class="form-group">
+                    <label>库存预警阈值</label>
+                    <input type="number" id="product-warning-stock" value="10">
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="product-recommend">
+                    <label>推荐商品</label>
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="product-active" checked>
+                    <label>上架</label>
+                </div>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 分类编辑弹窗 -->
+    <div id="category-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('category-modal')">&times;</span>
+            <h2 id="category-modal-title">添加分类</h2>
+            <form id="category-form">
+                <input type="hidden" id="category-id">
+                <div class="form-group">
+                    <label>分类名称</label>
+                    <input type="text" id="category-name" required>
+                </div>
+                <div class="form-group">
+                    <label>图标</label>
+                    <input type="text" id="category-icon" placeholder="如：🍎">
+                </div>
+                <div class="form-group">
+                    <label>排序</label>
+                    <input type="number" id="category-sort" value="0">
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="category-active" checked>
+                    <label>启用</label>
+                </div>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 自提点编辑弹窗 -->
+    <div id="station-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('station-modal')">&times;</span>
+            <h2 id="station-modal-title">添加自提点</h2>
+            <form id="station-form">
+                <input type="hidden" id="station-id">
+                <div class="form-group">
+                    <label>自提点名称</label>
+                    <input type="text" id="station-name" required>
+                </div>
+                <div class="form-group">
+                    <label>详细地址</label>
+                    <input type="text" id="station-address" required>
+                </div>
+                <div class="form-group">
+                    <label>合作商账号</label>
+                    <input type="text" id="station-merchant-user" required>
+                </div>
+                <div class="form-group">
+                    <label>合作商密码</label>
+                    <input type="password" id="station-merchant-pwd" required>
+                </div>
+                <div class="form-group">
+                    <label>佣金比例（%）</label>
+                    <input type="number" step="0.01" id="station-commission" value="0">
+                </div>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
