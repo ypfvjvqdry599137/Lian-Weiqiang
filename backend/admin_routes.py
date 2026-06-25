@@ -1,8 +1,10 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from models import CommunityStation
+from models import CommunityStation, Category, Product, ProductStock
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+# ==================== 社区自提点管理 ====================
 
 @admin_bp.route('/stations', methods=['POST'])
 def create_station():
@@ -76,3 +78,279 @@ def delete_station(station_id):
     db.session.delete(station)
     db.session.commit()
     return jsonify({"message": "Community station deleted successfully"}), 200
+
+# ==================== 商品分类管理 ====================
+
+@admin_bp.route('/categories', methods=['POST'])
+def create_category():
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid request body"}), 400
+
+    name = data.get('name')
+    if not name:
+        return jsonify({"message": "Category name is required"}), 400
+
+    if Category.query.filter_by(name=name).first():
+        return jsonify({"message": "Category name already exists"}), 409
+
+    category = Category(
+        name=name,
+        icon=data.get('icon'),
+        sort_order=data.get('sort_order', 0),
+        is_active=data.get('is_active', True)
+    )
+    db.session.add(category)
+    db.session.commit()
+    return jsonify({"message": "Category created successfully", "id": category.id}), 201
+
+@admin_bp.route('/categories', methods=['GET'])
+def get_categories():
+    categories = Category.query.order_by(Category.sort_order).all()
+    output = []
+    for cat in categories:
+        output.append({
+            'id': cat.id,
+            'name': cat.name,
+            'icon': cat.icon,
+            'sort_order': cat.sort_order,
+            'is_active': cat.is_active
+        })
+    return jsonify({"categories": output}), 200
+
+@admin_bp.route('/categories/<int:category_id>', methods=['PUT'])
+def update_category(category_id):
+    category = Category.query.get_or_404(category_id)
+    data = request.get_json()
+
+    category.name = data.get('name', category.name)
+    category.icon = data.get('icon', category.icon)
+    category.sort_order = data.get('sort_order', category.sort_order)
+    category.is_active = data.get('is_active', category.is_active)
+
+    db.session.commit()
+    return jsonify({"message": "Category updated successfully"}), 200
+
+@admin_bp.route('/categories/<int:category_id>', methods=['DELETE'])
+def delete_category(category_id):
+    category = Category.query.get_or_404(category_id)
+    db.session.delete(category)
+    db.session.commit()
+    return jsonify({"message": "Category deleted successfully"}), 200
+
+# ==================== 商品管理 ====================
+
+@admin_bp.route('/products', methods=['POST'])
+def create_product():
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid request body"}), 400
+
+    name = data.get('name')
+    price = data.get('price')
+
+    if not all([name, price]):
+        return jsonify({"message": "Product name and price are required"}), 400
+
+    product = Product(
+        name=name,
+        description=data.get('description'),
+        category_id=data.get('category_id'),
+        price=price,
+        original_price=data.get('original_price'),
+        image_url=data.get('image_url'),
+        images=data.get('images'),
+        unit=data.get('unit', '份'),
+        specs=data.get('specs'),
+        is_active=data.get('is_active', True),
+        is_recommend=data.get('is_recommend', False),
+        sort_order=data.get('sort_order', 0)
+    )
+    db.session.add(product)
+    db.session.flush()  # 获取 product.id
+
+    # 同时创建库存记录
+    stock = ProductStock(
+        product_id=product.id,
+        total_stock=data.get('total_stock', 0),
+        warning_stock=data.get('warning_stock', 10)
+    )
+    db.session.add(stock)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Product created successfully",
+        "id": product.id,
+        "stock_id": stock.id
+    }), 201
+
+@admin_bp.route('/products', methods=['GET'])
+def get_products():
+    # 支持按分类筛选
+    category_id = request.args.get('category_id')
+    is_active = request.args.get('is_active')
+
+    query = Product.query
+
+    if category_id:
+        query = query.filter_by(category_id=category_id)
+    if is_active is not None:
+        query = query.filter_by(is_active=is_active.lower() == 'true')
+
+    products = query.order_by(Product.sort_order.desc(), Product.id.desc()).all()
+    output = []
+    for product in products:
+        stock_info = {
+            'total_stock': product.stock.total_stock if product.stock else 0,
+            'lock_stock': product.stock.lock_stock if product.stock else 0,
+            'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
+        }
+        output.append({
+            'id': product.id,
+            'name': product.name,
+            'description': product.description,
+            'category_id': product.category_id,
+            'category_name': product.category.name if product.category else None,
+            'price': str(product.price),
+            'original_price': str(product.original_price) if product.original_price else None,
+            'image_url': product.image_url,
+            'unit': product.unit,
+            'is_active': product.is_active,
+            'is_recommend': product.is_recommend,
+            'sales_count': product.sales_count,
+            'stock': stock_info
+        })
+    return jsonify({"products": output}), 200
+
+@admin_bp.route('/products/<int:product_id>', methods=['GET'])
+def get_product(product_id):
+    product = Product.query.get_or_404(product_id)
+    stock_info = {
+        'total_stock': product.stock.total_stock if product.stock else 0,
+        'lock_stock': product.stock.lock_stock if product.stock else 0,
+        'warning_stock': product.stock.warning_stock if product.stock else 10,
+        'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
+    }
+    return jsonify({
+        'id': product.id,
+        'name': product.name,
+        'description': product.description,
+        'category_id': product.category_id,
+        'price': str(product.price),
+        'original_price': str(product.original_price) if product.original_price else None,
+        'image_url': product.image_url,
+        'images': product.images,
+        'unit': product.unit,
+        'specs': product.specs,
+        'is_active': product.is_active,
+        'is_recommend': product.is_recommend,
+        'sort_order': product.sort_order,
+        'sales_count': product.sales_count,
+        'stock': stock_info
+    }), 200
+
+@admin_bp.route('/products/<int:product_id>', methods=['PUT'])
+def update_product(product_id):
+    product = Product.query.get_or_404(product_id)
+    data = request.get_json()
+
+    product.name = data.get('name', product.name)
+    product.description = data.get('description', product.description)
+    product.category_id = data.get('category_id', product.category_id)
+    product.price = data.get('price', product.price)
+    product.original_price = data.get('original_price', product.original_price)
+    product.image_url = data.get('image_url', product.image_url)
+    product.images = data.get('images', product.images)
+    product.unit = data.get('unit', product.unit)
+    product.specs = data.get('specs', product.specs)
+    product.is_active = data.get('is_active', product.is_active)
+    product.is_recommend = data.get('is_recommend', product.is_recommend)
+    product.sort_order = data.get('sort_order', product.sort_order)
+
+    db.session.commit()
+    return jsonify({"message": "Product updated successfully"}), 200
+
+@admin_bp.route('/products/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    product = Product.query.get_or_404(product_id)
+    db.session.delete(product)
+    db.session.commit()
+    return jsonify({"message": "Product deleted successfully"}), 200
+
+# ==================== 库存管理 ====================
+
+@admin_bp.route('/products/<int:product_id>/stock', methods=['PUT'])
+def update_stock(product_id):
+    product = Product.query.get_or_404(product_id)
+    data = request.get_json()
+
+    stock = product.stock
+    if not stock:
+        # 如果没有库存记录，创建一个
+        stock = ProductStock(product_id=product_id)
+        db.session.add(stock)
+
+    # 更新库存
+    stock.total_stock = data.get('total_stock', stock.total_stock)
+    stock.warning_stock = data.get('warning_stock', stock.warning_stock)
+
+    db.session.commit()
+    return jsonify({
+        "message": "Stock updated successfully",
+        "product_id": product_id,
+        "total_stock": stock.total_stock
+    }), 200
+
+@admin_bp.route('/products/<int:product_id>/stock/increase', methods=['POST'])
+def increase_stock(product_id):
+    """入库操作 - 增加库存"""
+    product = Product.query.get_or_404(product_id)
+    data = request.get_json()
+
+    quantity = data.get('quantity', 0)
+    if quantity <= 0:
+        return jsonify({"message": "Quantity must be greater than 0"}), 400
+
+    stock = product.stock
+    if not stock:
+        stock = ProductStock(product_id=product_id, total_stock=0)
+        db.session.add(stock)
+
+    stock.total_stock += quantity
+    db.session.commit()
+
+    return jsonify({
+        "message": "Stock increased successfully",
+        "product_id": product_id,
+        "added_quantity": quantity,
+        "new_total_stock": stock.total_stock
+    }), 200
+
+@admin_bp.route('/stock/overview', methods=['GET'])
+def get_stock_overview():
+    """获取库存概览，包括库存预警"""
+    stocks = ProductStock.query.all()
+    warning_products = []
+    normal_products = []
+
+    for stock in stocks:
+        available_stock = stock.total_stock - stock.lock_stock
+        product_info = {
+            'product_id': stock.product_id,
+            'product_name': stock.product.name if stock.product else None,
+            'total_stock': stock.total_stock,
+            'lock_stock': stock.lock_stock,
+            'available_stock': available_stock,
+            'warning_stock': stock.warning_stock
+        }
+        if available_stock <= stock.warning_stock:
+            warning_products.append(product_info)
+        else:
+            normal_products.append(product_info)
+
+    return jsonify({
+        "total_products": len(stocks),
+        "warning_products_count": len(warning_products),
+        "warning_products": warning_products,
+        "normal_products": normal_products
+    }), 200
