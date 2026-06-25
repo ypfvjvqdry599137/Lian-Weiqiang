@@ -3,7 +3,7 @@ App({
     userInfo: null,
     cartCount: 0,
     stationId: 1, // 默认自提点ID
-    baseUrl: 'http://119.28.159.16:5000' // 服务器地址
+    baseUrl: 'http://xianpeiju.site' // 您的域名
   },
 
   onLaunch() {
