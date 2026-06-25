@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from models import CommunityStation, Category, Product, ProductStock
+from decimal import Decimal
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -156,8 +157,8 @@ def create_product():
         name=name,
         description=data.get('description'),
         category_id=data.get('category_id'),
-        price=price,
-        original_price=data.get('original_price'),
+        price=Decimal(str(price)) if price is not None else None,
+        original_price=Decimal(str(data.get('original_price'))) if data.get('original_price') is not None else None,
         image_url=data.get('image_url'),
         images=data.get('images'),
         unit=data.get('unit', '份'),
@@ -257,8 +258,10 @@ def update_product(product_id):
     product.name = data.get('name', product.name)
     product.description = data.get('description', product.description)
     product.category_id = data.get('category_id', product.category_id)
-    product.price = data.get('price', product.price)
-    product.original_price = data.get('original_price', product.original_price)
+    if 'price' in data:
+        product.price = Decimal(str(data['price'])) if data['price'] is not None else None
+    if 'original_price' in data:
+        product.original_price = Decimal(str(data['original_price'])) if data['original_price'] is not None else None
     product.image_url = data.get('image_url', product.image_url)
     product.images = data.get('images', product.images)
     product.unit = data.get('unit', product.unit)
