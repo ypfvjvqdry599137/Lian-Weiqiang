@@ -13,15 +13,19 @@ client_bp = Blueprint('client', __name__, url_prefix='/client')
 @client_bp.route('/stations', methods=['GET'])
 def get_stations():
     """获取所有自提点列表"""
-    stations = CommunityStation.query.all()
-    output = []
-    for station in stations:
-        output.append({
-            'id': station.id,
-            'station_name': station.station_name,
-            'address': station.address
-        })
-    return jsonify({'stations': output}), 200
+    try:
+        stations = CommunityStation.query.all()
+        output = []
+        for station in stations:
+            output.append({
+                'id': station.id,
+                'station_name': station.station_name,
+                'address': station.address
+            })
+        return jsonify({'stations': output}), 200
+    except Exception as e:
+        print(f"Error getting stations: {e}")
+        return jsonify({'message': str(e)}), 500
 
 # ==================== 商品浏览 ====================
 
