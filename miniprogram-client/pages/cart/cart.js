@@ -85,9 +85,7 @@ Page({
   },
 
   goShopping() {
-    wx.switchTab({
-      url: '/pages/index/index'
-    });
+    wx.navigateBack({ delta: 1 });
   },
 
   goCheckout() {
@@ -99,14 +97,25 @@ Page({
       return;
     }
     wx.navigateTo({
-      url: '/pages/confirm-order/confirm-order'
+      url: '/pages/checkout/checkout'
     });
   },
 
-  goToPage(e) {
-    const url = e.currentTarget.dataset.url;
-    wx.navigateTo({
-      url: url
+  goToIndex(e) {
+    wx.redirectTo({
+      url: '/pages/index/index'
+    });
+  },
+
+  goToCategory(e) {
+    wx.redirectTo({
+      url: '/pages/category/category'
+    });
+  },
+
+  goToOrders(e) {
+    wx.redirectTo({
+      url: '/pages/orders/orders'
     });
   }
 })

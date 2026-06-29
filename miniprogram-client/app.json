@@ -3,17 +3,16 @@
     "pages/index/index",
     "pages/category/category",
     "pages/cart/cart",
-    "pages/confirm-order/confirm-order",
+    "pages/checkout/checkout",
     "pages/orders/orders",
-    "pages/order-detail/order-detail"
+    "pages/product/product"
   ],
   "window": {
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#4CAF50",
-    "navigationBarTitleText": "鲜优多",
+    "navigationBarTitleText": "鲜配居",
     "navigationBarTextStyle": "white"
   },
-
   "style": "v2",
   "sitemapLocation": "sitemap.json"
 }

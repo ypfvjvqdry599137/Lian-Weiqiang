@@ -1,26 +1,5 @@
 .container {
-  padding-bottom: 140rpx;
-}
-
-.nav-bar {
-  display: flex;
-  background: white;
-  padding: 20rpx;
-  justify-content: space-around;
-  box-shadow: 0 2rpx 10rpx rgba(0,0,0,0.05);
-}
-
-.nav-item {
-  padding: 15rpx 30rpx;
-  font-size: 28rpx;
-  color: #666;
-  border-radius: 30rpx;
-}
-
-.nav-item.active {
-  background: #4CAF50;
-  color: white;
-  font-weight: bold;
+  padding-bottom: 240rpx;
 }
 
 .empty-cart {
@@ -116,7 +95,7 @@
 
 .checkout-bar {
   position: fixed;
-  bottom: 0;
+  bottom: 120rpx;
   left: 0;
   right: 0;
   background: white;
@@ -150,4 +129,42 @@
   border-radius: 50rpx;
   padding: 15rpx 40rpx;
   font-size: 30rpx;
+}
+
+/* 底部导航栏 */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: white;
+  padding: 15rpx 0;
+  padding-bottom: calc(15rpx + env(safe-area-inset-bottom));
+  box-shadow: 0 -4rpx 20rpx rgba(0,0,0,0.08);
+  z-index: 1000;
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  color: #666;
+  transition: all 0.3s;
+}
+
+.bottom-nav-item.active {
+  color: #4CAF50;
+}
+
+.bottom-nav-item .nav-icon {
+  font-size: 40rpx;
+  line-height: 1;
+}
+
+.bottom-nav-item .nav-text {
+  font-size: 22rpx;
+  line-height: 1;
 }

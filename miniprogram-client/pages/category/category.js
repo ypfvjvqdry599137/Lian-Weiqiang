@@ -67,10 +67,21 @@ Page({
     });
   },
 
-  goToPage(e) {
-    const url = e.currentTarget.dataset.url;
-    wx.navigateTo({
-      url: url
+  goToIndex(e) {
+    wx.redirectTo({
+      url: '/pages/index/index'
+    });
+  },
+
+  goToCart(e) {
+    wx.redirectTo({
+      url: '/pages/cart/cart'
+    });
+  },
+
+  goToOrders(e) {
+    wx.redirectTo({
+      url: '/pages/orders/orders'
     });
   }
 })

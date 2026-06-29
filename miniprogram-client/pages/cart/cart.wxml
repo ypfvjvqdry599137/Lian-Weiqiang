@@ -1,12 +1,4 @@
 <view class="container">
-  <!-- 顶部导航 -->
-  <view class="nav-bar">
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/index/index">首页</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/category/category">分类</view>
-    <view class="nav-item active">购物车</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/orders/orders">订单</view>
-  </view>
-  
   <!-- 空购物车 -->
   <view class="empty-cart" wx:if="{{cartItems.length === 0}}">
     <image src="/images/empty-cart.png" class="empty-img" />
@@ -43,5 +35,25 @@
       <text class="total-price">¥{{totalPrice}}</text>
     </view>
     <button class="checkout-btn" bindtap="goCheckout">去结算 ({{totalQuantity}})</button>
+  </view>
+
+  <!-- 底部导航栏 -->
+  <view class="bottom-nav">
+    <view class="bottom-nav-item" bindtap="goToIndex">
+      <text class="nav-icon">🏠</text>
+      <text class="nav-text">首页</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToCategory">
+      <text class="nav-icon">📦</text>
+      <text class="nav-text">分类</text>
+    </view>
+    <view class="bottom-nav-item active">
+      <text class="nav-icon">🛒</text>
+      <text class="nav-text">购物车</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToOrders">
+      <text class="nav-icon">👤</text>
+      <text class="nav-text">我的</text>
+    </view>
   </view>
 </view>

@@ -1,12 +1,4 @@
 <view class="container">
-  <!-- 顶部导航 -->
-  <view class="nav-bar">
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/index/index">首页</view>
-    <view class="nav-item active">分类</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/cart/cart">购物车</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/orders/orders">订单</view>
-  </view>
-  
   <view class="category-wrapper">
     <!-- 左侧分类导航 -->
     <scroll-view class="category-nav" scroll-y="true">
@@ -32,5 +24,25 @@
         </view>
       </view>
     </scroll-view>
+  </view>
+
+  <!-- 底部导航栏 -->
+  <view class="bottom-nav">
+    <view class="bottom-nav-item" bindtap="goToIndex">
+      <text class="nav-icon">🏠</text>
+      <text class="nav-text">首页</text>
+    </view>
+    <view class="bottom-nav-item active">
+      <text class="nav-icon">📦</text>
+      <text class="nav-text">分类</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToCart">
+      <text class="nav-icon">🛒</text>
+      <text class="nav-text">购物车</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToOrders">
+      <text class="nav-icon">👤</text>
+      <text class="nav-text">我的</text>
+    </view>
   </view>
 </view>

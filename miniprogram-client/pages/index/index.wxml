@@ -1,47 +1,120 @@
 <view class="container">
-  <!-- 顶部导航 -->
-  <view class="nav-bar">
-    <view class="nav-item active">首页</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/category/category">分类</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/cart/cart">购物车</view>
-    <view class="nav-item" bindtap="goToPage" data-url="/pages/orders/orders">订单</view>
-  </view>
-  
   <!-- 顶部搜索栏和自提点 -->
   <view class="header">
-    <view class="station">
-      <text class="station-name">{{stationName}}</text>
-      <text class="station-address">{{stationAddress}}</text>
-    </view>
-    <view class="search">
-      <input type="text" placeholder="搜索商品" class="search-input" />
-    </view>
-  </view>
-
-  <!-- 推荐商品横幅 -->
-  <view class="recommend-banner" wx:if="{{recommendProducts.length > 0}}">
-    <text class="banner-title">🔥 今日推荐</text>
-  </view>
-
-  <!-- 商品列表 -->
-  <view class="product-list">
-    <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
-      <view class="product-image">
-        <image src="{{item.image_url || '/images/placeholder.png'}}" mode="aspectFill" class="product-img" />
+    <view class="station" bindtap="showStationPicker">
+      <text class="station-icon">📍</text>
+      <view class="station-text">
+        <text class="station-name">{{stationName}}</text>
+        <text class="station-address">{{stationAddress}}</text>
       </view>
-      <view class="product-info">
-        <view class="product-name">{{item.name}}</view>
-        <view class="product-desc">{{item.description || '新鲜直达'}}</view>
-        <view class="product-bottom">
-          <view class="price-section">
+      <text class="arrow">▼</text>
+    </view>
+    <view class="search" bindtap="focusSearch">
+      <text class="search-icon">🔍</text>
+      <text class="search-placeholder">搜索新鲜食材</text>
+    </view>
+  </view>
+
+  <!-- 轮播图Banner -->
+  <swiper class="banner" indicator-dots autoplay circular interval="3000">
+    <swiper-item>
+      <view class="banner-item banner-1">
+        <text class="banner-text">新鲜直达 品质保证</text>
+      </view>
+    </swiper-item>
+    <swiper-item>
+      <view class="banner-item banner-2">
+        <text class="banner-text">限时特惠 先到先得</text>
+      </view>
+    </swiper-item>
+    <swiper-item>
+      <view class="banner-item banner-3">
+        <text class="banner-text">健康生活 从鲜开始</text>
+      </view>
+    </swiper-item>
+  </swiper>
+
+  <!-- 快捷分类导航 -->
+  <view class="quick-nav">
+    <view class="nav-item" wx:for="{{quickNavItems}}" wx:key="id" bindtap="goToCategory" data-id="{{item.id}}">
+      <view class="nav-icon" style="background: {{item.bg}}">{{item.icon}}</view>
+      <text class="nav-name">{{item.name}}</text>
+    </view>
+  </view>
+
+  <!-- 限时特惠区域 -->
+  <view class="section">
+    <view class="section-header">
+      <view class="section-title">
+        <text class="title-icon">🔥</text>
+        <text class="title-text">限时特惠</text>
+      </view>
+      <text class="more" bindtap="goToCategory">更多 ></text>
+    </view>
+    <scroll-view class="flash-list" scroll-x show-scrollbar="{{false}}">
+      <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
+        <view class="flash-img">
+          <image src="{{item.image_url || '/images/placeholder.png'}}" mode="aspectFill" class="img" />
+        </view>
+        <view class="flash-info">
+          <text class="flash-name">{{item.name}}</text>
+          <view class="flash-price">
             <text class="price">¥{{item.price}}</text>
-            <text class="price-original" wx:if="{{item.original_price}}">¥{{item.original_price}}</text>
+            <text class="unit">/ {{item.unit}}</text>
           </view>
-          <text class="unit">/ {{item.unit}}</text>
         </view>
-        <view class="add-btn" bindtap="addToCart" data-id="{{item.id}}" catchtap="true">
-          <text>+ 加入购物车</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 推荐商品 -->
+  <view class="section">
+    <view class="section-header">
+      <view class="section-title">
+        <text class="title-icon">⭐</text>
+        <text class="title-text">为您推荐</text>
+      </view>
+    </view>
+    <view class="product-grid">
+      <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
+        <view class="product-image">
+          <image src="{{item.image_url || '/images/placeholder.png'}}" mode="aspectFill" class="product-img" />
         </view>
+        <view class="product-info">
+          <text class="product-name">{{item.name}}</text>
+          <text class="product-desc">{{item.description || '新鲜直达'}}</text>
+          <view class="product-bottom">
+            <view class="price-box">
+              <text class="price">¥{{item.price}}</text>
+              <text class="unit">/ {{item.unit}}</text>
+            </view>
+            <view class="add-btn" bindtap="addToCart" data-id="{{item.id}}" catchtap="true">
+              <text class="add-icon">+</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 自提点选择器（底部弹出） -->
+  <view class="picker-mask" wx:if="{{showStationPicker}}" bindtap="hideStationPicker"></view>
+  <view class="picker-container" wx:if="{{showStationPicker}}">
+    <view class="picker-header">
+      <text class="picker-cancel" bindtap="hideStationPicker">取消</text>
+      <text class="picker-title">选择自提点</text>
+      <text class="picker-confirm" bindtap="confirmStation">确定</text>
+    </view>
+    <view class="picker-list">
+      <view class="picker-item {{item.id === selectedStationId || (tempSelectedStation && tempSelectedStation.id === item.id) ? 'active' : ''}}" 
+            wx:for="{{stations}}" 
+            wx:key="id" 
+            bindtap="selectStation" 
+            data-id="{{item.id}}"
+            data-name="{{item.station_name}}"
+            data-address="{{item.address}}">
+        <view class="station-item-name">{{item.station_name}}</view>
+        <view class="station-item-address">{{item.address}}</view>
       </view>
     </view>
   </view>
@@ -49,5 +122,25 @@
   <!-- 空状态 -->
   <view class="empty" wx:if="{{products.length === 0 && !loading}}">
     <text>暂无商品</text>
+  </view>
+
+  <!-- 底部导航栏 -->
+  <view class="bottom-nav">
+    <view class="bottom-nav-item active" bindtap="goToIndex">
+      <text class="nav-icon">🏠</text>
+      <text class="nav-text">首页</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToCategory">
+      <text class="nav-icon">📦</text>
+      <text class="nav-text">分类</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToCart">
+      <text class="nav-icon">🛒</text>
+      <text class="nav-text">购物车</text>
+    </view>
+    <view class="bottom-nav-item" bindtap="goToOrders">
+      <text class="nav-icon">👤</text>
+      <text class="nav-text">我的</text>
+    </view>
   </view>
 </view>

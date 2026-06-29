@@ -3,7 +3,7 @@ const BASE_URL = 'http://xianpeiju.site'; // 替换为您的后端域名
 
 // ==================== 辅助函数 ====================
 
-async function fetchData(url, method = 'GET', data = null) {
+async function fetchData(url, method = 'GET', data = null, showAlert = false) {
     const fullUrl = BASE_URL + url;
     console.log('正在请求:', fullUrl, method, data);
     
@@ -37,7 +37,9 @@ async function fetchData(url, method = 'GET', data = null) {
         return result;
     } catch (error) {
         console.error('请求失败:', error);
-        alert('操作失败: ' + error.message);
+        if (showAlert) {
+            alert('操作失败: ' + error.message);
+        }
         return null;
     }
 }
@@ -106,24 +108,33 @@ async function renderPage() {
 // ==================== 仪表盘 (Dashboard) ====================
 
 async function loadDashboardStats() {
-    const stats = await fetchData('/admin/dashboard-stats'); // 假设后端有一个仪表盘统计接口
-    if (stats) {
-        document.getElementById('stat-today-orders').textContent = stats.today_order_count || 0;
-        document.getElementById('stat-today-revenue').textContent = `¥${(stats.today_revenue || 0).toFixed(2)}`;
-        document.getElementById('stat-products').textContent = stats.product_count || 0;
-        document.getElementById('stat-stations').textContent = stats.station_count || 0;
-    }
-    // 临时接口，如果后台没有dashboard-stats，这里调用现有接口获取总数
-    const products = await fetchData('/admin/products');
-    if(products) document.getElementById('stat-products').textContent = products.products.length;
-    const stations = await fetchData('/admin/stations');
-    if(stations) document.getElementById('stat-stations').textContent = stations.stations.length;
-    const orders = await fetchData('/admin/orders');
-    if(orders) {
-        document.getElementById('stat-today-orders').textContent = orders.orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString()).length;
-        let todayRevenue = 0;
-        orders.orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString() && (o.order_status === 40 || o.order_status === 50)).forEach(o => todayRevenue += parseFloat(o.total_amount));
-        document.getElementById('stat-today-revenue').textContent = `¥${todayRevenue.toFixed(2)}`;
+    try {
+        // 先加载产品和站点数量
+        const products = await fetchData('/admin/products');
+        if(products) {
+            document.getElementById('stat-products').textContent = products.products.length;
+        }
+        
+        const stations = await fetchData('/admin/stations');
+        if(stations) {
+            document.getElementById('stat-stations').textContent = stations.stations.length;
+        }
+        
+        const orders = await fetchData('/admin/orders');
+        if(orders) {
+            const today = new Date().toDateString();
+            const todayOrders = orders.orders.filter(o => new Date(o.created_at).toDateString() === today);
+            document.getElementById('stat-today-orders').textContent = todayOrders.length;
+            
+            let todayRevenue = 0;
+            todayOrders.filter(o => o.order_status === 40 || o.order_status === 50).forEach(o => {
+                todayRevenue += parseFloat(o.total_amount) || 0;
+            });
+            document.getElementById('stat-today-revenue').textContent = `¥${todayRevenue.toFixed(2)}`;
+        }
+    } catch (e) {
+        console.error('Dashboard 加载失败', e);
+        // 不弹窗，保持界面显示
     }
 }
 
