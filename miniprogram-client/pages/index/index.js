@@ -5,12 +5,7 @@ Page({
     products: [],
     flashProducts: [],
     loading: false,
-    stationName: '阳光小区自提点',
-    stationAddress: '阳光路123号',
-    stations: [],
-    selectedStationId: 1,
-    showStationPicker: false,
-    tempSelectedStation: null,
+    selectedAddress: null,
     quickNavItems: [
       { id: 1, name: '新鲜蔬菜', icon: '🥬', bg: '#E8F5E9' },
       { id: 2, name: '时令水果', icon: '🍎', bg: '#FFF3E0' },
@@ -23,85 +18,44 @@ Page({
 
   onLoad() {
     this.loadProducts();
-    this.loadStations();
-    // 从全局状态中读取保存的自提点
-    if (app.globalData.stationId) {
-      this.setData({
-        selectedStationId: app.globalData.stationId,
-        stationName: app.globalData.stationName || '阳光小区自提点',
-        stationAddress: app.globalData.stationAddress || '阳光路123号'
-      });
+    // 从全局状态中读取保存的地址
+    if (app.globalData.selectedAddress) {
+      this.setData({ selectedAddress: app.globalData.selectedAddress });
     }
+    // 尝试加载地址列表
+    this.loadAddresses();
   },
 
   onShow() {
     // 页面显示时刷新数据
     app.updateCartCount();
+    // 更新地址信息
+    if (app.globalData.selectedAddress) {
+      this.setData({ selectedAddress: app.globalData.selectedAddress });
+    }
   },
 
-  loadStations() {
+  // 加载地址列表
+  loadAddresses() {
     app.request({
-      url: '/client/stations',
+      url: '/client/addresses',
       success: (res) => {
-        if (res.data && res.data.stations && res.data.stations.length > 0) {
-          const stations = res.data.stations;
-          // 如果还没选择过的话，默认选第一个
-          if (!this.data.selectedStationId) {
-            const station = stations[0];
-            app.globalData.stationId = station.id;
-            app.globalData.stationName = station.station_name;
-            app.globalData.stationAddress = station.address;
-            this.setData({
-              selectedStationId: station.id,
-              stationName: station.station_name,
-              stationAddress: station.address
-            });
-          }
-          this.setData({ stations: stations });
+        if (res.data && res.data.addresses && res.data.addresses.length > 0) {
+          // 优先用默认地址，或者第一个地址
+          const address = res.data.addresses.find(a => a.is_default) || res.data.addresses[0];
+          app.globalData.selectedAddress = address;
+          this.setData({ selectedAddress: address });
         }
       }
     });
   },
 
-  // 显示自提点选择器
-  showStationPicker() {
-    this.setData({
-      showStationPicker: true,
-      tempSelectedStation: null
+  // 点击选择地址
+  goToSelectAddress() {
+    const selectedId = this.data.selectedAddress ? this.data.selectedAddress.id : '';
+    wx.navigateTo({
+      url: `/pages/address/address?canSelect=true&selectedId=${selectedId}`
     });
-  },
-
-  // 隐藏选择器
-  hideStationPicker() {
-    this.setData({ showStationPicker: false });
-  },
-
-  // 选中一个自提点
-  selectStation(e) {
-    const id = e.currentTarget.dataset.id;
-    const name = e.currentTarget.dataset.name;
-    const address = e.currentTarget.dataset.address;
-    this.setData({
-      tempSelectedStation: { id, name, address }
-    });
-  },
-
-  // 确认选择
-  confirmStation() {
-    if (this.data.tempSelectedStation) {
-      const { id, name, address } = this.data.tempSelectedStation;
-      app.globalData.stationId = id;
-      app.globalData.stationName = name;
-      app.globalData.stationAddress = address;
-      this.setData({
-        selectedStationId: id,
-        stationName: name,
-        stationAddress: address,
-        showStationPicker: false
-      });
-    } else {
-      this.setData({ showStationPicker: false });
-    }
   },
 
   loadProducts() {

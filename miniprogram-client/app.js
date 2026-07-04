@@ -2,7 +2,7 @@ App({
   globalData: {
     userInfo: null,
     cartCount: 0,
-    stationId: 1, // 默认自提点ID
+    selectedAddress: null, // 默认选中的地址
     baseUrl: 'http://xianpeiju.site' // 您的域名
   },
 

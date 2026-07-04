@@ -1,11 +1,12 @@
 <view class="container">
-  <!-- 顶部搜索栏和自提点 -->
+  <!-- 顶部搜索栏和地址 -->
   <view class="header">
-    <view class="station" bindtap="showStationPicker">
-      <text class="station-icon">📍</text>
-      <view class="station-text">
-        <text class="station-name">{{stationName}}</text>
-        <text class="station-address">{{stationAddress}}</text>
+    <view class="address" bindtap="goToSelectAddress">
+      <text class="address-icon">📍</text>
+      <view class="address-text">
+        <text class="address-name" wx:if="{{selectedAddress}}">{{selectedAddress.receiver_name}} {{selectedAddress.receiver_phone}}</text>
+        <text class="address-name" wx:else>请选择收货地址</text>
+        <text class="address-detail" wx:if="{{selectedAddress}}">{{selectedAddress.address}}</text>
       </view>
       <text class="arrow">▼</text>
     </view>
@@ -54,7 +55,7 @@
     <scroll-view class="flash-list" scroll-x show-scrollbar="{{false}}">
       <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="flash-img">
-          <image src="{{item.image_url || '/images/placeholder.png'}}" mode="aspectFill" class="img" />
+          <image src="{{item.image_url || ''}}" mode="aspectFill" class="img" />
         </view>
         <view class="flash-info">
           <text class="flash-name">{{item.name}}</text>
@@ -78,7 +79,7 @@
     <view class="product-grid">
       <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="product-image">
-          <image src="{{item.image_url || '/images/placeholder.png'}}" mode="aspectFill" class="product-img" />
+          <image src="{{item.image_url || ''}}" mode="aspectFill" class="product-img" />
         </view>
         <view class="product-info">
           <text class="product-name">{{item.name}}</text>
@@ -93,28 +94,6 @@
             </view>
           </view>
         </view>
-      </view>
-    </view>
-  </view>
-
-  <!-- 自提点选择器（底部弹出） -->
-  <view class="picker-mask" wx:if="{{showStationPicker}}" bindtap="hideStationPicker"></view>
-  <view class="picker-container" wx:if="{{showStationPicker}}">
-    <view class="picker-header">
-      <text class="picker-cancel" bindtap="hideStationPicker">取消</text>
-      <text class="picker-title">选择自提点</text>
-      <text class="picker-confirm" bindtap="confirmStation">确定</text>
-    </view>
-    <view class="picker-list">
-      <view class="picker-item {{item.id === selectedStationId || (tempSelectedStation && tempSelectedStation.id === item.id) ? 'active' : ''}}" 
-            wx:for="{{stations}}" 
-            wx:key="id" 
-            bindtap="selectStation" 
-            data-id="{{item.id}}"
-            data-name="{{item.station_name}}"
-            data-address="{{item.address}}">
-        <view class="station-item-name">{{item.station_name}}</view>
-        <view class="station-item-address">{{item.address}}</view>
       </view>
     </view>
   </view>

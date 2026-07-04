@@ -1,16 +1,42 @@
 <view class="container">
-  <!-- 顶部导航 -->
-  <view class="nav-bar">
-    <view class="nav-item back-btn" bindtap="goBack">← 返回</view>
-    <view class="nav-item active">确认订单</view>
+  <!-- 收货地址 -->
+  <view class="address-card" bindtap="goToSelectAddress">
+    <view class="address-info" wx:if="{{selectedAddress}}">
+      <view class="addr-name-phone">
+        <text class="addr-name">{{selectedAddress.receiver_name}}</text>
+        <text class="addr-phone">{{selectedAddress.receiver_phone}}</text>
+      </view>
+      <view class="addr-detail">{{selectedAddress.address}}</view>
+    </view>
+    <view class="address-placeholder" wx:else>
+      <text class="placeholder-text">请选择收货地址</text>
+    </view>
+    <text class="arrow">></text>
   </view>
-  
-  <!-- 自提点信息 -->
-  <view class="section">
-    <view class="section-title">自提点</view>
-    <view class="station-info">
-      <view class="station-name">{{stationName}}</view>
-      <view class="station-address">{{stationAddress}}</view>
+
+  <!-- 配送信息 -->
+  <view class="section" wx:if="{{selectedAddress}}">
+    <view class="delivery-info">
+      <view class="delivery-item">
+        <text class="label">配送区域</text>
+        <text class="value" wx:if="{{deliveryZone}}">{{deliveryZone.zone_name}}</text>
+        <text class="value" wx:else>正在计算...</text>
+      </view>
+      <view class="delivery-item">
+        <text class="label">配送费</text>
+        <text class="value price" wx:if="{{deliveryZone}}">¥{{deliveryZone.delivery_fee}}</text>
+        <text class="value" wx:else>--</text>
+      </view>
+      <view class="delivery-item">
+        <text class="label">预计送达</text>
+        <text class="value" wx:if="{{deliveryZone}}">{{deliveryZone.delivery_time}}</text>
+        <text class="value" wx:else>--</text>
+      </view>
+    </view>
+    <!-- 配送范围提示 -->
+    <view class="range-tip" wx:if="{{!inRange && selectedAddress && deliveryZone}}">
+      <text class="tip-icon">⚠️</text>
+      <text class="tip-text">当前地址不在配送范围内，请更换地址</text>
     </view>
   </view>
 
@@ -18,7 +44,7 @@
   <view class="section">
     <view class="section-title">商品清单</view>
     <view class="product-item" wx:for="{{products}}" wx:key="product_id">
-      <image src="{{item.product_image || '/images/placeholder.png'}}" class="product-img" />
+      <image src="{{item.product_image || ''}}" class="product-img" />
       <view class="product-detail">
         <view class="product-name">{{item.product_name}}</view>
         <view class="product-meta">
@@ -27,23 +53,6 @@
         </view>
       </view>
     </view>
-  </view>
-
-  <!-- 自提时间 -->
-  <view class="section">
-    <view class="section-title">自提时间</view>
-    <picker mode="selector" range="{{timeSlots}}" bindchange="onTimeChange">
-      <view class="picker">
-        {{selectedTime || '请选择自提时间'}}
-      </view>
-    </picker>
-  </view>
-
-  <!-- 收货人信息 -->
-  <view class="section">
-    <view class="section-title">收货人信息</view>
-    <input class="input" placeholder="姓名" bindinput="onNameInput" value="{{receiverName}}" />
-    <input class="input" placeholder="手机号" bindinput="onPhoneInput" value="{{receiverPhone}}" />
   </view>
 
   <!-- 备注 -->
@@ -55,9 +64,22 @@
   <!-- 底部 -->
   <view class="footer">
     <view class="total">
-      <text>合计：</text>
-      <text class="total-price">¥{{totalPrice}}</text>
+      <view class="total-row">
+        <text>商品合计：</text>
+        <text class="total-price">¥{{totalPrice}}</text>
+      </view>
+      <view class="total-row">
+        <text>配送费：</text>
+        <text class="price" wx:if="{{deliveryZone}}">¥{{deliveryZone.delivery_fee}}</text>
+        <text wx:else>¥0.00</text>
+      </view>
+      <view class="total-row final">
+        <text>实付：</text>
+        <text class="final-price">¥{{finalPrice}}</text>
+      </view>
     </view>
-    <button class="submit-btn" bindtap="submitOrder">提交订单</button>
+    <button class="submit-btn" bindtap="submitOrder" disabled="{{!selectedAddress || !inRange || !deliveryZone}}">
+      {{!selectedAddress ? '请先选择地址' : (!inRange ? '不在配送范围' : '提交订单')}}
+    </button>
   </view>
 </view>
