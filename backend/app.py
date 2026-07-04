@@ -3,24 +3,32 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from config import Config
 
-app = Flask(__name__)
-app.config.from_object(Config)
-CORS(app)
-db = SQLAlchemy(app)
+db = SQLAlchemy()
 
-# Import models and routes
-import models
-from admin_routes import admin_bp
-from client_routes import client_bp
-from merchant_routes import merchant_bp
+def create_app(config_class=Config):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+    CORS(app)
+    db.init_app(app)
 
-app.register_blueprint(admin_bp)
-app.register_blueprint(client_bp)
-app.register_blueprint(merchant_bp)
+    # 导入模型
+    import models
 
-@app.route('/')
-def index():
-    return "Hello, Fresh Produce Mini Program Backend!"
+    # 导入并注册蓝图
+    from admin_routes import admin_bp
+    from client_routes import client_bp
+    from merchant_routes import merchant_bp
+    
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(client_bp)
+    app.register_blueprint(merchant_bp)
+
+    @app.route('/')
+    def index():
+        return "Hello, Fresh Produce Mini Program Backend!"
+
+    return app
 
 if __name__ == '__main__':
+    app = create_app()
     app.run(host='0.0.0.0', port=5000, debug=True)

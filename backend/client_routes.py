@@ -1,68 +1,251 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from models import CommunityStation, Category, Product, ProductStock, User, Cart, OrderMaster, OrderItem
 from decimal import Decimal
 import random
 import string
 from datetime import datetime
+import math
 
 client_bp = Blueprint('client', __name__, url_prefix='/client')
 
-# ==================== 自提点/小区管理 ====================
+# ============================================
+# 工具函数：获取/创建测试用户
+# ============================================
+def get_or_create_test_user():
+    from models import User
+    user = User.query.first()
+    if not user:
+        user = User(nickname='测试用户', phone='13800138000')
+        db.session.add(user)
+        db.session.commit()
+    return user
 
-@client_bp.route('/stations', methods=['GET'])
-def get_stations():
-    """获取所有自提点列表"""
-    try:
-        stations = CommunityStation.query.all()
-        output = []
-        for station in stations:
-            output.append({
-                'id': station.id,
-                'station_name': station.station_name,
-                'address': station.address
-            })
-        return jsonify({'stations': output}), 200
-    except Exception as e:
-        print(f"Error getting stations: {e}")
-        return jsonify({'message': str(e)}), 500
+# ============================================
+# 工具函数：计算两点距离（Haversine公式）
+# ============================================
+def calculate_distance(lat1, lng1, lat2, lng2):
+    R = 6371000  # 地球半径（米）
+    phi1 = math.radians(float(lat1))
+    phi2 = math.radians(float(lat2))
+    delta_phi = math.radians(float(lat2 - lat1))
+    delta_lambda = math.radians(float(lng2 - lng1))
+    
+    a = math.sin(delta_phi/2) * math.sin(delta_phi/2) + \
+        math.cos(phi1) * math.cos(phi2) * \
+        math.sin(delta_lambda/2) * math.sin(delta_lambda/2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c  # 返回距离（米）
 
-# ==================== 商品浏览 ====================
+# ============================================
+# 工具函数：检查地址是否在配送范围内
+# ============================================
+def check_delivery_available(lat, lng):
+    from models import DeliveryZone
+    zones = DeliveryZone.query.filter_by(is_active=True).all()
+    for zone in zones:
+        distance = calculate_distance(lat, lng, zone.center_lat, zone.center_lng)
+        if distance <= zone.radius:
+            return {
+                'available': True,
+                'zone': zone,
+                'distance': distance
+            }
+    return {'available': False}
+
+# ============================================
+# 工具函数：生成订单号
+# ============================================
+def generate_order_sn():
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    random_str = ''.join(random.choices(string.digits, k=6))
+    return f'ORD{timestamp}{random_str}'
+
+# ============================================
+# 1. 用户地址管理API
+# ============================================
+
+@client_bp.route('/addresses', methods=['GET'])
+def get_addresses():
+    from models import UserAddress
+    user = get_or_create_test_user()
+    addresses = UserAddress.query.filter_by(user_id=user.id).order_by(UserAddress.is_default.desc(), UserAddress.created_at.desc()).all()
+    result = []
+    for addr in addresses:
+        result.append({
+            'id': addr.id,
+            'receiver_name': addr.receiver_name,
+            'receiver_phone': addr.receiver_phone,
+            'province': addr.province,
+            'city': addr.city,
+            'district': addr.district,
+            'detail_address': addr.detail_address,
+            'full_address': addr.full_address,
+            'lng': str(addr.lng),
+            'lat': str(addr.lat),
+            'is_default': addr.is_default
+        })
+    return jsonify({'addresses': result})
+
+@client_bp.route('/addresses', methods=['POST'])
+def add_address():
+    from models import UserAddress
+    data = request.get_json()
+    user = get_or_create_test_user()
+    
+    # 如果设为默认，先取消其他地址的默认
+    if data.get('is_default'):
+        UserAddress.query.filter_by(user_id=user.id, is_default=True).update({'is_default': False})
+    
+    address = UserAddress(
+        user_id=user.id,
+        receiver_name=data.get('receiver_name'),
+        receiver_phone=data.get('receiver_phone'),
+        province=data.get('province'),
+        city=data.get('city'),
+        district=data.get('district'),
+        detail_address=data.get('detail_address'),
+        full_address=data.get('full_address'),
+        lng=data.get('lng'),
+        lat=data.get('lat'),
+        is_default=data.get('is_default', False)
+    )
+    db.session.add(address)
+    db.session.commit()
+    
+    return jsonify({'message': '添加成功', 'id': address.id})
+
+@client_bp.route('/addresses/<int:addr_id>', methods=['PUT'])
+def update_address(addr_id):
+    from models import UserAddress
+    data = request.get_json()
+    user = get_or_create_test_user()
+    address = UserAddress.query.filter_by(id=addr_id, user_id=user.id).first_or_404()
+    
+    # 如果设为默认，先取消其他地址的默认
+    if data.get('is_default'):
+        UserAddress.query.filter_by(user_id=user.id, is_default=True).update({'is_default': False})
+    
+    address.receiver_name = data.get('receiver_name', address.receiver_name)
+    address.receiver_phone = data.get('receiver_phone', address.receiver_phone)
+    address.province = data.get('province', address.province)
+    address.city = data.get('city', address.city)
+    address.district = data.get('district', address.district)
+    address.detail_address = data.get('detail_address', address.detail_address)
+    address.full_address = data.get('full_address', address.full_address)
+    address.lng = data.get('lng', address.lng)
+    address.lat = data.get('lat', address.lat)
+    address.is_default = data.get('is_default', address.is_default)
+    
+    db.session.commit()
+    return jsonify({'message': '更新成功'})
+
+@client_bp.route('/addresses/<int:addr_id>', methods=['DELETE'])
+def delete_address(addr_id):
+    from models import UserAddress
+    user = get_or_create_test_user()
+    address = UserAddress.query.filter_by(id=addr_id, user_id=user.id).first_or_404()
+    db.session.delete(address)
+    db.session.commit()
+    return jsonify({'message': '删除成功'})
+
+@client_bp.route('/addresses/default', methods=['GET'])
+def get_default_address():
+    from models import UserAddress
+    user = get_or_create_test_user()
+    address = UserAddress.query.filter_by(user_id=user.id, is_default=True).first()
+    if not address:
+        address = UserAddress.query.filter_by(user_id=user.id).first()
+    
+    if address:
+        return jsonify({
+            'id': address.id,
+            'receiver_name': address.receiver_name,
+            'receiver_phone': address.receiver_phone,
+            'full_address': address.full_address,
+            'lng': str(address.lng),
+            'lat': str(address.lat)
+        })
+    return jsonify({'address': None})
+
+# ============================================
+# 2. 配送范围检查API
+# ============================================
+
+@client_bp.route('/delivery-zones', methods=['GET'])
+def get_delivery_zones():
+    from models import DeliveryZone
+    zones = DeliveryZone.query.filter_by(is_active=True).all()
+    result = []
+    for zone in zones:
+        result.append({
+            'id': zone.id,
+            'zone_name': zone.zone_name,
+            'center_lng': str(zone.center_lng),
+            'center_lat': str(zone.center_lat),
+            'radius': zone.radius,
+            'delivery_fee': str(zone.delivery_fee),
+            'delivery_time': zone.delivery_time
+        })
+    return jsonify({'zones': result})
+
+@client_bp.route('/delivery/check', methods=['POST'])
+def check_delivery():
+    data = request.get_json()
+    lat = data.get('lat')
+    lng = data.get('lng')
+    
+    if not lat or not lng:
+        return jsonify({'message': '缺少坐标参数'}), 400
+    
+    result = check_delivery_available(lat, lng)
+    if result['available']:
+        zone = result['zone']
+        return jsonify({
+            'available': True,
+            'zone_name': zone.zone_name,
+            'delivery_fee': str(zone.delivery_fee),
+            'delivery_time': zone.delivery_time,
+            'distance': int(result['distance'])
+        })
+    return jsonify({'available': False, 'message': '该地址不在配送范围内'})
+
+# ============================================
+# 3. 商品浏览API（保持不变，移除自提点依赖）
+# ============================================
 
 @client_bp.route('/categories', methods=['GET'])
 def get_categories():
-    """获取所有上架的商品分类"""
+    from models import Category
     categories = Category.query.filter_by(is_active=True).order_by(Category.sort_order).all()
-    output = []
+    result = []
     for cat in categories:
-        output.append({
+        result.append({
             'id': cat.id,
             'name': cat.name,
             'icon': cat.icon
         })
-    return jsonify({'categories': output}), 200
+    return jsonify({'categories': result})
 
 @client_bp.route('/products', methods=['GET'])
 def get_products():
-    """获取商品列表（用户端）"""
+    from models import Product
     category_id = request.args.get('category_id')
     is_recommend = request.args.get('is_recommend')
     
     query = Product.query.filter_by(is_active=True)
-    
     if category_id:
         query = query.filter_by(category_id=category_id)
     if is_recommend == 'true':
         query = query.filter_by(is_recommend=True)
     
     products = query.order_by(Product.sort_order.desc(), Product.sales_count.desc()).all()
-    output = []
+    result = []
     for product in products:
         available_stock = 0
         if product.stock:
             available_stock = product.stock.total_stock - product.stock.lock_stock
         
-        output.append({
+        result.append({
             'id': product.id,
             'name': product.name,
             'description': product.description,
@@ -75,11 +258,11 @@ def get_products():
             'sales_count': product.sales_count,
             'available_stock': available_stock
         })
-    return jsonify({'products': output}), 200
+    return jsonify({'products': result})
 
 @client_bp.route('/products/<int:product_id>', methods=['GET'])
 def get_product_detail(product_id):
-    """获取商品详情"""
+    from models import Product
     product = Product.query.get_or_404(product_id)
     if not product.is_active:
         return jsonify({'message': '商品已下架'}), 404
@@ -102,29 +285,19 @@ def get_product_detail(product_id):
         'specs': product.specs,
         'sales_count': product.sales_count,
         'available_stock': available_stock
-    }), 200
+    })
 
-# ==================== 购物车管理 ====================
-
-def get_or_create_test_user():
-    """临时：获取或创建一个测试用户（实际项目中应通过微信登录获取）"""
-    user = User.query.first()
-    if not user:
-        user = User(
-            nickname='测试用户',
-            phone='13800138000'
-        )
-        db.session.add(user)
-        db.session.commit()
-    return user
+# ============================================
+# 4. 购物车管理API
+# ============================================
 
 @client_bp.route('/cart', methods=['GET'])
 def get_cart():
-    """获取购物车"""
+    from models import Cart
     user = get_or_create_test_user()
     cart_items = Cart.query.filter_by(user_id=user.id).all()
     
-    output = []
+    result = []
     total_price = Decimal('0.00')
     
     for item in cart_items:
@@ -135,7 +308,7 @@ def get_cart():
         item_price = product.price * item.quantity
         total_price += item_price
         
-        output.append({
+        result.append({
             'id': item.id,
             'product_id': product.id,
             'product_name': product.name,
@@ -147,13 +320,13 @@ def get_cart():
         })
     
     return jsonify({
-        'cart_items': output,
+        'cart_items': result,
         'total_price': str(total_price)
-    }), 200
+    })
 
 @client_bp.route('/cart', methods=['POST'])
 def add_to_cart():
-    """添加商品到购物车"""
+    from models import Product, Cart
     data = request.get_json()
     if not data:
         return jsonify({'message': '无效请求'}), 400
@@ -175,19 +348,15 @@ def add_to_cart():
     if cart_item:
         cart_item.quantity += quantity
     else:
-        cart_item = Cart(
-            user_id=user.id,
-            product_id=product_id,
-            quantity=quantity
-        )
+        cart_item = Cart(user_id=user.id, product_id=product_id, quantity=quantity)
         db.session.add(cart_item)
     
     db.session.commit()
-    return jsonify({'message': '已添加到购物车'}), 200
+    return jsonify({'message': '已添加到购物车'})
 
 @client_bp.route('/cart/<int:cart_id>', methods=['PUT'])
 def update_cart_item(cart_id):
-    """更新购物车商品数量"""
+    from models import Cart
     user = get_or_create_test_user()
     cart_item = Cart.query.filter_by(id=cart_id, user_id=user.id).first_or_404()
     
@@ -200,39 +369,45 @@ def update_cart_item(cart_id):
         cart_item.quantity = quantity
     
     db.session.commit()
-    return jsonify({'message': '购物车已更新'}), 200
+    return jsonify({'message': '购物车已更新'})
 
 @client_bp.route('/cart/<int:cart_id>', methods=['DELETE'])
 def remove_from_cart(cart_id):
-    """从购物车移除商品"""
+    from models import Cart
     user = get_or_create_test_user()
     cart_item = Cart.query.filter_by(id=cart_id, user_id=user.id).first_or_404()
-    
     db.session.delete(cart_item)
     db.session.commit()
-    return jsonify({'message': '已从购物车移除'}), 200
+    return jsonify({'message': '已从购物车移除'})
 
-# ==================== 订单管理 ====================
-
-def generate_order_sn():
-    """生成订单号"""
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    random_str = ''.join(random.choices(string.digits, k=6))
-    return f'ORD{timestamp}{random_str}'
+# ============================================
+# 5. 订单管理API（配送模式）
+# ============================================
 
 @client_bp.route('/orders', methods=['POST'])
 def create_order():
-    """创建订单"""
+    from models import Cart, UserAddress, Product, OrderMaster, OrderItem
     data = request.get_json()
     if not data:
         return jsonify({'message': '无效请求'}), 400
     
     user = get_or_create_test_user()
     
-    # 获取购物车商品
+    # 获取购物车
     cart_items = Cart.query.filter_by(user_id=user.id).all()
     if not cart_items:
         return jsonify({'message': '购物车为空'}), 400
+    
+    # 获取收货地址
+    address_id = data.get('address_id')
+    address = UserAddress.query.filter_by(id=address_id, user_id=user.id).first() if address_id else None
+    
+    # 检查配送范围
+    delivery_check = check_delivery_available(address.lat, address.lng) if address else {'available': False}
+    if not delivery_check['available']:
+        return jsonify({'message': '该地址不在配送范围内'}), 400
+    
+    zone = delivery_check['zone']
     
     # 计算总金额并检查库存
     total_amount = Decimal('0.00')
@@ -257,25 +432,27 @@ def create_order():
             'quantity': item.quantity
         })
     
+    # 计算最终金额（含配送费）
+    delivery_fee = zone.delivery_fee
+    final_amount = total_amount + delivery_fee
+    
     # 创建订单
     order_sn = generate_order_sn()
-    station_id = data.get('station_id')
-    if not station_id:
-        # 如果没选，默认选第一个
-        station = CommunityStation.query.first()
-        station_id = station.id if station else 1
-    
     order = OrderMaster(
         order_sn=order_sn,
         user_id=user.id,
-        station_id=station_id,
-        shipping_type=data.get('shipping_type', 1),
+        address_id=address.id if address else None,
+        zone_id=zone.id,
         order_status=10,  # 待付款
         refund_status=0,
         total_amount=total_amount,
-        pickup_time=data.get('pickup_time'),
-        receiver_name=data.get('receiver_name', user.nickname),
-        receiver_phone=data.get('receiver_phone', user.phone),
+        delivery_fee=delivery_fee,
+        final_amount=final_amount,
+        receiver_name=address.receiver_name if address else None,
+        receiver_phone=address.receiver_phone if address else None,
+        receiver_address=address.full_address if address else None,
+        receiver_lng=address.lng if address else None,
+        receiver_lat=address.lat if address else None,
         remark=data.get('remark')
     )
     db.session.add(order)
@@ -309,12 +486,12 @@ def create_order():
     return jsonify({
         'message': '订单创建成功',
         'order_sn': order_sn,
-        'total_amount': str(total_amount)
+        'final_amount': str(final_amount)
     }), 201
 
 @client_bp.route('/orders', methods=['GET'])
 def get_orders():
-    """获取订单列表"""
+    from models import OrderMaster
     user = get_or_create_test_user()
     status = request.args.get('status')
     
@@ -323,7 +500,7 @@ def get_orders():
         query = query.filter_by(order_status=int(status))
     
     orders = query.order_by(OrderMaster.created_at.desc()).all()
-    output = []
+    result = []
     
     for order in orders:
         items = []
@@ -336,20 +513,25 @@ def get_orders():
                 'unit': item.unit
             })
         
-        output.append({
+        status_text = {10: '待付款', 20: '待配货', 30: '配送中', 40: '已送达', 50: '已完成', 60: '已取消'}.get(order.order_status, '未知')
+        
+        result.append({
             'order_sn': order.order_sn,
             'order_status': order.order_status,
+            'status_text': status_text,
             'total_amount': str(order.total_amount),
-            'pickup_time': order.pickup_time,
+            'delivery_fee': str(order.delivery_fee),
+            'final_amount': str(order.final_amount),
+            'receiver_address': order.receiver_address,
             'items': items,
             'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
         })
     
-    return jsonify({'orders': output}), 200
+    return jsonify({'orders': result})
 
 @client_bp.route('/orders/<order_sn>', methods=['GET'])
 def get_order_detail(order_sn):
-    """获取订单详情"""
+    from models import OrderMaster
     user = get_or_create_test_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
     
@@ -363,28 +545,32 @@ def get_order_detail(order_sn):
             'unit': item.unit
         })
     
+    status_text = {10: '待付款', 20: '待配货', 30: '配送中', 40: '已送达', 50: '已完成', 60: '已取消'}.get(order.order_status, '未知')
+    
     return jsonify({
         'order_sn': order.order_sn,
         'order_status': order.order_status,
+        'status_text': status_text,
         'total_amount': str(order.total_amount),
-        'pickup_time': order.pickup_time,
+        'delivery_fee': str(order.delivery_fee),
+        'final_amount': str(order.final_amount),
         'receiver_name': order.receiver_name,
         'receiver_phone': order.receiver_phone,
+        'receiver_address': order.receiver_address,
         'remark': order.remark,
         'items': items,
         'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
-    }), 200
+    })
 
 @client_bp.route('/orders/<order_sn>/pay', methods=['POST'])
 def pay_order(order_sn):
-    """模拟支付订单（实际项目中需要对接微信支付）"""
+    from models import OrderMaster, Product
     user = get_or_create_test_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
     
-    if order.order_status != 10:  # 不是待付款状态
+    if order.order_status != 10:
         return jsonify({'message': '订单状态异常'}), 400
     
-    # 模拟支付成功
     order.order_status = 20  # 改为待配货
     
     # 扣减库存：锁定库存 -> 实际扣减
@@ -396,16 +582,15 @@ def pay_order(order_sn):
             product.sales_count += item.quantity
     
     db.session.commit()
-    
-    return jsonify({'message': '支付成功'}), 200
+    return jsonify({'message': '支付成功'})
 
 @client_bp.route('/orders/<order_sn>/cancel', methods=['POST'])
 def cancel_order(order_sn):
-    """取消订单"""
+    from models import OrderMaster, Product
     user = get_or_create_test_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
     
-    if order.order_status not in [10, 20]:  # 只能取消待付款或待配货订单
+    if order.order_status not in [10, 20]:
         return jsonify({'message': '当前状态无法取消订单'}), 400
     
     # 释放锁定的库存
@@ -414,11 +599,9 @@ def cancel_order(order_sn):
         if product and product.stock:
             if order.order_status == 10:
                 product.stock.lock_stock -= item.quantity
-            # 如果已经扣减了库存（待配货），需要加回来
             elif order.order_status == 20:
                 product.stock.total_stock += item.quantity
     
-    order.order_status = 60  # 已关闭
+    order.order_status = 60
     db.session.commit()
-    
-    return jsonify({'message': '订单已取消'}), 200
+    return jsonify({'message': '订单已取消'})
