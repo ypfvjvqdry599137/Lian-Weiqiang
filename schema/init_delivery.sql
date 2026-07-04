@@ -1,12 +1,26 @@
 -- 鲜配居数据库 - 配送模式版本
--- 2026-06-29 更新：从自提点模式改为配送模式
+-- 2026-07-04 更新：修复表创建顺序
 
 CREATE DATABASE IF NOT EXISTS fresh_produce DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 USE fresh_produce;
 
 -- ============================================
--- 1. 配送区域表（原自提点表改造）
+-- 1. 用户表（调整：移除station_id）
+-- ============================================
+CREATE TABLE IF NOT EXISTS user (
+    id INT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
+    openid VARCHAR(100) UNIQUE DEFAULT NULL COMMENT '微信OpenID',
+    nickname VARCHAR(50) DEFAULT NULL COMMENT '微信昵称',
+    avatar VARCHAR(500) DEFAULT NULL COMMENT '微信头像',
+    phone VARCHAR(20) DEFAULT NULL COMMENT '手机号',
+    default_address_id INT DEFAULT NULL COMMENT '默认地址ID',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+-- ============================================
+-- 2. 配送区域表（原自提点表改造）
 -- ============================================
 CREATE TABLE IF NOT EXISTS delivery_zone (
     id INT PRIMARY KEY AUTO_INCREMENT COMMENT '配送区域ID',
@@ -24,7 +38,7 @@ CREATE TABLE IF NOT EXISTS delivery_zone (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='配送区域表';
 
 -- ============================================
--- 2. 用户地址表
+-- 3. 用户地址表
 -- ============================================
 CREATE TABLE IF NOT EXISTS user_address (
     id INT PRIMARY KEY AUTO_INCREMENT COMMENT '地址ID',
@@ -46,7 +60,7 @@ CREATE TABLE IF NOT EXISTS user_address (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户地址表';
 
 -- ============================================
--- 3. 商品分类表（保持不变）
+-- 4. 商品分类表（保持不变）
 -- ============================================
 CREATE TABLE IF NOT EXISTS category (
     id INT PRIMARY KEY AUTO_INCREMENT COMMENT '分类ID',
@@ -59,7 +73,7 @@ CREATE TABLE IF NOT EXISTS category (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品分类表';
 
 -- ============================================
--- 4. 商品表（保持不变）
+-- 5. 商品表（保持不变）
 -- ============================================
 CREATE TABLE IF NOT EXISTS product (
     id INT PRIMARY KEY AUTO_INCREMENT COMMENT '商品ID',
@@ -82,7 +96,7 @@ CREATE TABLE IF NOT EXISTS product (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
 
 -- ============================================
--- 5. 商品库存表（保持不变）
+-- 6. 商品库存表（保持不变）
 -- ============================================
 CREATE TABLE IF NOT EXISTS product_stock (
     id INT PRIMARY KEY AUTO_INCREMENT COMMENT '库存记录ID',
@@ -94,20 +108,6 @@ CREATE TABLE IF NOT EXISTS product_stock (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     FOREIGN KEY (product_id) REFERENCES product(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品库存表';
-
--- ============================================
--- 6. 用户表（调整：移除station_id）
--- ============================================
-CREATE TABLE IF NOT EXISTS user (
-    id INT PRIMARY KEY AUTO_INCREMENT COMMENT '用户ID',
-    openid VARCHAR(100) UNIQUE DEFAULT NULL COMMENT '微信OpenID',
-    nickname VARCHAR(50) DEFAULT NULL COMMENT '微信昵称',
-    avatar VARCHAR(500) DEFAULT NULL COMMENT '微信头像',
-    phone VARCHAR(20) DEFAULT NULL COMMENT '手机号',
-    default_address_id INT DEFAULT NULL COMMENT '默认地址ID',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
 -- ============================================
 -- 7. 购物车表（保持不变）
@@ -170,6 +170,9 @@ CREATE TABLE IF NOT EXISTS order_item (
 -- 插入测试数据
 -- ============================================
 
+-- 测试用户
+INSERT INTO user (nickname, phone) VALUES ('测试用户', '13800138000');
+
 -- 配送区域测试数据
 INSERT INTO delivery_zone (zone_name, center_lng, center_lat, radius, delivery_fee, delivery_time, merchant_username, merchant_password) VALUES
 ('望京站', 116.470090, 39.989100, 3000, 5.00, '30分钟', 'wangjing', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyWxJQzO.p6W'),
@@ -206,9 +209,6 @@ INSERT INTO product_stock (product_id, total_stock, lock_stock, warning_stock) V
 (5, 180, 0, 18), (6, 80, 0, 10), (7, 500, 0, 50), (8, 100, 0, 10),
 (9, 200, 0, 20), (10, 50, 0, 5), (11, 30, 0, 5), (12, 400, 0, 40),
 (13, 100, 0, 10), (14, 150, 0, 15);
-
--- 测试用户
-INSERT INTO user (nickname, phone) VALUES ('测试用户', '13800138000');
 
 -- 测试地址
 INSERT INTO user_address (user_id, receiver_name, receiver_phone, province, city, district, detail_address, full_address, lng, lat, is_default) VALUES
