@@ -1,103 +1,132 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from models import CommunityStation, Category, Product, ProductStock, OrderMaster
 from decimal import Decimal
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
-# ==================== 社区自提点管理 ====================
+# ==================== 配送区域管理 ====================
 
-@admin_bp.route('/stations', methods=['POST'])
-def create_station():
+@admin_bp.route('/delivery-zones', methods=['POST'])
+def create_delivery_zone():
+    from models import DeliveryZone
     data = request.get_json()
     if not data:
         return jsonify({"message": "Invalid request body"}), 400
 
-    station_name = data.get('station_name')
-    address = data.get('address')
+    zone_name = data.get('zone_name')
+    center_lng = data.get('center_lng')
+    center_lat = data.get('center_lat')
+    radius = data.get('radius', 3000)
+    delivery_fee = data.get('delivery_fee', 0.00)
+    delivery_time = data.get('delivery_time', '30分钟')
     merchant_username = data.get('merchant_username')
     merchant_password = data.get('merchant_password')
-    commission_rate = data.get('commission_rate', 0.00)
 
-    if not all([station_name, address, merchant_username, merchant_password]):
+    if not all([zone_name, center_lng, center_lat]):
         return jsonify({"message": "Missing required fields"}), 400
 
-    if CommunityStation.query.filter_by(merchant_username=merchant_username).first():
+    if merchant_username and DeliveryZone.query.filter_by(merchant_username=merchant_username).first():
         return jsonify({"message": "Merchant username already exists"}), 409
 
-    new_station = CommunityStation(
-        station_name=station_name,
-        address=address,
+    new_zone = DeliveryZone(
+        zone_name=zone_name,
+        center_lng=center_lng,
+        center_lat=center_lat,
+        radius=radius,
+        delivery_fee=Decimal(str(delivery_fee)) if delivery_fee is not None else Decimal('0.00'),
+        delivery_time=delivery_time,
         merchant_username=merchant_username,
-        merchant_password=merchant_password, # In a real app, hash this password
-        commission_rate=commission_rate
+        merchant_password=merchant_password
     )
-    db.session.add(new_station)
+    db.session.add(new_zone)
     db.session.commit()
-    return jsonify({"message": "Community station created successfully", "id": new_station.id}), 201
+    return jsonify({"message": "Delivery zone created successfully", "id": new_zone.id}), 201
 
-@admin_bp.route('/stations', methods=['GET'])
-def get_stations():
-    stations = CommunityStation.query.all()
+@admin_bp.route('/delivery-zones', methods=['GET'])
+def get_delivery_zones():
+    from models import DeliveryZone
+    zones = DeliveryZone.query.all()
     output = []
-    for station in stations:
+    for zone in zones:
         output.append({
-            'id': station.id,
-            'station_name': station.station_name,
-            'address': station.address,
-            'merchant_username': station.merchant_username,
-            'commission_rate': str(station.commission_rate)
+            'id': zone.id,
+            'zone_name': zone.zone_name,
+            'center_lng': str(zone.center_lng),
+            'center_lat': str(zone.center_lat),
+            'radius': zone.radius,
+            'delivery_fee': str(zone.delivery_fee),
+            'delivery_time': zone.delivery_time,
+            'merchant_username': zone.merchant_username,
+            'is_active': zone.is_active
         })
-    return jsonify({"stations": output}), 200
+    return jsonify({"zones": output}), 200
 
-@admin_bp.route('/stations/<int:station_id>', methods=['GET'])
-def get_station(station_id):
-    station = CommunityStation.query.get_or_404(station_id)
+@admin_bp.route('/delivery-zones/<int:zone_id>', methods=['GET'])
+def get_delivery_zone(zone_id):
+    from models import DeliveryZone
+    zone = DeliveryZone.query.get_or_404(zone_id)
     return jsonify({
-        'id': station.id,
-        'station_name': station.station_name,
-        'address': station.address,
-        'merchant_username': station.merchant_username,
-        'commission_rate': str(station.commission_rate)
+        'id': zone.id,
+        'zone_name': zone.zone_name,
+        'center_lng': str(zone.center_lng),
+        'center_lat': str(zone.center_lat),
+        'radius': zone.radius,
+        'delivery_fee': str(zone.delivery_fee),
+        'delivery_time': zone.delivery_time,
+        'merchant_username': zone.merchant_username,
+        'is_active': zone.is_active
     }), 200
 
-@admin_bp.route('/stations/<int:station_id>', methods=['PUT'])
-def update_station(station_id):
-    station = CommunityStation.query.get_or_404(station_id)
+@admin_bp.route('/delivery-zones/<int:zone_id>', methods=['PUT'])
+def update_delivery_zone(zone_id):
+    from models import DeliveryZone
+    zone = DeliveryZone.query.get_or_404(zone_id)
     data = request.get_json()
 
-    station.station_name = data.get('station_name', station.station_name)
-    station.address = data.get('address', station.address)
-    station.commission_rate = data.get('commission_rate', station.commission_rate)
+    zone.zone_name = data.get('zone_name', zone.zone_name)
+    if 'center_lng' in data:
+        zone.center_lng = data['center_lng']
+    if 'center_lat' in data:
+        zone.center_lat = data['center_lat']
+    if 'radius' in data:
+        zone.radius = data['radius']
+    if 'delivery_fee' in data:
+        zone.delivery_fee = Decimal(str(data['delivery_fee']))
+    if 'delivery_time' in data:
+        zone.delivery_time = data['delivery_time']
+    if 'is_active' in data:
+        zone.is_active = data['is_active']
     
     # 如果传了新密码，更新密码
     if 'merchant_password' in data and data['merchant_password']:
-        station.merchant_password = data['merchant_password']
+        zone.merchant_password = data['merchant_password']
     
     # 如果传了新的用户名，检查是否已被使用
     if 'merchant_username' in data:
-        existing = CommunityStation.query.filter(
-            CommunityStation.merchant_username == data['merchant_username'],
-            CommunityStation.id != station_id
+        existing = DeliveryZone.query.filter(
+            DeliveryZone.merchant_username == data['merchant_username'],
+            DeliveryZone.id != zone_id
         ).first()
         if existing:
             return jsonify({"message": "Merchant username already exists"}), 409
-        station.merchant_username = data['merchant_username']
+        zone.merchant_username = data['merchant_username']
         
     db.session.commit()
-    return jsonify({"message": "Community station updated successfully"}), 200
+    return jsonify({"message": "Delivery zone updated successfully"}), 200
 
-@admin_bp.route('/stations/<int:station_id>', methods=['DELETE'])
-def delete_station(station_id):
-    station = CommunityStation.query.get_or_404(station_id)
-    db.session.delete(station)
+@admin_bp.route('/delivery-zones/<int:zone_id>', methods=['DELETE'])
+def delete_delivery_zone(zone_id):
+    from models import DeliveryZone
+    zone = DeliveryZone.query.get_or_404(zone_id)
+    db.session.delete(zone)
     db.session.commit()
-    return jsonify({"message": "Community station deleted successfully"}), 200
+    return jsonify({"message": "Delivery zone deleted successfully"}), 200
 
 # ==================== 订单状态管理（总后台） ====================
 
 @admin_bp.route('/orders', methods=['GET'])
 def get_all_orders():
+    from models import OrderMaster
     """获取所有订单（总后台）"""
     status_filter = request.args.get('status')
     query = OrderMaster.query
@@ -112,7 +141,7 @@ def get_all_orders():
             10: '待付款',
             20: '待配货',
             30: '配送中',
-            40: '待自提',
+            40: '已送达',
             50: '已完成',
             60: '已关闭'
         }.get(order.order_status, '未知')
@@ -130,13 +159,15 @@ def get_all_orders():
         
         output.append({
             'order_sn': order.order_sn,
-            'station_id': order.station_id,
+            'zone_id': order.zone_id,
             'order_status': order.order_status,
             'status_text': status_text,
             'total_amount': str(order.total_amount),
+            'delivery_fee': str(order.delivery_fee),
+            'final_amount': str(order.final_amount),
             'receiver_name': order.receiver_name,
             'receiver_phone': order.receiver_phone,
-            'pickup_time': order.pickup_time,
+            'receiver_address': order.receiver_address,
             'items': items_output,
             'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
         })
@@ -144,6 +175,7 @@ def get_all_orders():
 
 @admin_bp.route('/orders/<order_sn>/status', methods=['PUT'])
 def update_order_status(order_sn):
+    from models import OrderMaster
     """更新订单状态（总后台）"""
     order = OrderMaster.query.get_or_404(order_sn)
     data = request.get_json()
@@ -159,7 +191,7 @@ def update_order_status(order_sn):
         10: '待付款',
         20: '待配货',
         30: '配送中',
-        40: '待自提',
+        40: '已送达',
         50: '已完成',
         60: '已关闭'
     }.get(new_status, '未知')
@@ -175,6 +207,7 @@ def update_order_status(order_sn):
 
 @admin_bp.route('/categories', methods=['POST'])
 def create_category():
+    from models import Category
     data = request.get_json()
     if not data:
         return jsonify({"message": "Invalid request body"}), 400
@@ -198,6 +231,7 @@ def create_category():
 
 @admin_bp.route('/categories', methods=['GET'])
 def get_categories():
+    from models import Category
     categories = Category.query.order_by(Category.sort_order).all()
     output = []
     for cat in categories:
@@ -212,6 +246,7 @@ def get_categories():
 
 @admin_bp.route('/categories/<int:category_id>', methods=['PUT'])
 def update_category(category_id):
+    from models import Category
     category = Category.query.get_or_404(category_id)
     data = request.get_json()
 
@@ -225,6 +260,7 @@ def update_category(category_id):
 
 @admin_bp.route('/categories/<int:category_id>', methods=['GET'])
 def get_category(category_id):
+    from models import Category
     category = Category.query.get_or_404(category_id)
     return jsonify({
         'id': category.id,
@@ -236,6 +272,7 @@ def get_category(category_id):
 
 @admin_bp.route('/categories/<int:category_id>', methods=['DELETE'])
 def delete_category(category_id):
+    from models import Category
     category = Category.query.get_or_404(category_id)
     db.session.delete(category)
     db.session.commit()
@@ -245,6 +282,7 @@ def delete_category(category_id):
 
 @admin_bp.route('/products', methods=['POST'])
 def create_product():
+    from models import Product, ProductStock
     data = request.get_json()
     if not data:
         return jsonify({"message": "Invalid request body"}), 400
@@ -270,9 +308,8 @@ def create_product():
         sort_order=data.get('sort_order', 0)
     )
     db.session.add(product)
-    db.session.flush()  # 获取 product.id
+    db.session.flush()
 
-    # 同时创建库存记录
     stock = ProductStock(
         product_id=product.id,
         total_stock=data.get('total_stock', 0),
@@ -289,7 +326,7 @@ def create_product():
 
 @admin_bp.route('/products', methods=['GET'])
 def get_products():
-    # 支持按分类筛选
+    from models import Product
     category_id = request.args.get('category_id')
     is_active = request.args.get('is_active')
 
@@ -303,11 +340,6 @@ def get_products():
     products = query.order_by(Product.sort_order.desc(), Product.id.desc()).all()
     output = []
     for product in products:
-        stock_info = {
-            'total_stock': product.stock.total_stock if product.stock else 0,
-            'lock_stock': product.stock.lock_stock if product.stock else 0,
-            'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
-        }
         output.append({
             'id': product.id,
             'name': product.name,
@@ -322,7 +354,6 @@ def get_products():
             'is_recommend': product.is_recommend,
             'sort_order': product.sort_order,
             'sales_count': product.sales_count,
-            # 直接把库存字段放在主对象，方便管理后台显示
             'total_stock': product.stock.total_stock if product.stock else 0,
             'warning_stock': product.stock.warning_stock if product.stock else 10,
             'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
@@ -331,13 +362,8 @@ def get_products():
 
 @admin_bp.route('/products/<int:product_id>', methods=['GET'])
 def get_product(product_id):
+    from models import Product
     product = Product.query.get_or_404(product_id)
-    stock_info = {
-        'total_stock': product.stock.total_stock if product.stock else 0,
-        'lock_stock': product.stock.lock_stock if product.stock else 0,
-        'warning_stock': product.stock.warning_stock if product.stock else 10,
-        'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
-    }
     return jsonify({
         'id': product.id,
         'name': product.name,
@@ -353,7 +379,6 @@ def get_product(product_id):
         'is_recommend': product.is_recommend,
         'sort_order': product.sort_order,
         'sales_count': product.sales_count,
-        # 直接把库存字段放在主对象
         'total_stock': product.stock.total_stock if product.stock else 0,
         'warning_stock': product.stock.warning_stock if product.stock else 10,
         'lock_stock': product.stock.lock_stock if product.stock else 0,
@@ -362,6 +387,7 @@ def get_product(product_id):
 
 @admin_bp.route('/products/<int:product_id>', methods=['PUT'])
 def update_product(product_id):
+    from models import Product, ProductStock
     product = Product.query.get_or_404(product_id)
     data = request.get_json()
 
@@ -380,7 +406,6 @@ def update_product(product_id):
     product.is_recommend = data.get('is_recommend', product.is_recommend)
     product.sort_order = data.get('sort_order', product.sort_order)
     
-    # 同时更新库存
     if 'total_stock' in data or 'warning_stock' in data:
         stock = product.stock
         if not stock:
@@ -396,6 +421,7 @@ def update_product(product_id):
 
 @admin_bp.route('/products/<int:product_id>', methods=['DELETE'])
 def delete_product(product_id):
+    from models import Product
     product = Product.query.get_or_404(product_id)
     db.session.delete(product)
     db.session.commit()
@@ -405,16 +431,15 @@ def delete_product(product_id):
 
 @admin_bp.route('/products/<int:product_id>/stock', methods=['PUT'])
 def update_stock(product_id):
+    from models import Product, ProductStock
     product = Product.query.get_or_404(product_id)
     data = request.get_json()
 
     stock = product.stock
     if not stock:
-        # 如果没有库存记录，创建一个
         stock = ProductStock(product_id=product_id)
         db.session.add(stock)
 
-    # 更新库存
     stock.total_stock = data.get('total_stock', stock.total_stock)
     stock.warning_stock = data.get('warning_stock', stock.warning_stock)
 
@@ -427,7 +452,7 @@ def update_stock(product_id):
 
 @admin_bp.route('/products/<int:product_id>/stock/increase', methods=['POST'])
 def increase_stock(product_id):
-    """入库操作 - 增加库存"""
+    from models import Product, ProductStock
     product = Product.query.get_or_404(product_id)
     data = request.get_json()
 
@@ -452,7 +477,7 @@ def increase_stock(product_id):
 
 @admin_bp.route('/stock/overview', methods=['GET'])
 def get_stock_overview():
-    """获取库存概览，包括库存预警"""
+    from models import ProductStock
     stocks = ProductStock.query.all()
     warning_products = []
     normal_products = []
