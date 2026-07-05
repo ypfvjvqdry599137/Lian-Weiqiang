@@ -226,7 +226,7 @@ async function loadProducts() {
                     <p>库存: ${product.available_stock}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="editProduct(${product.id})">编辑</button>
+                    <button class="btn btn-sm btn-success" onclick="showProductModal(${product.id})">编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">删除</button>
                 </div>
             `;
@@ -322,7 +322,7 @@ async function loadCategories() {
                     <p>排序: ${category.sort_order} | ${category.is_active ? '已启用' : '已禁用'}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="editCategory(${category.id})">编辑</button>
+                    <button class="btn btn-sm btn-success" onclick="showCategoryModal(${category.id})">编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteCategory(${category.id})">删除</button>
                 </div>
             `;
@@ -406,7 +406,7 @@ async function loadDeliveryZones() {
                     <p>状态: ${zone.is_active ? '启用' : '禁用'}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="editDeliveryZone(${zone.id})">编辑</button>
+                    <button class="btn btn-sm btn-success" onclick="showDeliveryZoneModal(${zone.id})">编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteDeliveryZone(${zone.id})">删除</button>
                 </div>
             `;
