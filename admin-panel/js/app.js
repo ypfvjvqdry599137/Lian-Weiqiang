@@ -9,6 +9,12 @@ let selectedLat = null;
 
 // ==================== 地图相关函数 ====================
 function showMapPicker() {
+    // 检查是否加载了腾讯地图SDK
+    if (typeof TMap === 'undefined') {
+        alert('地图功能暂时不可用：需要先去腾讯地图申请 Key 并在 index.html 中配置！\n\n当前可手动输入经纬度，经纬度可从百度/高德地图查询。');
+        return;
+    }
+    
     document.getElementById('map-modal').classList.add('show');
     setTimeout(() => {
         if (!map) {
