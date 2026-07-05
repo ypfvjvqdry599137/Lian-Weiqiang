@@ -147,26 +147,31 @@
 
 .location-picker {
   width: 100%;
-  padding: 20rpx;
-  background: #f9f9f9;
-  border-radius: 10rpx;
+  padding: 30rpx 20rpx;
+  background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+  border: 2rpx dashed #4CAF50;
+  border-radius: 16rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 20rpx;
 }
 
 .location-text {
   flex: 1;
   font-size: 30rpx;
-  color: #666;
+  color: #4CAF50;
+  font-weight: 500;
 }
 
-.location-text:not(:empty) {
-  color: #333;
+.location-text:empty {
+  color: #666;
+  font-weight: normal;
 }
 
 .location-icon {
-  font-size: 36rpx;
+  font-size: 48rpx;
+  filter: drop-shadow(0 2rpx 4rpx rgba(76,175,80,0.2));
 }
 
 .default-switch {
