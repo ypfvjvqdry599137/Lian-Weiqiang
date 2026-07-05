@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>鲜配居 - 管理后台</title>
     <link rel="stylesheet" href="css/style.css">
+    <!-- 引入腾讯地图JS SDK -->
+    <script src="https://map.qq.com/api/gljs?v=1.exp&key=YOUR_TENCENT_MAP_KEY"></script>
 </head>
 <body>
     <div class="container">
@@ -186,7 +188,10 @@
                 </div>
                 <div class="form-group">
                     <label>中心经度</label>
-                    <input type="number" step="0.000001" id="zone-center-lng" required>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="number" step="0.000001" id="zone-center-lng" required style="flex:1;">
+                        <button type="button" class="btn btn-primary" onclick="showMapPicker()" style="flex:0 0 auto;">📍 地图选择</button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>中心纬度</label>
@@ -218,6 +223,20 @@
                 </div>
                 <button type="submit" class="btn btn-primary">保存</button>
             </form>
+        </div>
+    </div>
+
+    <!-- 地图选择弹窗 -->
+    <div id="map-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px; width: 90%;">
+            <span class="close" onclick="closeMapModal()">&times;</span>
+            <h2>选择配送中心点</h2>
+            <div id="map-container" style="width: 100%; height: 500px; margin: 20px 0;"></div>
+            <p style="color: #666; margin-bottom: 20px;">点击地图选择配送中心点</p>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" onclick="confirmMapPick()">确认选择</button>
+                <button class="btn" onclick="closeMapModal()">取消</button>
+            </div>
         </div>
     </div>
 

@@ -1,6 +1,72 @@
 // 配置后端API基础URL
 const BASE_URL = 'http://xianpeiju.site';
 
+// ==================== 地图相关变量 ====================
+let map = null;
+let marker = null;
+let selectedLng = null;
+let selectedLat = null;
+
+// ==================== 地图相关函数 ====================
+function showMapPicker() {
+    document.getElementById('map-modal').classList.add('show');
+    setTimeout(() => {
+        if (!map) {
+            // 初始化地图，默认定位到北京天安门
+            map = new TMap.Map('map-container', {
+                center: new TMap.LatLng(39.9042, 116.4074),
+                zoom: 12
+            });
+            // 监听地图点击事件
+            map.on('click', (evt) => {
+                const lat = evt.latLng.getLat().toFixed(6);
+                const lng = evt.latLng.getLng().toFixed(6);
+                selectedLat = lat;
+                selectedLng = lng;
+                // 更新或添加标记
+                if (!marker) {
+                    marker = new TMap.Marker({
+                        position: new TMap.LatLng(lat, lng),
+                        map: map
+                    });
+                } else {
+                    marker.setPosition(new TMap.LatLng(lat, lng));
+                }
+                // 移动地图中心到点击位置
+                map.setCenter(new TMap.LatLng(lat, lng));
+            });
+        }
+        // 如果已有经度纬度，先定位到那里
+        const currentLng = parseFloat(document.getElementById('zone-center-lng').value);
+        const currentLat = parseFloat(document.getElementById('zone-center-lat').value);
+        if (currentLng && currentLat) {
+            selectedLng = currentLng.toFixed(6);
+            selectedLat = currentLat.toFixed(6);
+            if (!marker) {
+                marker = new TMap.Marker({
+                    position: new TMap.LatLng(currentLat, currentLng),
+                    map: map
+                });
+            } else {
+                marker.setPosition(new TMap.LatLng(currentLat, currentLng));
+            }
+            map.setCenter(new TMap.LatLng(currentLat, currentLng));
+        }
+    }, 100);
+}
+
+function confirmMapPick() {
+    if (selectedLng && selectedLat) {
+        document.getElementById('zone-center-lng').value = selectedLng;
+        document.getElementById('zone-center-lat').value = selectedLat;
+    }
+    closeMapModal();
+}
+
+function closeMapModal() {
+    document.getElementById('map-modal').classList.remove('show');
+}
+
 // ==================== 辅助函数 ====================
 
 async function fetchData(url, method = 'GET', data = null, showAlert = false) {
