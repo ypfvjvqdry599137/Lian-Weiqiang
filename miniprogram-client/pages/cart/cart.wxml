@@ -10,7 +10,7 @@
   <view class="cart-list" wx:else>
     <view class="cart-item" wx:for="{{cartItems}}" wx:key="id">
       <view class="item-left">
-        <image src="{{item.product_image || '/images/placeholder.png'}}" class="item-img" />
+        <image src="{{item.product_image || ''}}" class="item-img" />
       </view>
       <view class="item-right">
         <view class="item-name">{{item.product_name}}</view>

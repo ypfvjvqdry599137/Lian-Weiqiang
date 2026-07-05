@@ -17,7 +17,7 @@
                 <li class="menu-item active" data-page="dashboard">首页概览</li>
                 <li class="menu-item" data-page="products">商品管理</li>
                 <li class="menu-item" data-page="categories">分类管理</li>
-                <li class="menu-item" data-page="stations">自提点管理</li>
+                <li class="menu-item" data-page="delivery-zones">配送区域</li>
                 <li class="menu-item" data-page="orders">订单管理</li>
             </ul>
         </nav>
@@ -40,7 +40,7 @@
                         <p id="stat-products" class="number">0</p>
                     </div>
                     <div class="stat-card">
-                        <h3>自提点数量</h3>
+                        <h3>配送区域</h3>
                         <p id="stat-stations" class="number">0</p>
                     </div>
                 </div>
@@ -64,13 +64,13 @@
                 <div id="categories-list" class="data-list"></div>
             </div>
 
-            <!-- 自提点管理 -->
-            <div id="page-stations" class="page">
+            <!-- 配送区域管理 -->
+            <div id="page-delivery-zones" class="page">
                 <div class="page-header">
-                    <h2>🏪 自提点管理</h2>
-                    <button class="btn btn-primary" onclick="showStationModal()">+ 添加自提点</button>
+                    <h2>📍 配送区域</h2>
+                    <button class="btn btn-primary" onclick="showDeliveryZoneModal()">+ 添加配送区域</button>
                 </div>
-                <div id="stations-list" class="data-list"></div>
+                <div id="delivery-zones-list" class="data-list"></div>
             </div>
 
             <!-- 订单管理 -->
@@ -81,7 +81,7 @@
                     <button class="tab" data-status="10">待付款</button>
                     <button class="tab" data-status="20">待配货</button>
                     <button class="tab" data-status="30">配送中</button>
-                    <button class="tab" data-status="40">待自提</button>
+                    <button class="tab" data-status="40">已送达</button>
                     <button class="tab" data-status="50">已完成</button>
                 </div>
                 <div id="orders-list" class="data-list"></div>
@@ -173,32 +173,48 @@
         </div>
     </div>
 
-    <!-- 自提点编辑弹窗 -->
-    <div id="station-modal" class="modal">
+    <!-- 配送区域编辑弹窗 -->
+    <div id="delivery-zone-modal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeModal('station-modal')">&times;</span>
-            <h2 id="station-modal-title">添加自提点</h2>
-            <form id="station-form">
-                <input type="hidden" id="station-id">
+            <span class="close" onclick="closeModal('delivery-zone-modal')">&times;</span>
+            <h2 id="delivery-zone-modal-title">添加配送区域</h2>
+            <form id="delivery-zone-form">
+                <input type="hidden" id="delivery-zone-id">
                 <div class="form-group">
-                    <label>自提点名称</label>
-                    <input type="text" id="station-name" required>
+                    <label>区域名称</label>
+                    <input type="text" id="zone-name" required>
                 </div>
                 <div class="form-group">
-                    <label>详细地址</label>
-                    <input type="text" id="station-address" required>
+                    <label>中心经度</label>
+                    <input type="number" step="0.000001" id="zone-center-lng" required>
+                </div>
+                <div class="form-group">
+                    <label>中心纬度</label>
+                    <input type="number" step="0.000001" id="zone-center-lat" required>
+                </div>
+                <div class="form-group">
+                    <label>配送半径（米）</label>
+                    <input type="number" id="zone-radius" value="3000" required>
+                </div>
+                <div class="form-group">
+                    <label>配送费（元）</label>
+                    <input type="number" step="0.01" id="zone-delivery-fee" value="5" required>
+                </div>
+                <div class="form-group">
+                    <label>预计送达时间</label>
+                    <input type="text" id="zone-delivery-time" value="30分钟" required>
                 </div>
                 <div class="form-group">
                     <label>合作商账号</label>
-                    <input type="text" id="station-merchant-user" required>
+                    <input type="text" id="zone-merchant-user">
                 </div>
                 <div class="form-group">
                     <label>合作商密码</label>
-                    <input type="password" id="station-merchant-pwd" required>
+                    <input type="password" id="zone-merchant-pwd">
                 </div>
-                <div class="form-group">
-                    <label>佣金比例（%）</label>
-                    <input type="number" step="0.01" id="station-commission" value="0">
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="zone-active" checked>
+                    <label>启用</label>
                 </div>
                 <button type="submit" class="btn btn-primary">保存</button>
             </form>

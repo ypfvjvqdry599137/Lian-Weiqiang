@@ -1,5 +1,5 @@
-// 配置后端 API 基础 URL
-const BASE_URL = 'http://xianpeiju.site'; // 替换为您的后端域名
+// 配置后端API基础URL
+const BASE_URL = 'http://xianpeiju.site';
 
 // ==================== 辅助函数 ====================
 
@@ -27,7 +27,6 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
                 const errorData = await response.json();
                 errorMsg = errorData.message || errorMsg;
             } catch (e) {
-                // 忽略JSON解析错误
             }
             throw new Error(errorMsg);
         }
@@ -54,7 +53,7 @@ function getOrderStatusText(status) {
         10: '待付款',
         20: '待配货',
         30: '配送中',
-        40: '待自提',
+        40: '已送达',
         50: '已完成',
         60: '已关闭'
     };
@@ -96,8 +95,8 @@ async function renderPage() {
         case 'categories':
             await loadCategories();
             break;
-        case 'stations':
-            await loadStations();
+        case 'delivery-zones':
+            await loadDeliveryZones();
             break;
         case 'orders':
             await loadOrders();
@@ -109,15 +108,14 @@ async function renderPage() {
 
 async function loadDashboardStats() {
     try {
-        // 先加载产品和站点数量
         const products = await fetchData('/admin/products');
         if(products) {
             document.getElementById('stat-products').textContent = products.products.length;
         }
         
-        const stations = await fetchData('/admin/stations');
-        if(stations) {
-            document.getElementById('stat-stations').textContent = stations.stations.length;
+        const zones = await fetchData('/admin/delivery-zones');
+        if(zones) {
+            document.getElementById('stat-stations').textContent = zones.zones.length;
         }
         
         const orders = await fetchData('/admin/orders');
@@ -133,8 +131,7 @@ async function loadDashboardStats() {
             document.getElementById('stat-today-revenue').textContent = `¥${todayRevenue.toFixed(2)}`;
         }
     } catch (e) {
-        console.error('Dashboard 加载失败', e);
-        // 不弹窗，保持界面显示
+        console.error('Dashboard加载失败', e);
     }
 }
 
@@ -170,11 +167,11 @@ async function showProductModal(productId = null) {
     const modal = document.getElementById('product-modal');
     const title = document.getElementById('product-modal-title');
     const form = document.getElementById('product-form');
-    form.reset(); // 重置表单
+    form.reset();
     document.getElementById('product-id').value = '';
     document.getElementById('product-recommend').checked = false;
-    document.getElementById('product-active').checked = true; // 默认上架
-    document.getElementById('product-warning-stock').value = 10; // 默认预警值
+    document.getElementById('product-active').checked = true;
+    document.getElementById('product-warning-stock').value = 10;
 
     if (productId) {
         title.textContent = '编辑商品';
@@ -268,7 +265,7 @@ async function showCategoryModal(categoryId = null) {
     const form = document.getElementById('category-form');
     form.reset();
     document.getElementById('category-id').value = '';
-    document.getElementById('category-active').checked = true; // 默认启用
+    document.getElementById('category-active').checked = true;
 
     if (categoryId) {
         title.textContent = '编辑分类';
@@ -316,89 +313,101 @@ async function deleteCategory(categoryId) {
     }
 }
 
-// ==================== 自提点管理 (Stations) ====================
+// ==================== 配送区域管理 (Delivery Zones) ====================
 
-async function loadStations() {
-    const stationsData = await fetchData('/admin/stations');
-    const stationsList = document.getElementById('stations-list');
-    stationsList.innerHTML = '';
+async function loadDeliveryZones() {
+    const zonesData = await fetchData('/admin/delivery-zones');
+    const zonesList = document.getElementById('delivery-zones-list');
+    zonesList.innerHTML = '';
 
-    if (stationsData && stationsData.stations) {
-        stationsData.stations.forEach(station => {
+    if (zonesData && zonesData.zones) {
+        zonesData.zones.forEach(zone => {
             const card = document.createElement('div');
             card.classList.add('data-card');
             card.innerHTML = `
                 <div class="data-card-content">
-                    <h4>${station.station_name}</h4>
-                    <p>${station.address}</p>
-                    <p>合作商: ${station.merchant_username} | 佣金: ${station.commission_rate}%</p>
+                    <h4>${zone.zone_name}</h4>
+                    <p>中心: ${zone.center_lng}, ${zone.center_lat}</p>
+                    <p>配送半径: ${zone.radius}米 | 配送费: ¥${zone.delivery_fee}</p>
+                    <p>预计送达: ${zone.delivery_time}</p>
+                    <p>合作商: ${zone.merchant_username || '无'}</p>
+                    <p>状态: ${zone.is_active ? '启用' : '禁用'}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="editStation(${station.id})">编辑</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteStation(${station.id})">删除</button>
+                    <button class="btn btn-sm btn-success" onclick="editDeliveryZone(${zone.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteDeliveryZone(${zone.id})">删除</button>
                 </div>
             `;
-            stationsList.appendChild(card);
+            zonesList.appendChild(card);
         });
     }
 }
 
-async function showStationModal(stationId = null) {
-    const modal = document.getElementById('station-modal');
-    const title = document.getElementById('station-modal-title');
-    const form = document.getElementById('station-form');
+async function showDeliveryZoneModal(zoneId = null) {
+    const modal = document.getElementById('delivery-zone-modal');
+    const title = document.getElementById('delivery-zone-modal-title');
+    const form = document.getElementById('delivery-zone-form');
     form.reset();
-    document.getElementById('station-id').value = '';
+    document.getElementById('delivery-zone-id').value = '';
+    document.getElementById('zone-active').checked = true;
 
-    if (stationId) {
-        title.textContent = '编辑自提点';
-        const station = await fetchData(`/admin/stations/${stationId}`);
-        if (station) {
-            document.getElementById('station-id').value = station.id;
-            document.getElementById('station-name').value = station.station_name;
-            document.getElementById('station-address').value = station.address;
-            document.getElementById('station-merchant-user').value = station.merchant_username;
-            // document.getElementById('station-merchant-pwd').value = station.merchant_password; // 密码不回显
-            document.getElementById('station-commission').value = station.commission_rate;
+    if (zoneId) {
+        title.textContent = '编辑配送区域';
+        const zone = await fetchData(`/admin/delivery-zones/${zoneId}`);
+        if (zone) {
+            document.getElementById('delivery-zone-id').value = zone.id;
+            document.getElementById('zone-name').value = zone.zone_name;
+            document.getElementById('zone-center-lng').value = zone.center_lng;
+            document.getElementById('zone-center-lat').value = zone.center_lat;
+            document.getElementById('zone-radius').value = zone.radius;
+            document.getElementById('zone-delivery-fee').value = zone.delivery_fee;
+            document.getElementById('zone-delivery-time').value = zone.delivery_time;
+            document.getElementById('zone-merchant-user').value = zone.merchant_username || '';
+            document.getElementById('zone-active').checked = zone.is_active;
         }
     } else {
-        title.textContent = '添加自提点';
+        title.textContent = '添加配送区域';
     }
-    showModal('station-modal');
+    showModal('delivery-zone-modal');
 }
 
-document.getElementById('station-form').addEventListener('submit', async function(event) {
+document.getElementById('delivery-zone-form').addEventListener('submit', async function(event) {
     event.preventDefault();
-    const stationId = document.getElementById('station-id').value;
-    const method = stationId ? 'PUT' : 'POST';
-    const url = stationId ? `/admin/stations/${stationId}` : '/admin/stations';
+    const zoneId = document.getElementById('delivery-zone-id').value;
+    const method = zoneId ? 'PUT' : 'POST';
+    const url = zoneId ? `/admin/delivery-zones/${zoneId}` : '/admin/delivery-zones';
     const data = {
-        station_name: document.getElementById('station-name').value,
-        address: document.getElementById('station-address').value,
-        merchant_username: document.getElementById('station-merchant-user').value,
-        merchant_password: document.getElementById('station-merchant-pwd').value, // 新增或修改密码
-        commission_rate: parseFloat(document.getElementById('station-commission').value) || 0,
+        zone_name: document.getElementById('zone-name').value,
+        center_lng: parseFloat(document.getElementById('zone-center-lng').value),
+        center_lat: parseFloat(document.getElementById('zone-center-lat').value),
+        radius: parseInt(document.getElementById('zone-radius').value),
+        delivery_fee: parseFloat(document.getElementById('zone-delivery-fee').value),
+        delivery_time: document.getElementById('zone-delivery-time').value,
+        merchant_username: document.getElementById('zone-merchant-user').value || null,
+        merchant_password: document.getElementById('zone-merchant-pwd').value || null,
+        is_active: document.getElementById('zone-active').checked,
     };
     
-    // 编辑时如果密码为空，则不发送密码字段
     if (method === 'PUT' && !data.merchant_password) {
         delete data.merchant_password;
     }
 
     const result = await fetchData(url, method, data);
     if (result) {
-        alert('自提点保存成功！');
-        closeModal('station-modal');
-        await loadStations();
+        alert('配送区域保存成功！');
+        closeModal('delivery-zone-modal');
+        await loadDeliveryZones();
+        await loadDashboardStats();
     }
 });
 
-async function deleteStation(stationId) {
-    if (confirm('确定要删除此自提点吗？')) {
-        const result = await fetchData(`/admin/stations/${stationId}`, 'DELETE');
+async function deleteDeliveryZone(zoneId) {
+    if (confirm('确定要删除此配送区域吗？')) {
+        const result = await fetchData(`/admin/delivery-zones/${zoneId}`, 'DELETE');
         if (result) {
-            alert('自提点删除成功！');
-            await loadStations();
+            alert('配送区域删除成功！');
+            await loadDeliveryZones();
+            await loadDashboardStats();
         }
     }
 }
@@ -435,9 +444,9 @@ async function loadOrders() {
             card.innerHTML = `
                 <div class="data-card-content">
                     <h4>订单号: ${order.order_sn} <span style="float:right;color:#666;">${getOrderStatusText(order.order_status)}</span></h4>
-                    <p>自提点ID: ${order.station_id} | 总金额: ¥${order.total_amount}</p>
+                    <p>配送区域: ${order.zone_id} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee}</p>
                     <p>收货人: ${order.receiver_name} | 电话: ${order.receiver_phone}</p>
-                    <p>自提时间: ${order.pickup_time}</p>
+                    <p>收货地址: ${order.receiver_address}</p>
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                         ${itemsHtml}
                     </div>
@@ -445,7 +454,6 @@ async function loadOrders() {
                 </div>
                 <div class="data-card-actions">
                     <button class="btn btn-sm btn-success" onclick="editOrderStatus('${order.order_sn}')">修改状态</button>
-                    <!-- <button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.order_sn}')">删除</button> -->
                 </div>
             `;
             ordersList.appendChild(card);
@@ -454,13 +462,13 @@ async function loadOrders() {
 }
 
 async function editOrderStatus(orderSn) {
-    const newStatus = prompt('请输入新的订单状态 (10=待付款, 20=待配货, 30=配送中, 40=待自提, 50=已完成, 60=已关闭):');
+    const newStatus = prompt('请输入新的订单状态 (10=待付款, 20=待配货, 30=配送中, 40=已送达, 50=已完成, 60=已关闭):');
     if (newStatus && !isNaN(newStatus)) {
         const result = await fetchData(`/admin/orders/${orderSn}/status`, 'PUT', { status: parseInt(newStatus) });
         if (result) {
             alert('订单状态更新成功！');
             await loadOrders();
-            await loadDashboardStats(); // 刷新仪表盘
+            await loadDashboardStats();
         }
     }
 }

@@ -31,7 +31,7 @@
   <view class="card">
     <view class="card-title">商品清单</view>
     <view class="product-item" wx:for="{{order.items}}" wx:key="product_name">
-      <image src="{{item.product_image || '/images/placeholder.png'}}" class="product-img" />
+      <image src="{{item.product_image || ''}}" class="product-img" />
       <view class="product-info">
         <view class="product-name">{{item.product_name}}</view>
         <view class="product-meta">
