@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鲜配居 - 供应商后台</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* 可以根据需要添加供应商后台特有的样式 */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 id="supplier-dashboard-title">🏭 供应商后台 - <span></span></h1>
+            <button class="btn btn-danger" onclick="logout()">退出登录</button>
+        </header>
+
+        <nav class="sidebar">
+            <ul class="menu">
+                <li class="menu-item active" data-page="supplier-orders">备货单管理</li>
+                <li class="menu-item" data-page="supplier-ingredients">原料管理</li>
+            </ul>
+        </nav>
+
+        <main class="content">
+            <!-- 备货单管理 -->
+            <div id="page-supplier-orders" class="page active">
+                <h2>📋 备货单管理</h2>
+                <div class="tabs">
+                    <button class="tab active" data-status="all">全部</button>
+                    <button class="tab" data-status="10">待备货</button>
+                    <button class="tab" data-status="20">备货中</button>
+                    <button class="tab" data-status="30">已完成</button>
+                    <button class="tab" data-status="40">已取消</button>
+                </div>
+                <div id="supplier-orders-list" class="data-list"></div>
+            </div>
+
+            <!-- 原料管理 -->
+            <div id="page-supplier-ingredients" class="page">
+                <div class="page-header">
+                    <h2>🥬 我的原料</h2>
+                    <button class="btn btn-primary" onclick="showSupplierIngredientModal()">+ 添加原料</button>
+                </div>
+                <div id="supplier-ingredients-list" class="data-list"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 供应商原料编辑弹窗 -->
+    <div id="supplier-ingredient-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('supplier-ingredient-modal')">&times;</span>
+            <h2 id="supplier-ingredient-modal-title">添加原料</h2>
+            <form id="supplier-ingredient-form">
+                <input type="hidden" id="si-ingredient-id">
+                <div class="form-group">
+                    <label>原料名称</label>
+                    <input type="text" id="si-ingredient-name" required>
+                </div>
+                <div class="form-group">
+                    <label>单位</label>
+                    <input type="text" id="si-ingredient-unit" value="斤" placeholder="如：斤、个、盒">
+                </div>
+                <div class="form-group">
+                    <label>分类</label>
+                    <select id="si-ingredient-category-id"></select>
+                </div>
+                <div class="form-group">
+                    <label>价格</label>
+                    <input type="number" step="0.01" id="si-ingredient-price">
+                </div>
+                <div class="form-group">
+                    <label>库存</label>
+                    <input type="number" id="si-ingredient-stock" value="0">
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="si-ingredient-active" checked>
+                    <label>启用</label>
+                </div>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://xianpeiju.site';
+        let currentSupplierId = localStorage.getItem('supplier_id');
+        let currentSupplierName = localStorage.getItem('supplier_name');
+
+        if (!currentSupplierId || !currentSupplierName) {
+            alert('请先登录！');
+            window.location.href = 'supplier_login.html';
+        }
+
+        document.getElementById('supplier-dashboard-title').querySelector('span').textContent = currentSupplierName;
+
+        function logout() {
+            localStorage.removeItem('supplier_id');
+            localStorage.removeItem('supplier_name');
+            window.location.href = 'supplier_login.html';
+        }
+
+        // ==================== 辅助函数 ====================
+        async function fetchData(url, method = 'GET', data = null, showAlert = false) {
+            const fullUrl = `${BASE_URL}${url}`;
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            };
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(fullUrl, options);
+                if (!response.ok) {
+                    let errorMsg = `HTTP error! status: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.message || errorMsg;
+                    } catch (e) {}
+                    throw new Error(errorMsg);
+                }
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error('请求失败:', error);
+                if (showAlert) {
+                    alert('操作失败: ' + error.message);
+                }
+                return null;
+            }
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        }
+
+        function showModal(id) {
+            document.getElementById(id).classList.add('show');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+
+        // ==================== 页面导航 ====================
+        let currentPage = 'supplier-orders';
+
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', function() {
+                document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+                currentPage = this.dataset.page;
+                renderPage();
+            });
+        });
+
+        async function renderPage() {
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.getElementById(`page-${currentPage}`).classList.add('active');
+
+            switch (currentPage) {
+                case 'supplier-orders':
+                    await loadSupplierOrders();
+                    break;
+                case 'supplier-ingredients':
+                    await loadSupplierIngredients();
+                    break;
+            }
+        }
+
+        // ==================== 备货单管理 ====================
+
+        let currentSupplierOrderStatusFilter = 'all';
+
+        document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                currentSupplierOrderStatusFilter = this.dataset.status;
+                loadSupplierOrders();
+            });
+        });
+
+        function getSupplierOrderStatusText(status) {
+            const statusMap = {
+                10: '待备货',
+                20: '备货中',
+                30: '已完成',
+                40: '已取消'
+            };
+            return statusMap[status] || '未知';
+        }
+
+        async function loadSupplierOrders() {
+            let url = `/supplier/orders?supplier_id=${currentSupplierId}`;
+            if (currentSupplierOrderStatusFilter !== 'all') {
+                url += `&status=${currentSupplierOrderStatusFilter}`;
+            }
+            const ordersData = await fetchData(url);
+            const ordersList = document.getElementById('supplier-orders-list');
+            ordersList.innerHTML = '';
+
+            if (ordersData && ordersData.supplier_orders) {
+                ordersData.supplier_orders.forEach(order => {
+                    const card = document.createElement('div');
+                    card.classList.add('data-card', `status-${order.status}`);
+                    const itemsHtml = order.items ? order.items.map(item => `
+                        <p>${item.ingredient_name} x ${item.quantity} ${item.unit}</p>
+                    `).join('') : '';
+                    card.innerHTML = `
+                        <div class="data-card-content">
+                            <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
+                            <p>关联订单号: ${order.order_sn}</p>
+                            <p>备注: ${order.notes || '无'}</p>
+                            <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
+                                ${itemsHtml}
+                            </div>
+                            <p style="font-size:12px;color:#999;margin-top:10px;">创建时间: ${formatDate(order.created_at)}</p>
+                        </div>
+                        <div class="data-card-actions">
+                            <button class="btn btn-sm btn-success" onclick="editSupplierOrderStatus(${order.id})">修改状态</button>
+                        </div>
+                    `;
+                    ordersList.appendChild(card);
+                });
+            }
+        }
+
+        async function editSupplierOrderStatus(orderId) {
+            const newStatus = prompt('请输入新的备货单状态 (20=备货中, 30=已完成):');
+            if (newStatus && !isNaN(newStatus)) {
+                const result = await fetchData(`/supplier/orders/${orderId}/status?supplier_id=${currentSupplierId}`, 'PUT', { status: parseInt(newStatus) });
+                if (result) {
+                    alert('备货单状态更新成功！');
+                    await loadSupplierOrders();
+                }
+            }
+        }
+
+        // ==================== 原料管理 ====================
+
+        async function loadSupplierIngredients() {
+            const ingredientsData = await fetchData(`/supplier/ingredients?supplier_id=${currentSupplierId}`);
+            const ingredientsList = document.getElementById('supplier-ingredients-list');
+            ingredientsList.innerHTML = '';
+
+            if (ingredientsData && ingredientsData.ingredients) {
+                ingredientsData.ingredients.forEach(ingredient => {
+                    const card = document.createElement('div');
+                    card.classList.add('data-card');
+                    card.innerHTML = `
+                        <div class="data-card-content">
+                            <h4>${ingredient.name}</h4>
+                            <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'}</p>
+                            <p>价格: ${ingredient.price ? '¥' + ingredient.price : '未设置'} | 库存: ${ingredient.stock}</p>
+                            <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
+                        </div>
+                        <div class="data-card-actions">
+                            <button class="btn btn-sm btn-success" onclick="showSupplierIngredientModal(${ingredient.id})">编辑</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteSupplierIngredient(${ingredient.id})">删除</button>
+                        </div>
+                    `;
+                    ingredientsList.appendChild(card);
+                });
+            }
+        }
+
+        async function showSupplierIngredientModal(ingredientId = null) {
+            const modal = document.getElementById('supplier-ingredient-modal');
+            const title = document.getElementById('supplier-ingredient-modal-title');
+            const form = document.getElementById('supplier-ingredient-form');
+            form.reset();
+            document.getElementById('si-ingredient-id').value = '';
+            document.getElementById('si-ingredient-active').checked = true;
+            document.getElementById('si-ingredient-unit').value = '斤';
+            document.getElementById('si-ingredient-stock').value = '0';
+
+            // 加载分类选项
+            await loadCategoriesForSupplierIngredientSelect();
+
+            if (ingredientId) {
+                title.textContent = '编辑原料';
+                const ingredient = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`);
+                if (ingredient) {
+                    document.getElementById('si-ingredient-id').value = ingredient.id;
+                    document.getElementById('si-ingredient-name').value = ingredient.name;
+                    document.getElementById('si-ingredient-unit').value = ingredient.unit;
+                    document.getElementById('si-ingredient-category-id').value = ingredient.category_id || '';
+                    document.getElementById('si-ingredient-price').value = ingredient.price || '';
+                    document.getElementById('si-ingredient-stock').value = ingredient.stock;
+                    document.getElementById('si-ingredient-active').checked = ingredient.is_active;
+                }
+            } else {
+                title.textContent = '添加原料';
+            }
+            showModal('supplier-ingredient-modal');
+        }
+
+        async function loadCategoriesForSupplierIngredientSelect() {
+            const categoriesData = await fetchData('/admin/categories'); // 供应商应该能看到所有分类
+            const select = document.getElementById('si-ingredient-category-id');
+            select.innerHTML = '<option value="">请选择分类</option>';
+            if (categoriesData && categoriesData.categories) {
+                categoriesData.categories.forEach(c => {
+                    const option = document.createElement('option');
+                    option.value = c.id;
+                    option.textContent = c.name;
+                    select.appendChild(option);
+                });
+            }
+        }
+
+        document.getElementById('supplier-ingredient-form').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const ingredientId = document.getElementById('si-ingredient-id').value;
+            const method = ingredientId ? 'PUT' : 'POST';
+            const url = ingredientId ? `/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}` : `/supplier/ingredients?supplier_id=${currentSupplierId}`;
+            const data = {
+                name: document.getElementById('si-ingredient-name').value,
+                unit: document.getElementById('si-ingredient-unit').value,
+                category_id: document.getElementById('si-ingredient-category-id').value ? parseInt(document.getElementById('si-ingredient-category-id').value) : null,
+                price: document.getElementById('si-ingredient-price').value ? parseFloat(document.getElementById('si-ingredient-price').value) : null,
+                stock: parseInt(document.getElementById('si-ingredient-stock').value) || 0,
+                is_active: document.getElementById('si-ingredient-active').checked,
+            };
+
+            const result = await fetchData(url, method, data);
+            if (result) {
+                alert('原料保存成功！');
+                closeModal('supplier-ingredient-modal');
+                await loadSupplierIngredients();
+            }
+        });
+
+        async function deleteSupplierIngredient(ingredientId) {
+            if (confirm('确定要删除此原料吗？')) {
+                const result = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`, 'DELETE');
+                if (result) {
+                    alert('原料删除成功！');
+                    await loadSupplierIngredients();
+                }
+            }
+        }
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            renderPage();
+        });
+
+    </script>
+</body>
+</html>
