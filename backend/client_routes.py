@@ -384,6 +384,65 @@ def remove_from_cart(cart_id):
 # 5. 订单管理API（配送模式）
 # ============================================
 
+# ============================================
+# 工具函数：将订单拆分为供应商备货单
+# ============================================
+def split_order_to_supplier_orders(order_sn):
+    from models import OrderMaster, SupplierOrder, SupplierOrderItem
+    
+    order = OrderMaster.query.filter_by(order_sn=order_sn).first()
+    if not order:
+        return
+    
+    # 按供应商分组统计所需原料
+    supplier_ingredients = {}
+    
+    for order_item in order.items:
+        product = order_item.product
+        if not product:
+            continue
+        
+        # 获取该成品所需的所有原料
+        for pi in product.ingredients:
+            ingredient = pi.ingredient
+            if not ingredient or not ingredient.supplier:
+                continue
+            
+            supplier_id = ingredient.supplier.id
+            if supplier_id not in supplier_ingredients:
+                supplier_ingredients[supplier_id] = []
+            
+            # 计算所需原料总量 = 成品数量 × 每份成品所需原料量
+            total_quantity = pi.quantity_needed * order_item.quantity
+            
+            supplier_ingredients[supplier_id].append({
+                'ingredient': ingredient,
+                'quantity': total_quantity
+            })
+    
+    # 为每个供应商创建备货单
+    for supplier_id, items in supplier_ingredients.items():
+        supplier_order = SupplierOrder(
+            order_sn=order_sn,
+            supplier_id=supplier_id,
+            status=10,  # 待备货
+            notes=f'订单 {order_sn} 所需原料'
+        )
+        db.session.add(supplier_order)
+        db.session.flush()  # 为了获取 supplier_order.id
+        
+        # 创建备货单项
+        for item in items:
+            soi = SupplierOrderItem(
+                supplier_order_id=supplier_order.id,
+                ingredient_id=item['ingredient'].id,
+                ingredient_name=item['ingredient'].name,
+                quantity=item['quantity'],
+                unit=item['ingredient'].unit
+            )
+            db.session.add(soi)
+
+
 @client_bp.route('/orders', methods=['POST'])
 def create_order():
     from models import Cart, UserAddress, Product, OrderMaster, OrderItem
@@ -581,12 +640,15 @@ def pay_order(order_sn):
             product.stock.lock_stock -= item.quantity
             product.sales_count += item.quantity
     
+    # 自动拆分为供应商备货单
+    split_order_to_supplier_orders(order_sn)
+    
     db.session.commit()
     return jsonify({'message': '支付成功'})
 
 @client_bp.route('/orders/<order_sn>/cancel', methods=['POST'])
 def cancel_order(order_sn):
-    from models import OrderMaster, Product
+    from models import OrderMaster, Product, SupplierOrder
     user = get_or_create_test_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
     
@@ -601,6 +663,11 @@ def cancel_order(order_sn):
                 product.stock.lock_stock -= item.quantity
             elif order.order_status == 20:
                 product.stock.total_stock += item.quantity
+    
+    # 取消相关的供应商备货单
+    for so in order.supplier_orders:
+        if so.status in [10, 20]:  # 只有待备货或备货中的可以取消
+            so.status = 40  # 已取消
     
     order.order_status = 60
     db.session.commit()

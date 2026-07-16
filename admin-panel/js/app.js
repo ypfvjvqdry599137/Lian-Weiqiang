@@ -161,6 +161,12 @@ async function renderPage() {
         case 'dashboard':
             await loadDashboardStats();
             break;
+        case 'suppliers':
+            await loadSuppliers();
+            break;
+        case 'ingredients':
+            await loadIngredients();
+            break;
         case 'products':
             await loadProducts();
             break;
@@ -169,6 +175,9 @@ async function renderPage() {
             break;
         case 'delivery-zones':
             await loadDeliveryZones();
+            break;
+        case 'supplier-orders':
+            await loadSupplierOrders();
             break;
         case 'orders':
             await loadOrders();
@@ -226,6 +235,7 @@ async function loadProducts() {
                     <p>库存: ${product.available_stock}</p>
                 </div>
                 <div class="data-card-actions">
+                    <button class="btn btn-sm btn-primary" onclick="showProductIngredientsModal(${product.id})">配置原料</button>
                     <button class="btn btn-sm btn-success" onclick="showProductModal(${product.id})">编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">删除</button>
                 </div>
@@ -541,6 +551,375 @@ async function editOrderStatus(orderSn) {
             alert('订单状态更新成功！');
             await loadOrders();
             await loadDashboardStats();
+        }
+    }
+}
+
+// ==================== 供应商管理 (Suppliers) ====================
+
+async function loadSuppliers() {
+    const suppliersData = await fetchData('/admin/suppliers');
+    const suppliersList = document.getElementById('suppliers-list');
+    suppliersList.innerHTML = '';
+
+    if (suppliersData && suppliersData.suppliers) {
+        suppliersData.suppliers.forEach(supplier => {
+            const card = document.createElement('div');
+            card.classList.add('data-card');
+            card.innerHTML = `
+                <div class="data-card-content">
+                    <h4>${supplier.name}</h4>
+                    <p>联系人: ${supplier.contact_person || '无'} | 电话: ${supplier.phone || '无'}</p>
+                    <p>登录账号: ${supplier.username}</p>
+                    <p>状态: ${supplier.is_active ? '已启用' : '已禁用'}</p>
+                    <p style="font-size:12px;color:#999;">创建时间: ${formatDate(supplier.created_at)}</p>
+                </div>
+                <div class="data-card-actions">
+                    <button class="btn btn-sm btn-success" onclick="showSupplierModal(${supplier.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteSupplier(${supplier.id})">删除</button>
+                </div>
+            `;
+            suppliersList.appendChild(card);
+        });
+    }
+}
+
+async function showSupplierModal(supplierId = null) {
+    const modal = document.getElementById('supplier-modal');
+    const title = document.getElementById('supplier-modal-title');
+    const form = document.getElementById('supplier-form');
+    form.reset();
+    document.getElementById('supplier-id').value = '';
+    document.getElementById('supplier-active').checked = true;
+
+    if (supplierId) {
+        title.textContent = '编辑供应商';
+        const supplier = await fetchData(`/admin/suppliers/${supplierId}`);
+        if (supplier) {
+            document.getElementById('supplier-id').value = supplier.id;
+            document.getElementById('supplier-name').value = supplier.name;
+            document.getElementById('supplier-contact').value = supplier.contact_person || '';
+            document.getElementById('supplier-phone').value = supplier.phone || '';
+            document.getElementById('supplier-username').value = supplier.username;
+            document.getElementById('supplier-active').checked = supplier.is_active;
+        }
+    } else {
+        title.textContent = '添加供应商';
+    }
+    showModal('supplier-modal');
+}
+
+document.getElementById('supplier-form').addEventListener('submit', async function(event) {
+    event.preventDefault();
+    const supplierId = document.getElementById('supplier-id').value;
+    const method = supplierId ? 'PUT' : 'POST';
+    const url = supplierId ? `/admin/suppliers/${supplierId}` : '/admin/suppliers';
+    const data = {
+        name: document.getElementById('supplier-name').value,
+        contact_person: document.getElementById('supplier-contact').value || null,
+        phone: document.getElementById('supplier-phone').value || null,
+        username: document.getElementById('supplier-username').value,
+        is_active: document.getElementById('supplier-active').checked,
+    };
+    const password = document.getElementById('supplier-password').value;
+    if (password) {
+        data.password = password;
+    }
+
+    const result = await fetchData(url, method, data);
+    if (result) {
+        alert('供应商保存成功！');
+        closeModal('supplier-modal');
+        await loadSuppliers();
+    }
+});
+
+async function deleteSupplier(supplierId) {
+    if (confirm('确定要删除此供应商吗？')) {
+        const result = await fetchData(`/admin/suppliers/${supplierId}`, 'DELETE');
+        if (result) {
+            alert('供应商删除成功！');
+            await loadSuppliers();
+        }
+    }
+}
+
+// ==================== 原料管理 (Ingredients) ====================
+
+async function loadIngredients() {
+    const ingredientsData = await fetchData('/admin/ingredients');
+    const ingredientsList = document.getElementById('ingredients-list');
+    ingredientsList.innerHTML = '';
+
+    if (ingredientsData && ingredientsData.ingredients) {
+        ingredientsData.ingredients.forEach(ingredient => {
+            const card = document.createElement('div');
+            card.classList.add('data-card');
+            card.innerHTML = `
+                <div class="data-card-content">
+                    <h4>${ingredient.name}</h4>
+                    <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'}</p>
+                    <p>供应商: ${ingredient.supplier_name || '未知'}</p>
+                    <p>价格: ${ingredient.price ? '¥' + ingredient.price : '未设置'} | 库存: ${ingredient.stock}</p>
+                    <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
+                </div>
+                <div class="data-card-actions">
+                    <button class="btn btn-sm btn-success" onclick="showIngredientModal(${ingredient.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteIngredient(${ingredient.id})">删除</button>
+                </div>
+            `;
+            ingredientsList.appendChild(card);
+        });
+    }
+}
+
+async function showIngredientModal(ingredientId = null) {
+    const modal = document.getElementById('ingredient-modal');
+    const title = document.getElementById('ingredient-modal-title');
+    const form = document.getElementById('ingredient-form');
+    form.reset();
+    document.getElementById('ingredient-id').value = '';
+    document.getElementById('ingredient-active').checked = true;
+    document.getElementById('ingredient-unit').value = '斤';
+    document.getElementById('ingredient-stock').value = '0';
+
+    // 加载供应商和分类选项
+    await loadSuppliersForSelect();
+    await loadCategoriesForSelect();
+
+    if (ingredientId) {
+        title.textContent = '编辑原料';
+        const ingredient = await fetchData(`/admin/ingredients/${ingredientId}`);
+        if (ingredient) {
+            document.getElementById('ingredient-id').value = ingredient.id;
+            document.getElementById('ingredient-name').value = ingredient.name;
+            document.getElementById('ingredient-unit').value = ingredient.unit;
+            document.getElementById('ingredient-supplier-id').value = ingredient.supplier_id;
+            document.getElementById('ingredient-category-id').value = ingredient.category_id || '';
+            document.getElementById('ingredient-price').value = ingredient.price || '';
+            document.getElementById('ingredient-stock').value = ingredient.stock;
+            document.getElementById('ingredient-active').checked = ingredient.is_active;
+        }
+    } else {
+        title.textContent = '添加原料';
+    }
+    showModal('ingredient-modal');
+}
+
+async function loadSuppliersForSelect() {
+    const suppliersData = await fetchData('/admin/suppliers');
+    const select = document.getElementById('ingredient-supplier-id');
+    select.innerHTML = '<option value="">请选择供应商</option>';
+    if (suppliersData && suppliersData.suppliers) {
+        suppliersData.suppliers.forEach(s => {
+            const option = document.createElement('option');
+            option.value = s.id;
+            option.textContent = s.name;
+            select.appendChild(option);
+        });
+    }
+}
+
+async function loadCategoriesForSelect() {
+    const categoriesData = await fetchData('/admin/categories');
+    const select1 = document.getElementById('ingredient-category-id');
+    select1.innerHTML = '<option value="">请选择分类</option>';
+    if (categoriesData && categoriesData.categories) {
+        categoriesData.categories.forEach(c => {
+            const option1 = document.createElement('option');
+            option1.value = c.id;
+            option1.textContent = c.name;
+            select1.appendChild(option1);
+        });
+    }
+}
+
+document.getElementById('ingredient-form').addEventListener('submit', async function(event) {
+    event.preventDefault();
+    const ingredientId = document.getElementById('ingredient-id').value;
+    const method = ingredientId ? 'PUT' : 'POST';
+    const url = ingredientId ? `/admin/ingredients/${ingredientId}` : '/admin/ingredients';
+    const data = {
+        name: document.getElementById('ingredient-name').value,
+        unit: document.getElementById('ingredient-unit').value,
+        supplier_id: parseInt(document.getElementById('ingredient-supplier-id').value),
+        category_id: document.getElementById('ingredient-category-id').value ? parseInt(document.getElementById('ingredient-category-id').value) : null,
+        price: document.getElementById('ingredient-price').value ? parseFloat(document.getElementById('ingredient-price').value) : null,
+        stock: parseInt(document.getElementById('ingredient-stock').value) || 0,
+        is_active: document.getElementById('ingredient-active').checked,
+    };
+
+    const result = await fetchData(url, method, data);
+    if (result) {
+        alert('原料保存成功！');
+        closeModal('ingredient-modal');
+        await loadIngredients();
+    }
+});
+
+async function deleteIngredient(ingredientId) {
+    if (confirm('确定要删除此原料吗？')) {
+        const result = await fetchData(`/admin/ingredients/${ingredientId}`, 'DELETE');
+        if (result) {
+            alert('原料删除成功！');
+            await loadIngredients();
+        }
+    }
+}
+
+// ==================== 商品原料配置 (Product Ingredients) ====================
+
+let currentProductIdForIngredients = null;
+
+async function showProductIngredientsModal(productId) {
+    currentProductIdForIngredients = productId;
+    document.getElementById('pi-product-id').value = productId;
+    
+    // 加载原料选项
+    await loadIngredientsForPiSelect();
+    
+    // 加载已配置的原料
+    await loadProductIngredients();
+    
+    showModal('product-ingredients-modal');
+}
+
+async function loadIngredientsForPiSelect() {
+    const ingredientsData = await fetchData('/admin/ingredients');
+    const select = document.getElementById('pi-ingredient-id');
+    select.innerHTML = '<option value="">请选择原料</option>';
+    if (ingredientsData && ingredientsData.ingredients) {
+        ingredientsData.ingredients.forEach(i => {
+            const option = document.createElement('option');
+            option.value = i.id;
+            option.textContent = `${i.name} (${i.supplier_name || '未知供应商'})`;
+            select.appendChild(option);
+        });
+    }
+}
+
+async function loadProductIngredients() {
+    if (!currentProductIdForIngredients) return;
+    
+    const data = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`);
+    const list = document.getElementById('product-ingredients-list');
+    list.innerHTML = '';
+    
+    if (data && data.ingredients) {
+        data.ingredients.forEach(pi => {
+            const item = document.createElement('div');
+            item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #eee;border-radius:4px;margin-bottom:10px;';
+            item.innerHTML = `
+                <div>
+                    <strong>${pi.ingredient_name}</strong>
+                    <span style="color:#666;margin-left:10px;">${pi.quantity_needed} ${pi.ingredient_unit} / 份成品</span>
+                    <span style="color:#999;margin-left:10px;">供应商: ${pi.supplier_name || '未知'}</span>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="deleteProductIngredient(${pi.id})">删除</button>
+            `;
+            list.appendChild(item);
+        });
+    }
+}
+
+async function addProductIngredient() {
+    const ingredientId = document.getElementById('pi-ingredient-id').value;
+    const quantity = document.getElementById('pi-quantity').value;
+    
+    if (!ingredientId || !quantity) {
+        alert('请选择原料并填写数量！');
+        return;
+    }
+    
+    const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`, 'POST', {
+        ingredient_id: parseInt(ingredientId),
+        quantity_needed: parseFloat(quantity)
+    });
+    
+    if (result) {
+        alert('原料添加成功！');
+        document.getElementById('pi-ingredient-id').value = '';
+        document.getElementById('pi-quantity').value = '';
+        await loadProductIngredients();
+    }
+}
+
+async function deleteProductIngredient(relationId) {
+    if (confirm('确定要删除此原料配置吗？')) {
+        const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients/${relationId}`, 'DELETE');
+        if (result) {
+            alert('原料删除成功！');
+            await loadProductIngredients();
+        }
+    }
+}
+
+// ==================== 供应商备货单管理 (Supplier Orders) ====================
+
+let currentSupplierOrderStatusFilter = 'all';
+
+document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        currentSupplierOrderStatusFilter = this.dataset.status;
+        loadSupplierOrders();
+    });
+});
+
+function getSupplierOrderStatusText(status) {
+    const statusMap = {
+        10: '待备货',
+        20: '备货中',
+        30: '已完成',
+        40: '已取消'
+    };
+    return statusMap[status] || '未知';
+}
+
+async function loadSupplierOrders() {
+    let url = '/admin/supplier-orders';
+    if (currentSupplierOrderStatusFilter !== 'all') {
+        url += `?status=${currentSupplierOrderStatusFilter}`;
+    }
+    const ordersData = await fetchData(url);
+    const ordersList = document.getElementById('supplier-orders-list');
+    ordersList.innerHTML = '';
+
+    if (ordersData && ordersData.supplier_orders) {
+        ordersData.supplier_orders.forEach(order => {
+            const card = document.createElement('div');
+            card.classList.add('data-card', `status-${order.status}`);
+            const itemsHtml = order.items ? order.items.map(item => `
+                <p>${item.ingredient_name} x ${item.quantity} ${item.unit}</p>
+            `).join('') : '';
+            card.innerHTML = `
+                <div class="data-card-content">
+                    <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
+                    <p>关联订单号: ${order.order_sn}</p>
+                    <p>供应商: ${order.supplier_name || '未知'}</p>
+                    <p>备注: ${order.notes || '无'}</p>
+                    <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
+                        ${itemsHtml}
+                    </div>
+                    <p style="font-size:12px;color:#999;margin-top:10px;">创建时间: ${formatDate(order.created_at)}</p>
+                </div>
+                <div class="data-card-actions">
+                    <button class="btn btn-sm btn-success" onclick="editSupplierOrderStatus(${order.id})">修改状态</button>
+                </div>
+            `;
+            ordersList.appendChild(card);
+        });
+    }
+}
+
+async function editSupplierOrderStatus(orderId) {
+    const newStatus = prompt('请输入新的备货单状态 (10=待备货, 20=备货中, 30=已完成, 40=已取消):');
+    if (newStatus && !isNaN(newStatus)) {
+        const result = await fetchData(`/admin/supplier-orders/${orderId}/status`, 'PUT', { status: parseInt(newStatus) });
+        if (result) {
+            alert('备货单状态更新成功！');
+            await loadSupplierOrders();
         }
     }
 }

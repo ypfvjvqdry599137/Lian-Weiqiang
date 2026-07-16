@@ -4,6 +4,338 @@ from decimal import Decimal
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
+# ==================== 供应商管理 ====================
+
+@admin_bp.route('/suppliers', methods=['POST'])
+def create_supplier():
+    from models import Supplier
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid request body"}), 400
+
+    name = data.get('name')
+    username = data.get('username')
+    password = data.get('password', '123456')
+
+    if not all([name, username]):
+        return jsonify({"message": "Name and username are required"}), 400
+
+    if Supplier.query.filter_by(username=username).first():
+        return jsonify({"message": "Username already exists"}), 409
+
+    supplier = Supplier(
+        name=name,
+        contact_person=data.get('contact_person'),
+        phone=data.get('phone'),
+        username=username,
+        password=password,
+        is_active=data.get('is_active', True)
+    )
+    db.session.add(supplier)
+    db.session.commit()
+    return jsonify({"message": "Supplier created successfully", "id": supplier.id}), 201
+
+@admin_bp.route('/suppliers', methods=['GET'])
+def get_suppliers():
+    from models import Supplier
+    suppliers = Supplier.query.order_by(Supplier.created_at.desc()).all()
+    output = []
+    for supplier in suppliers:
+        output.append({
+            'id': supplier.id,
+            'name': supplier.name,
+            'contact_person': supplier.contact_person,
+            'phone': supplier.phone,
+            'username': supplier.username,
+            'is_active': supplier.is_active,
+            'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    return jsonify({"suppliers": output}), 200
+
+@admin_bp.route('/suppliers/<int:supplier_id>', methods=['GET'])
+def get_supplier(supplier_id):
+    from models import Supplier
+    supplier = Supplier.query.get_or_404(supplier_id)
+    return jsonify({
+        'id': supplier.id,
+        'name': supplier.name,
+        'contact_person': supplier.contact_person,
+        'phone': supplier.phone,
+        'username': supplier.username,
+        'is_active': supplier.is_active,
+        'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S')
+    }), 200
+
+@admin_bp.route('/suppliers/<int:supplier_id>', methods=['PUT'])
+def update_supplier(supplier_id):
+    from models import Supplier
+    supplier = Supplier.query.get_or_404(supplier_id)
+    data = request.get_json()
+
+    supplier.name = data.get('name', supplier.name)
+    supplier.contact_person = data.get('contact_person', supplier.contact_person)
+    supplier.phone = data.get('phone', supplier.phone)
+    supplier.is_active = data.get('is_active', supplier.is_active)
+    
+    if 'password' in data and data['password']:
+        supplier.password = data['password']
+    
+    if 'username' in data:
+        existing = Supplier.query.filter(
+            Supplier.username == data['username'],
+            Supplier.id != supplier_id
+        ).first()
+        if existing:
+            return jsonify({"message": "Username already exists"}), 409
+        supplier.username = data['username']
+        
+    db.session.commit()
+    return jsonify({"message": "Supplier updated successfully"}), 200
+
+@admin_bp.route('/suppliers/<int:supplier_id>', methods=['DELETE'])
+def delete_supplier(supplier_id):
+    from models import Supplier
+    supplier = Supplier.query.get_or_404(supplier_id)
+    db.session.delete(supplier)
+    db.session.commit()
+    return jsonify({"message": "Supplier deleted successfully"}), 200
+
+# ==================== 原料管理 ====================
+
+@admin_bp.route('/ingredients', methods=['POST'])
+def create_ingredient():
+    from models import Ingredient
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid request body"}), 400
+
+    name = data.get('name')
+    supplier_id = data.get('supplier_id')
+    if not all([name, supplier_id]):
+        return jsonify({"message": "Name and supplier are required"}), 400
+
+    ingredient = Ingredient(
+        name=name,
+        unit=data.get('unit', '斤'),
+        category_id=data.get('category_id'),
+        supplier_id=supplier_id,
+        price=Decimal(str(data.get('price'))) if data.get('price') is not None else None,
+        stock=data.get('stock', 0),
+        is_active=data.get('is_active', True)
+    )
+    db.session.add(ingredient)
+    db.session.commit()
+    return jsonify({"message": "Ingredient created successfully", "id": ingredient.id}), 201
+
+@admin_bp.route('/ingredients', methods=['GET'])
+def get_ingredients():
+    from models import Ingredient
+    supplier_id = request.args.get('supplier_id')
+    is_active = request.args.get('is_active')
+    
+    query = Ingredient.query
+    if supplier_id:
+        query = query.filter_by(supplier_id=int(supplier_id))
+    if is_active is not None:
+        query = query.filter_by(is_active=is_active.lower() == 'true')
+    
+    ingredients = query.order_by(Ingredient.created_at.desc()).all()
+    output = []
+    for ing in ingredients:
+        output.append({
+            'id': ing.id,
+            'name': ing.name,
+            'unit': ing.unit,
+            'category_id': ing.category_id,
+            'category_name': ing.category.name if ing.category else None,
+            'supplier_id': ing.supplier_id,
+            'supplier_name': ing.supplier.name if ing.supplier else None,
+            'price': str(ing.price) if ing.price else None,
+            'stock': ing.stock,
+            'is_active': ing.is_active,
+            'created_at': ing.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    return jsonify({"ingredients": output}), 200
+
+@admin_bp.route('/ingredients/<int:ingredient_id>', methods=['GET'])
+def get_ingredient(ingredient_id):
+    from models import Ingredient
+    ing = Ingredient.query.get_or_404(ingredient_id)
+    return jsonify({
+        'id': ing.id,
+        'name': ing.name,
+        'unit': ing.unit,
+        'category_id': ing.category_id,
+        'category_name': ing.category.name if ing.category else None,
+        'supplier_id': ing.supplier_id,
+        'supplier_name': ing.supplier.name if ing.supplier else None,
+        'price': str(ing.price) if ing.price else None,
+        'stock': ing.stock,
+        'is_active': ing.is_active
+    }), 200
+
+@admin_bp.route('/ingredients/<int:ingredient_id>', methods=['PUT'])
+def update_ingredient(ingredient_id):
+    from models import Ingredient
+    ing = Ingredient.query.get_or_404(ingredient_id)
+    data = request.get_json()
+
+    ing.name = data.get('name', ing.name)
+    ing.unit = data.get('unit', ing.unit)
+    ing.category_id = data.get('category_id', ing.category_id)
+    ing.supplier_id = data.get('supplier_id', ing.supplier_id)
+    if 'price' in data:
+        ing.price = Decimal(str(data['price'])) if data['price'] is not None else None
+    ing.stock = data.get('stock', ing.stock)
+    ing.is_active = data.get('is_active', ing.is_active)
+    
+    db.session.commit()  # Corrected line: removed '()'
+    return jsonify({"message": "Ingredient updated successfully"}), 200
+
+@admin_bp.route('/ingredients/<int:ingredient_id>', methods=['DELETE'])
+def delete_ingredient(ingredient_id):
+    from models import Ingredient
+    ing = Ingredient.query.get_or_404(ingredient_id)
+    db.session.delete(ing)
+    db.session.commit()
+    return jsonify({"message": "Ingredient deleted successfully"}), 200
+
+# ==================== 成品-原料关联管理 ====================
+
+@admin_bp.route('/products/<int:product_id>/ingredients', methods=['POST'])
+def add_product_ingredient(product_id):
+    from models import ProductIngredient, Product, Ingredient
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Invalid request body"}), 400
+    
+    product = Product.query.get_or_404(product_id)
+    ingredient_id = data.get('ingredient_id')
+    quantity_needed = data.get('quantity_needed')
+    
+    if not all([ingredient_id, quantity_needed]):
+        return jsonify({"message": "Ingredient and quantity are required"}), 400
+    
+    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    
+    existing = ProductIngredient.query.filter_by(
+        product_id=product_id,
+        ingredient_id=ingredient_id
+    ).first()
+    if existing:
+        existing.quantity_needed = Decimal(str(quantity_needed))
+    else:
+        new_relation = ProductIngredient(
+            product_id=product_id,
+            ingredient_id=ingredient_id,
+            quantity_needed=Decimal(str(quantity_needed))
+        )
+        db.session.add(new_relation)
+    
+    db.session.commit()
+    return jsonify({"message": "Ingredient added to product successfully"}), 201
+
+@admin_bp.route('/products/<int:product_id>/ingredients', methods=['GET'])
+def get_product_ingredients(product_id):
+    from models import ProductIngredient, Product
+    product = Product.query.get_or_404(product_id)
+    output = []
+    for rel in product.ingredients:
+        output.append({
+            'id': rel.id,
+            'product_id': rel.product_id,
+            'ingredient_id': rel.ingredient_id,
+            'ingredient_name': rel.ingredient.name if rel.ingredient else None,
+            'ingredient_unit': rel.ingredient.unit if rel.ingredient else '斤',
+            'supplier_name': rel.ingredient.supplier.name if (rel.ingredient and rel.ingredient.supplier) else None,
+            'quantity_needed': str(rel.quantity_needed)
+        })
+    return jsonify({"ingredients": output}), 200
+
+@admin_bp.route('/products/<int:product_id>/ingredients/<int:relation_id>', methods=['DELETE'])
+def delete_product_ingredient(product_id, relation_id):
+    from models import ProductIngredient
+    rel = ProductIngredient.query.filter_by(id=relation_id, product_id=product_id).first_or_404()
+    db.session.delete(rel)
+    db.session.commit()
+    return jsonify({"message": "Ingredient removed from product successfully"}), 200
+
+# ==================== 供应商备货单管理 ====================
+
+@admin_bp.route('/supplier-orders', methods=['GET'])
+def get_all_supplier_orders():
+    from models import SupplierOrder
+    supplier_id = request.args.get('supplier_id')
+    status_filter = request.args.get('status')
+    
+    query = SupplierOrder.query
+    if supplier_id:
+        query = query.filter_by(supplier_id=int(supplier_id))
+    if status_filter and status_filter.isdigit():
+        query = query.filter_by(status=int(status_filter))
+        
+    orders = query.order_by(SupplierOrder.created_at.desc()).all()
+    output = []
+    for so in orders:
+        status_text = {
+            10: '待备货',
+            20: '备货中',
+            30: '已完成',
+            40: '已取消'
+        }.get(so.status, '未知')
+        
+        items_output = []
+        if so.items:
+            for item in so.items:
+                items_output.append({
+                    'id': item.id,
+                    'ingredient_id': item.ingredient_id,
+                    'ingredient_name': item.ingredient_name,
+                    'quantity': str(item.quantity),
+                    'unit': item.unit
+                })
+        
+        output.append({
+            'id': so.id,
+            'order_sn': so.order_sn,
+            'supplier_id': so.supplier_id,
+            'supplier_name': so.supplier.name if so.supplier else None,
+            'status': so.status,
+            'status_text': status_text,
+            'notes': so.notes,
+            'items': items_output,
+            'created_at': so.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': so.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    return jsonify({"supplier_orders": output}), 200
+
+@admin_bp.route('/supplier-orders/<int:order_id>/status', methods=['PUT'])
+def update_supplier_order_status(order_id):
+    from models import SupplierOrder
+    so = SupplierOrder.query.get_or_404(order_id)
+    data = request.get_json()
+    
+    new_status = data.get('status')
+    if new_status not in [10, 20, 30, 40]:
+        return jsonify({"message": "无效的备货单状态"}), 400
+    
+    so.status = new_status
+    db.session.commit()
+    
+    status_text = {
+        10: '待备货',
+        20: '备货中',
+        30: '已完成',
+        40: '已取消'
+    }.get(new_status, '未知')
+    
+    return jsonify({
+        "message": "备货单状态已更新",
+        "id": order_id,
+        "new_status": new_status,
+        "status_text": status_text
+    }), 200
+
 # ==================== 配送区域管理 ====================
 
 @admin_bp.route('/delivery-zones', methods=['POST'])
@@ -143,7 +475,7 @@ def get_all_orders():
             30: '配送中',
             40: '已送达',
             50: '已完成',
-            60: '已关闭'
+            60: '已取消'
         }.get(order.order_status, '未知')
         
         items_output = []
@@ -193,7 +525,7 @@ def update_order_status(order_sn):
         30: '配送中',
         40: '已送达',
         50: '已完成',
-        60: '已关闭'
+        60: '已取消'
     }.get(new_status, '未知')
     
     return jsonify({
@@ -333,7 +665,7 @@ def get_products():
     query = Product.query
 
     if category_id:
-        query = query.filter_by(category_id=category_id)
+        query = query.filter_by(category_id=int(category_id))
     if is_active is not None:
         query = query.filter_by(is_active=is_active.lower() == 'true')
 
@@ -437,7 +769,7 @@ def update_stock(product_id):
 
     stock = product.stock
     if not stock:
-        stock = ProductStock(product_id=product_id)
+        stock = ProductStock(product_id=product.id)
         db.session.add(stock)
 
     stock.total_stock = data.get('total_stock', stock.total_stock)
@@ -462,7 +794,7 @@ def increase_stock(product_id):
 
     stock = product.stock
     if not stock:
-        stock = ProductStock(product_id=product_id, total_stock=0)
+        stock = ProductStock(product_id=product.id, total_stock=0)
         db.session.add(stock)
 
     stock.total_stock += quantity

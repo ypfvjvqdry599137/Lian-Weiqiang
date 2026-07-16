@@ -2,6 +2,99 @@ from app import db
 from datetime import datetime
 
 # ============================================
+# 供应商模型
+# ============================================
+class Supplier(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='供应商ID')
+    name = db.Column(db.String(200), nullable=False, comment='供应商名称')
+    contact_person = db.Column(db.String(100), nullable=True, comment='联系人')
+    phone = db.Column(db.String(20), nullable=True, comment='联系电话')
+    username = db.Column(db.String(50), unique=True, nullable=False, comment='登录账号')
+    password = db.Column(db.String(255), nullable=False, comment='登录密码（简单存储，实际生产建议加密）')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    def __repr__(self):
+        return f'<Supplier {self.name}>'
+
+# ============================================
+# 原料模型
+# ============================================
+class Ingredient(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='原料ID')
+    name = db.Column(db.String(200), nullable=False, comment='原料名称')
+    unit = db.Column(db.String(20), nullable=False, default='斤', comment='单位（斤、个、份等）')
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=True, comment='所属分类ID')
+    supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
+    price = db.Column(db.Numeric(10, 2), nullable=True, comment='原料价格（可选，用于内部核算）')
+    stock = db.Column(db.Integer, default=0, comment='库存数量')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    # 关联
+    supplier = db.relationship('Supplier', backref=db.backref('ingredients', lazy=True))
+    category = db.relationship('Category', backref=db.backref('ingredients', lazy=True))
+
+    def __repr__(self):
+        return f'<Ingredient {self.name}>'
+
+# ============================================
+# 成品-原料关联模型
+# ============================================
+class ProductIngredient(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='关联ID')
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False, comment='成品ID')
+    ingredient_id = db.Column(db.Integer, db.ForeignKey('ingredient.id'), nullable=False, comment='原料ID')
+    quantity_needed = db.Column(db.Numeric(10, 2), nullable=False, comment='所需原料数量')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+
+    # 关联
+    product = db.relationship('Product', backref=db.backref('ingredients', lazy=True))
+    ingredient = db.relationship('Ingredient', backref=db.backref('products', lazy=True))
+
+    def __repr__(self):
+        return f'<ProductIngredient {self.product_id} - {self.ingredient_id}>'
+
+# ============================================
+# 供应商备货单模型
+# ============================================
+class SupplierOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='备货单ID')
+    order_sn = db.Column(db.String(32), db.ForeignKey('order_master.order_sn'), nullable=False, comment='关联订单号')
+    supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
+    status = db.Column(db.SmallInteger, nullable=False, default=10, comment='状态：10-待备货，20-备货中，30-已完成，40-已取消')
+    notes = db.Column(db.Text, nullable=True, comment='备注')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    # 关联
+    order = db.relationship('OrderMaster', backref=db.backref('supplier_orders', lazy=True))
+    supplier = db.relationship('Supplier', backref=db.backref('orders', lazy=True))
+
+    def __repr__(self):
+        return f'<SupplierOrder {self.id}>'
+
+# ============================================
+# 供应商备货单项模型
+# ============================================
+class SupplierOrderItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='备货单项ID')
+    supplier_order_id = db.Column(db.Integer, db.ForeignKey('supplier_order.id'), nullable=False, comment='备货单ID')
+    ingredient_id = db.Column(db.Integer, db.ForeignKey('ingredient.id'), nullable=False, comment='原料ID')
+    ingredient_name = db.Column(db.String(200), nullable=False, comment='原料名称')
+    quantity = db.Column(db.Numeric(10, 2), nullable=False, comment='需要数量')
+    unit = db.Column(db.String(20), nullable=False, default='斤', comment='单位')
+
+    # 关联
+    supplier_order = db.relationship('SupplierOrder', backref=db.backref('items', lazy=True))
+    ingredient = db.relationship('Ingredient', backref=db.backref('order_items', lazy=True))
+
+    def __repr__(self):
+        return f'<SupplierOrderItem {self.id}>'
+
+# ============================================
 # 配送区域模型
 # ============================================
 class DeliveryZone(db.Model):
