@@ -392,7 +392,10 @@ def split_order_to_supplier_orders(order_sn):
     
     order = OrderMaster.query.filter_by(order_sn=order_sn).first()
     if not order:
-        return
+        return 0
+
+    if SupplierOrder.query.filter_by(order_sn=order_sn).first():
+        return 0
     
     # 按供应商分组统计所需原料
     supplier_ingredients = {}
@@ -407,20 +410,23 @@ def split_order_to_supplier_orders(order_sn):
             ingredient = pi.ingredient
             if not ingredient or not ingredient.supplier:
                 continue
+            if not ingredient.is_active or not ingredient.supplier.is_active:
+                continue
             
             supplier_id = ingredient.supplier.id
-            if supplier_id not in supplier_ingredients:
-                supplier_ingredients[supplier_id] = []
+            ingredient_id = ingredient.id
+            supplier_items = supplier_ingredients.setdefault(supplier_id, {})
+            item = supplier_items.setdefault(ingredient_id, {
+                'ingredient': ingredient,
+                'quantity': Decimal('0')
+            })
             
             # 计算所需原料总量 = 成品数量 × 每份成品所需原料量
             total_quantity = pi.quantity_needed * order_item.quantity
-            
-            supplier_ingredients[supplier_id].append({
-                'ingredient': ingredient,
-                'quantity': total_quantity
-            })
+            item['quantity'] += total_quantity
     
     # 为每个供应商创建备货单
+    supplier_order_count = 0
     for supplier_id, items in supplier_ingredients.items():
         supplier_order = SupplierOrder(
             order_sn=order_sn,
@@ -430,9 +436,10 @@ def split_order_to_supplier_orders(order_sn):
         )
         db.session.add(supplier_order)
         db.session.flush()  # 为了获取 supplier_order.id
+        supplier_order_count += 1
         
         # 创建备货单项
-        for item in items:
+        for item in items.values():
             soi = SupplierOrderItem(
                 supplier_order_id=supplier_order.id,
                 ingredient_id=item['ingredient'].id,
@@ -441,6 +448,8 @@ def split_order_to_supplier_orders(order_sn):
                 unit=item['ingredient'].unit
             )
             db.session.add(soi)
+
+    return supplier_order_count
 
 
 @client_bp.route('/orders', methods=['POST'])
