@@ -755,9 +755,9 @@ def update_product(product_id):
 def delete_product(product_id):
     from models import Product
     product = Product.query.get_or_404(product_id)
-    db.session.delete(product)
+    product.is_active = False
     db.session.commit()
-    return jsonify({"message": "Product deleted successfully"}), 200
+    return jsonify({"message": "Product disabled successfully"}), 200
 
 # ==================== 库存管理 ====================
 

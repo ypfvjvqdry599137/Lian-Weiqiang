@@ -219,7 +219,7 @@ async function loadDashboardStats() {
 // ==================== 商品管理 (Products) ====================
 
 async function loadProducts() {
-    const productsData = await fetchData('/admin/products');
+    const productsData = await fetchData('/admin/products?is_active=true');
     const productsList = document.getElementById('products-list');
     productsList.innerHTML = '';
 
@@ -307,7 +307,7 @@ document.getElementById('product-form').addEventListener('submit', async functio
 
 async function deleteProduct(productId) {
     if (confirm('确定要删除此商品吗？')) {
-        const result = await fetchData(`/admin/products/${productId}`, 'DELETE');
+        const result = await fetchData(`/admin/products/${productId}`, 'DELETE', null, true);
         if (result) {
             alert('商品删除成功！');
             await loadProducts();
