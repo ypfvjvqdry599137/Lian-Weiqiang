@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from extensions import db
 
@@ -402,57 +402,40 @@ def update_supplier_ingredient(ingredient_id):
         return jsonify({'message': '未授权'}), 401
 
     ing = Ingredient.query.filter_by(id=ingredient_id, supplier_id=supplier_id).first_or_404()
-    data = request.get_json()
+    data = request.get_json() or {}
 
-    ing.name = data.get('name', ing.name)
-    ing.unit = data.get('unit', ing.unit)
-    ing.category_id = data.get('category_id', ing.category_id)
-    # 供应商不能修改supplier_id
     if 'price' in data:
-        from decimal import Decimal
-        ing.price = Decimal(str(data['price'])) if data['price'] is not None else None
-    ing.stock = data.get('stock', ing.stock)
-    ing.is_active = data.get('is_active', ing.is_active)
+        try:
+            price = data['price']
+            ing.price = None if price is None or price == '' else Decimal(str(price))
+            if ing.price is not None and ing.price < 0:
+                return jsonify({'message': '价格不能小于0'}), 400
+        except (InvalidOperation, ValueError, TypeError):
+            return jsonify({'message': '价格格式不正确'}), 400
+    if 'stock' in data:
+        try:
+            stock = int(data.get('stock') or 0)
+        except (ValueError, TypeError):
+            return jsonify({'message': '库存格式不正确'}), 400
+        if stock < 0:
+            return jsonify({'message': '库存不能小于0'}), 400
+        ing.stock = stock
     
     db.session.commit()
-    return jsonify({"message": "原料更新成功"}), 200
+    return jsonify({"message": "价格和库存已更新"}), 200
 
 @supplier_bp.route('/ingredients', methods=['POST'])
 def create_supplier_ingredient():
-    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"message": "Invalid request body"}), 400
-
-    name = data.get('name')
-    if not name:
-        return jsonify({"message": "Name is required"}), 400
-
-    ingredient = Ingredient(
-        name=name,
-        unit=data.get('unit', '斤'),
-        category_id=data.get('category_id'),
-        supplier_id=supplier_id, # 自动设置为当前登录供应商
-        price=data.get('price'),
-        stock=data.get('stock', 0),
-        is_active=data.get('is_active', True)
-    )
-    db.session.add(ingredient)
-    db.session.commit()
-    return jsonify({"message": "原料创建成功", "id": ingredient.id}), 201
+    return jsonify({"message": "供应商不能新增原料，请联系主后台添加"}), 403
 
 @supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['DELETE'])
 def delete_supplier_ingredient(ingredient_id):
-    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
 
-    ing = Ingredient.query.filter_by(id=ingredient_id, supplier_id=supplier_id).first_or_404()
-    db.session.delete(ing)
-    db.session.commit()
-    return jsonify({"message": "原料删除成功"}), 200
+    return jsonify({"message": "供应商不能删除原料，请联系主后台处理"}), 403

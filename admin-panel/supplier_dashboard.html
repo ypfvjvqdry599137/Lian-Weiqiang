@@ -63,7 +63,6 @@
             <div id="page-supplier-ingredients" class="page">
                 <div class="page-header">
                     <h2>🥬 我的原料</h2>
-                    <button class="btn btn-primary" onclick="showSupplierIngredientModal()">+ 添加原料</button>
                 </div>
                 <div id="supplier-ingredients-list" class="data-list"></div>
             </div>
@@ -74,20 +73,20 @@
     <div id="supplier-ingredient-modal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeModal('supplier-ingredient-modal')">&times;</span>
-            <h2 id="supplier-ingredient-modal-title">添加原料</h2>
+            <h2 id="supplier-ingredient-modal-title">维护原料</h2>
             <form id="supplier-ingredient-form">
                 <input type="hidden" id="si-ingredient-id">
                 <div class="form-group">
                     <label>原料名称</label>
-                    <input type="text" id="si-ingredient-name" required>
+                    <input type="text" id="si-ingredient-name" readonly>
                 </div>
                 <div class="form-group">
                     <label>单位</label>
-                    <input type="text" id="si-ingredient-unit" value="斤" placeholder="如：斤、个、盒">
+                    <input type="text" id="si-ingredient-unit" readonly>
                 </div>
                 <div class="form-group">
                     <label>分类</label>
-                    <select id="si-ingredient-category-id"></select>
+                    <input type="text" id="si-ingredient-category-name" readonly>
                 </div>
                 <div class="form-group">
                     <label>价格</label>
@@ -97,11 +96,11 @@
                     <label>库存</label>
                     <input type="number" id="si-ingredient-stock" value="0">
                 </div>
-                <div class="form-group checkbox">
-                    <input type="checkbox" id="si-ingredient-active" checked>
-                    <label>启用</label>
+                <div class="form-group">
+                    <label>状态</label>
+                    <input type="text" id="si-ingredient-status" readonly>
                 </div>
-                <button type="submit" class="btn btn-primary">保存</button>
+                <button type="submit" class="btn btn-primary">保存价格和库存</button>
             </form>
         </div>
     </div>
@@ -432,8 +431,7 @@
                             <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
                         </div>
                         <div class="data-card-actions">
-                            <button class="btn btn-sm btn-success" onclick="showSupplierIngredientModal(${ingredient.id})">编辑</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteSupplierIngredient(${ingredient.id})">删除</button>
+                            <button class="btn btn-sm btn-success" onclick="showSupplierIngredientModal(${ingredient.id})">维护价格库存</button>
                         </div>
                     `;
                     ingredientsList.appendChild(card);
@@ -441,82 +439,42 @@
             }
         }
 
-        async function showSupplierIngredientModal(ingredientId = null) {
-            const modal = document.getElementById('supplier-ingredient-modal');
+        async function showSupplierIngredientModal(ingredientId) {
             const title = document.getElementById('supplier-ingredient-modal-title');
             const form = document.getElementById('supplier-ingredient-form');
             form.reset();
             document.getElementById('si-ingredient-id').value = '';
-            document.getElementById('si-ingredient-active').checked = true;
-            document.getElementById('si-ingredient-unit').value = '斤';
             document.getElementById('si-ingredient-stock').value = '0';
 
-            // 加载分类选项
-            await loadCategoriesForSupplierIngredientSelect();
-
-            if (ingredientId) {
-                title.textContent = '编辑原料';
-                const ingredient = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`);
-                if (ingredient) {
-                    document.getElementById('si-ingredient-id').value = ingredient.id;
-                    document.getElementById('si-ingredient-name').value = ingredient.name;
-                    document.getElementById('si-ingredient-unit').value = ingredient.unit;
-                    document.getElementById('si-ingredient-category-id').value = ingredient.category_id || '';
-                    document.getElementById('si-ingredient-price').value = ingredient.price || '';
-                    document.getElementById('si-ingredient-stock').value = ingredient.stock;
-                    document.getElementById('si-ingredient-active').checked = ingredient.is_active;
-                }
-            } else {
-                title.textContent = '添加原料';
-            }
-            showModal('supplier-ingredient-modal');
-        }
-
-        async function loadCategoriesForSupplierIngredientSelect() {
-            const categoriesData = await fetchData('/admin/categories'); // 供应商应该能看到所有分类
-            const select = document.getElementById('si-ingredient-category-id');
-            select.innerHTML = '<option value="">请选择分类</option>';
-            if (categoriesData && categoriesData.categories) {
-                categoriesData.categories.forEach(c => {
-                    const option = document.createElement('option');
-                    option.value = c.id;
-                    option.textContent = c.name;
-                    select.appendChild(option);
-                });
+            title.textContent = '维护原料';
+            const ingredient = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`);
+            if (ingredient) {
+                document.getElementById('si-ingredient-id').value = ingredient.id;
+                document.getElementById('si-ingredient-name').value = ingredient.name;
+                document.getElementById('si-ingredient-unit').value = ingredient.unit;
+                document.getElementById('si-ingredient-category-name').value = ingredient.category_name || '无';
+                document.getElementById('si-ingredient-price').value = ingredient.price || '';
+                document.getElementById('si-ingredient-stock').value = ingredient.stock;
+                document.getElementById('si-ingredient-status').value = ingredient.is_active ? '已启用' : '已禁用';
+                showModal('supplier-ingredient-modal');
             }
         }
 
         document.getElementById('supplier-ingredient-form').addEventListener('submit', async function(event) {
             event.preventDefault();
             const ingredientId = document.getElementById('si-ingredient-id').value;
-            const method = ingredientId ? 'PUT' : 'POST';
-            const url = ingredientId ? `/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}` : `/supplier/ingredients?supplier_id=${currentSupplierId}`;
             const data = {
-                name: document.getElementById('si-ingredient-name').value,
-                unit: document.getElementById('si-ingredient-unit').value,
-                category_id: document.getElementById('si-ingredient-category-id').value ? parseInt(document.getElementById('si-ingredient-category-id').value) : null,
                 price: document.getElementById('si-ingredient-price').value ? parseFloat(document.getElementById('si-ingredient-price').value) : null,
-                stock: parseInt(document.getElementById('si-ingredient-stock').value) || 0,
-                is_active: document.getElementById('si-ingredient-active').checked,
+                stock: parseInt(document.getElementById('si-ingredient-stock').value) || 0
             };
 
-            const result = await fetchData(url, method, data);
+            const result = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`, 'PUT', data, true);
             if (result) {
-                alert('原料保存成功！');
+                alert('价格和库存保存成功！');
                 closeModal('supplier-ingredient-modal');
                 await loadSupplierIngredients();
             }
         });
-
-        async function deleteSupplierIngredient(ingredientId) {
-            if (confirm('确定要删除此原料吗？')) {
-                const result = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`, 'DELETE');
-                if (result) {
-                    alert('原料删除成功！');
-                    await loadSupplierIngredients();
-                }
-            }
-        }
 
         // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
