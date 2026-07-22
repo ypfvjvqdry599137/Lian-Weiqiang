@@ -60,6 +60,24 @@
   font-weight: bold;
 }
 
+.status-10,
+.status-20 {
+  color: #f59e0b;
+}
+
+.status-30,
+.status-40 {
+  color: #2563eb;
+}
+
+.status-50 {
+  color: #4CAF50;
+}
+
+.status-60 {
+  color: #999;
+}
+
 .order-content {
   margin-bottom: 20rpx;
 }
@@ -95,6 +113,29 @@
   font-size: 28rpx;
   color: #e64340;
   font-weight: bold;
+}
+
+.order-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 20rpx;
+}
+
+.cancel-btn {
+  width: 170rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid #e64340;
+  border-radius: 30rpx;
+  background: #fff;
+  color: #e64340;
+  font-size: 26rpx;
+}
+
+.cancel-btn::after {
+  border: none;
 }
 
 .empty {

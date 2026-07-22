@@ -456,6 +456,12 @@ def split_order_to_supplier_orders(order_sn):
     return supplier_order_count
 
 
+def can_user_cancel_order(order):
+    if order.order_status not in [10, 20]:
+        return False
+    return all(supplier_order.status == 10 for supplier_order in order.supplier_orders)
+
+
 @client_bp.route('/orders', methods=['POST'])
 def create_order():
     from models import Cart, UserAddress, Product, OrderMaster, OrderItem
@@ -595,6 +601,7 @@ def get_orders():
             'order_sn': order.order_sn,
             'order_status': order.order_status,
             'status_text': status_text,
+            'can_cancel': can_user_cancel_order(order),
             'total_amount': str(order.total_amount),
             'delivery_fee': str(order.delivery_fee),
             'final_amount': str(order.final_amount),
@@ -627,6 +634,7 @@ def get_order_detail(order_sn):
         'order_sn': order.order_sn,
         'order_status': order.order_status,
         'status_text': status_text,
+        'can_cancel': can_user_cancel_order(order),
         'total_amount': str(order.total_amount),
         'delivery_fee': str(order.delivery_fee),
         'final_amount': str(order.final_amount),
@@ -671,15 +679,18 @@ def cancel_order(order_sn):
     
     if order.order_status not in [10, 20]:
         return jsonify({'message': '当前状态无法取消订单'}), 400
+    if not can_user_cancel_order(order):
+        return jsonify({'message': '订单已开始备货，无法取消'}), 400
     
     # 释放锁定的库存
     for item in order.items:
         product = Product.query.get(item.product_id)
         if product and product.stock:
             if order.order_status == 10:
-                product.stock.lock_stock -= item.quantity
+                product.stock.lock_stock = max(0, (product.stock.lock_stock or 0) - item.quantity)
             elif order.order_status == 20:
-                product.stock.total_stock += item.quantity
+                product.stock.total_stock = (product.stock.total_stock or 0) + item.quantity
+                product.sales_count = max(0, (product.sales_count or 0) - item.quantity)
     
     # 取消相关的供应商备货单
     for so in order.supplier_orders:
