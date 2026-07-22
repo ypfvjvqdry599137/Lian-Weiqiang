@@ -548,13 +548,17 @@ def create_order():
     # 清空购物车
     for item in cart_items:
         db.session.delete(item)
+
+    db.session.flush()
+    supplier_order_count = split_order_to_supplier_orders(order_sn)
     
     db.session.commit()
     
     return jsonify({
         'message': '订单创建成功',
         'order_sn': order_sn,
-        'final_amount': str(final_amount)
+        'final_amount': str(final_amount),
+        'supplier_order_count': supplier_order_count
     }), 201
 
 @client_bp.route('/orders', methods=['GET'])
