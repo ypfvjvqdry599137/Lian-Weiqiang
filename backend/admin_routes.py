@@ -204,19 +204,42 @@ def delete_ingredient(ingredient_id):
 
 @admin_bp.route('/products/<int:product_id>/ingredients', methods=['POST'])
 def add_product_ingredient(product_id):
-    from models import ProductIngredient, Product, Ingredient
+    from models import ProductIngredient, Product, Ingredient, Supplier
     data = request.get_json()
     if not data:
         return jsonify({"message": "Invalid request body"}), 400
     
     product = Product.query.get_or_404(product_id)
     ingredient_id = data.get('ingredient_id')
+    ingredient_name = (data.get('ingredient_name') or '').strip()
+    supplier_name = (data.get('supplier_name') or '').strip()
     quantity_needed = data.get('quantity_needed')
     
-    if not all([ingredient_id, quantity_needed]):
-        return jsonify({"message": "Ingredient and quantity are required"}), 400
+    if not quantity_needed:
+        return jsonify({"message": "请填写所需数量"}), 400
     
-    ingredient = Ingredient.query.get_or_404(ingredient_id)
+    if ingredient_id:
+        ingredient = Ingredient.query.get_or_404(ingredient_id)
+        ingredient_id = ingredient.id
+    else:
+        if not ingredient_name:
+            return jsonify({"message": "请输入原料名称"}), 400
+
+        query = Ingredient.query.filter(
+            Ingredient.name == ingredient_name,
+            Ingredient.is_active == True
+        )
+        if supplier_name:
+            query = query.join(Supplier).filter(Supplier.name == supplier_name)
+
+        matches = query.order_by(Ingredient.id.asc()).limit(2).all()
+        if not matches:
+            return jsonify({"message": "未找到该原料，请先在原料管理中添加"}), 404
+        if len(matches) > 1:
+            return jsonify({"message": "存在多个同名原料，请填写供应商名称"}), 409
+
+        ingredient = matches[0]
+        ingredient_id = ingredient.id
     
     existing = ProductIngredient.query.filter_by(
         product_id=product_id,

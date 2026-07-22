@@ -774,28 +774,14 @@ let currentProductIdForIngredients = null;
 async function showProductIngredientsModal(productId) {
     currentProductIdForIngredients = productId;
     document.getElementById('pi-product-id').value = productId;
-    
-    // 加载原料选项
-    await loadIngredientsForPiSelect();
+    document.getElementById('pi-ingredient-name').value = '';
+    document.getElementById('pi-supplier-name').value = '';
+    document.getElementById('pi-quantity').value = '';
     
     // 加载已配置的原料
     await loadProductIngredients();
     
     showModal('product-ingredients-modal');
-}
-
-async function loadIngredientsForPiSelect() {
-    const ingredientsData = await fetchData('/admin/ingredients');
-    const select = document.getElementById('pi-ingredient-id');
-    select.innerHTML = '<option value="">请选择原料</option>';
-    if (ingredientsData && ingredientsData.ingredients) {
-        ingredientsData.ingredients.forEach(i => {
-            const option = document.createElement('option');
-            option.value = i.id;
-            option.textContent = `${i.name} (${i.supplier_name || '未知供应商'})`;
-            select.appendChild(option);
-        });
-    }
 }
 
 async function loadProductIngredients() {
@@ -823,22 +809,25 @@ async function loadProductIngredients() {
 }
 
 async function addProductIngredient() {
-    const ingredientId = document.getElementById('pi-ingredient-id').value;
+    const ingredientName = document.getElementById('pi-ingredient-name').value.trim();
+    const supplierName = document.getElementById('pi-supplier-name').value.trim();
     const quantity = document.getElementById('pi-quantity').value;
     
-    if (!ingredientId || !quantity) {
-        alert('请选择原料并填写数量！');
+    if (!ingredientName || !quantity) {
+        alert('请输入原料名称并填写数量！');
         return;
     }
     
     const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`, 'POST', {
-        ingredient_id: parseInt(ingredientId),
+        ingredient_name: ingredientName,
+        supplier_name: supplierName || null,
         quantity_needed: parseFloat(quantity)
-    });
+    }, true);
     
     if (result) {
         alert('原料添加成功！');
-        document.getElementById('pi-ingredient-id').value = '';
+        document.getElementById('pi-ingredient-name').value = '';
+        document.getElementById('pi-supplier-name').value = '';
         document.getElementById('pi-quantity').value = '';
         await loadProductIngredients();
     }
