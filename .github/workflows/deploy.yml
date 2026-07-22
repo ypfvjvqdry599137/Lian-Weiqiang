@@ -1,0 +1,70 @@
+name: Deploy to Tencent Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          PROJECT_DIR: ${{ secrets.PROJECT_DIR }}
+          SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: PROJECT_DIR,SERVICE_NAME,DB_USER,DB_PASSWORD,DB_NAME,DB_HOST
+          script: |
+            set -euo pipefail
+
+            cd "$PROJECT_DIR"
+            git fetch origin main
+            git pull --ff-only origin main
+
+            cd backend
+            if [ ! -d venv ]; then
+              python3 -m venv venv
+            fi
+            . venv/bin/activate
+            pip install -r requirements.txt
+            cd ..
+
+            if [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
+              BACKUP_DIR="$PROJECT_DIR/backups/mysql"
+              TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+              MYSQL_CNF="$(mktemp)"
+              mkdir -p "$BACKUP_DIR"
+              chmod 700 "$BACKUP_DIR"
+              chmod 600 "$MYSQL_CNF"
+              trap 'rm -f "$MYSQL_CNF"' EXIT
+
+              {
+                echo "[client]"
+                echo "user=$DB_USER"
+                echo "password=$DB_PASSWORD"
+                echo "host=${DB_HOST:-localhost}"
+              } > "$MYSQL_CNF"
+
+              BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_${TIMESTAMP}.sql.gz"
+              mysqldump --defaults-extra-file="$MYSQL_CNF" --single-transaction --routines --triggers "$DB_NAME" | gzip -9 > "$BACKUP_FILE"
+              test -s "$BACKUP_FILE"
+              sha256sum "$BACKUP_FILE" > "$BACKUP_FILE.sha256"
+
+              mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < schema/update_supplier_schema.sql
+            fi
+
+            sudo systemctl restart "$SERVICE_NAME"
+            sleep 3
+            sudo systemctl status "$SERVICE_NAME" --no-pager
