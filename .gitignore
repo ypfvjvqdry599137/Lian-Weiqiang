@@ -29,6 +29,7 @@ instance/
 .webassets-cache
 *.sqlite
 *.sqlite3
+uploads/
 
 # Environment variables
 .env

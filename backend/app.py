@@ -38,6 +38,10 @@ def create_app(config_class=Config):
     def serve_admin_panel_static(filename):
         return send_from_directory(ADMIN_PANEL_DIR, filename)
 
+    @app.route('/uploads/<path:filename>')
+    def serve_upload(filename):
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename, max_age=31536000)
+
     return app
 
 if __name__ == '__main__':

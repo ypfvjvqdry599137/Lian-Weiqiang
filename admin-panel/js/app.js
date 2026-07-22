@@ -245,6 +245,98 @@ async function loadProducts() {
     }
 }
 
+function updateProductImagePreview(url) {
+    const preview = document.getElementById('product-image-preview');
+    if (!preview) return;
+
+    if (url) {
+        preview.src = url;
+        preview.style.display = 'block';
+    } else {
+        preview.removeAttribute('src');
+        preview.style.display = 'none';
+    }
+}
+
+function compressProductImageFile(file) {
+    return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith('image/')) {
+            reject(new Error('请选择图片文件'));
+            return;
+        }
+
+        const image = new Image();
+        const objectUrl = URL.createObjectURL(file);
+
+        image.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+
+            const maxSide = 1600;
+            const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    reject(new Error('图片压缩失败'));
+                    return;
+                }
+                const filename = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+                resolve(new File([blob], filename, { type: 'image/jpeg' }));
+            }, 'image/jpeg', 0.82);
+        };
+
+        image.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('图片文件无法读取'));
+        };
+
+        image.src = objectUrl;
+    });
+}
+
+async function uploadProductImage() {
+    const fileInput = document.getElementById('product-image-file');
+    const status = document.getElementById('product-image-upload-status');
+    const file = fileInput.files && fileInput.files[0];
+
+    if (!file) {
+        alert('请先选择图片');
+        return;
+    }
+
+    try {
+        status.textContent = '正在压缩上传...';
+        const compressedFile = await compressProductImageFile(file);
+        const formData = new FormData();
+        formData.append('image', compressedFile, compressedFile.name);
+
+        const response = await fetch(`${BASE_URL}/admin/uploads/product-image`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(result.message || `上传失败: ${response.status}`);
+        }
+
+        document.getElementById('product-image').value = result.image_url;
+        updateProductImagePreview(result.image_url);
+        status.textContent = '上传成功，已自动填入图片URL';
+    } catch (error) {
+        console.error('图片上传失败:', error);
+        status.textContent = '';
+        alert('图片上传失败: ' + error.message);
+    }
+}
+
 async function showProductModal(productId = null) {
     const modal = document.getElementById('product-modal');
     const title = document.getElementById('product-modal-title');
@@ -254,6 +346,9 @@ async function showProductModal(productId = null) {
     document.getElementById('product-recommend').checked = false;
     document.getElementById('product-active').checked = true;
     document.getElementById('product-warning-stock').value = 10;
+    document.getElementById('product-image-file').value = '';
+    document.getElementById('product-image-upload-status').textContent = '';
+    updateProductImagePreview('');
 
     if (productId) {
         title.textContent = '编辑商品';
@@ -266,6 +361,7 @@ async function showProductModal(productId = null) {
             document.getElementById('product-price').value = product.price;
             document.getElementById('product-original-price').value = product.original_price;
             document.getElementById('product-image').value = product.image_url;
+            updateProductImagePreview(product.image_url);
             document.getElementById('product-unit').value = product.unit;
             document.getElementById('product-stock').value = product.total_stock;
             document.getElementById('product-warning-stock').value = product.warning_stock;
@@ -277,6 +373,10 @@ async function showProductModal(productId = null) {
     }
     showModal('product-modal');
 }
+
+document.getElementById('product-image').addEventListener('input', function() {
+    updateProductImagePreview(this.value);
+});
 
 document.getElementById('product-form').addEventListener('submit', async function(event) {
     event.preventDefault();

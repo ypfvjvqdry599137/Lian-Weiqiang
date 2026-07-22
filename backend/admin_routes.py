@@ -1,8 +1,21 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
 from extensions import db
+from PIL import Image, ImageOps, UnidentifiedImageError
+from werkzeug.utils import secure_filename
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+ALLOWED_PRODUCT_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
+PRODUCT_IMAGE_MAX_SIDE = 1200
+PRODUCT_IMAGE_QUALITY = 82
+
+
+def get_public_upload_url(relative_path):
+    base_url = (current_app.config.get('PUBLIC_BASE_URL') or request.host_url.rstrip('/')).rstrip('/')
+    return f"{base_url}/{relative_path.lstrip('/')}"
 
 # ==================== 供应商管理 ====================
 
@@ -634,6 +647,45 @@ def delete_category(category_id):
     return jsonify({"message": "Category deleted successfully"}), 200
 
 # ==================== 商品管理 ====================
+
+@admin_bp.route('/uploads/product-image', methods=['POST'])
+def upload_product_image():
+    upload = request.files.get('image')
+    if not upload or not upload.filename:
+        return jsonify({"message": "请选择要上传的图片"}), 400
+
+    original_filename = secure_filename(upload.filename)
+    extension = original_filename.rsplit('.', 1)[-1].lower() if '.' in original_filename else ''
+    if extension not in ALLOWED_PRODUCT_IMAGE_EXTENSIONS:
+        return jsonify({"message": "仅支持 JPG、PNG、WebP 图片"}), 400
+
+    upload_dir = Path(current_app.config['UPLOAD_FOLDER']) / 'products'
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}.jpg"
+    target_path = upload_dir / filename
+
+    try:
+        image = Image.open(upload.stream)
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((PRODUCT_IMAGE_MAX_SIDE, PRODUCT_IMAGE_MAX_SIDE), Image.Resampling.LANCZOS)
+
+        if image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info):
+            background = Image.new('RGB', image.size, (255, 255, 255))
+            background.paste(image.convert('RGBA'), mask=image.convert('RGBA').split()[-1])
+            image = background
+        else:
+            image = image.convert('RGB')
+
+        image.save(target_path, 'JPEG', quality=PRODUCT_IMAGE_QUALITY, optimize=True, progressive=True)
+    except (UnidentifiedImageError, OSError, ValueError):
+        return jsonify({"message": "图片文件无法识别，请重新选择"}), 400
+
+    relative_url = f"uploads/products/{filename}"
+    return jsonify({
+        "message": "Image uploaded successfully",
+        "image_url": get_public_upload_url(relative_url),
+        "path": f"/{relative_url}"
+    }), 201
 
 @admin_bp.route('/products', methods=['POST'])
 def create_product():
