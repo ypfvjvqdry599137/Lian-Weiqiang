@@ -189,7 +189,7 @@ async function renderPage() {
 
 async function loadDashboardStats() {
     try {
-        const products = await fetchData('/admin/products');
+        const products = await fetchData('/admin/products?is_active=true');
         if(products) {
             document.getElementById('stat-products').textContent = products.products.length;
         }
@@ -402,6 +402,7 @@ document.getElementById('product-form').addEventListener('submit', async functio
         alert('商品保存成功！');
         closeModal('product-modal');
         await loadProducts();
+        await loadDashboardStats();
     }
 });
 
@@ -411,6 +412,7 @@ async function deleteProduct(productId) {
         if (result) {
             alert('商品删除成功！');
             await loadProducts();
+            await loadDashboardStats();
         }
     }
 }
