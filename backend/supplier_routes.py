@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify
-from app import db
 from datetime import datetime
-from models import Supplier, SupplierOrder, SupplierOrderItem, Ingredient
+from extensions import db
 
 supplier_bp = Blueprint('supplier', __name__, url_prefix='/supplier')
 
@@ -9,6 +8,7 @@ supplier_bp = Blueprint('supplier', __name__, url_prefix='/supplier')
 
 @supplier_bp.route('/login', methods=['POST'])
 def supplier_login():
+    from models import Supplier # Lazy import
     data = request.get_json()
     if not data:
         return jsonify({'message': '无效请求'}), 400
@@ -34,6 +34,7 @@ def supplier_login():
 
 @supplier_bp.route('/profile', methods=['GET'])
 def get_supplier_profile():
+    from models import Supplier # Lazy import
     supplier_id = request.args.get('supplier_id') # 从请求参数获取供应商ID，实际应用中应从token获取
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
@@ -56,6 +57,7 @@ def get_supplier_profile():
 
 @supplier_bp.route('/orders', methods=['GET'])
 def get_supplier_orders():
+    from models import SupplierOrder # Lazy import
     supplier_id = request.args.get('supplier_id')
     status_filter = request.args.get('status')
 
@@ -103,7 +105,9 @@ def get_supplier_orders():
 
 @supplier_bp.route('/orders/<int:order_id>/status', methods=['PUT'])
 def update_supplier_order_status(order_id):
+    from models import SupplierOrder # Lazy import
     supplier_id = request.args.get('supplier_id')
+
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
 
@@ -147,6 +151,7 @@ def update_supplier_order_status(order_id):
 
 @supplier_bp.route('/ingredients', methods=['GET'])
 def get_supplier_ingredients():
+    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     is_active = request.args.get('is_active')
     
@@ -177,6 +182,7 @@ def get_supplier_ingredients():
 
 @supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['GET'])
 def get_supplier_ingredient(ingredient_id):
+    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
@@ -197,6 +203,7 @@ def get_supplier_ingredient(ingredient_id):
 
 @supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['PUT'])
 def update_supplier_ingredient(ingredient_id):
+    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
@@ -219,6 +226,7 @@ def update_supplier_ingredient(ingredient_id):
 
 @supplier_bp.route('/ingredients', methods=['POST'])
 def create_supplier_ingredient():
+    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
@@ -246,6 +254,7 @@ def create_supplier_ingredient():
 
 @supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['DELETE'])
 def delete_supplier_ingredient(ingredient_id):
+    from models import Ingredient # Lazy import
     supplier_id = request.args.get('supplier_id')
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401

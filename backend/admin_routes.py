@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
-from app import db
 from decimal import Decimal
+from extensions import db
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -189,7 +189,7 @@ def update_ingredient(ingredient_id):
     ing.stock = data.get('stock', ing.stock)
     ing.is_active = data.get('is_active', ing.is_active)
     
-    db.session.commit()  # Corrected line: removed '()'
+    db.session.commit()
     return jsonify({"message": "Ingredient updated successfully"}), 200
 
 @admin_bp.route('/ingredients/<int:ingredient_id>', methods=['DELETE'])

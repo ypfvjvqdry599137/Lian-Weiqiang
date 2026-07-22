@@ -1,5 +1,6 @@
-from app import db
 from datetime import datetime
+
+from extensions import db
 
 # ============================================
 # 供应商模型
@@ -239,8 +240,8 @@ class Cart(db.Model):
 class OrderMaster(db.Model):
     order_sn = db.Column(db.String(32), primary_key=True, comment='订单号')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='用户ID')
-    address_id = db.Column(db.Integer, nullable=True, comment='收货地址ID')
-    zone_id = db.Column(db.Integer, nullable=True, comment='配送区域ID')
+    address_id = db.Column(db.Integer, db.ForeignKey('user_address.id'), nullable=True, comment='收货地址ID') # Added ForeignKey
+    zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=True, comment='配送区域ID') # Added ForeignKey
     order_status = db.Column(db.SmallInteger, nullable=False, default=10, comment='状态：10-待付款，20-待配货，30-配送中，40-已送达，50-已完成，60-已取消')
     refund_status = db.Column(db.SmallInteger, nullable=False, default=0, comment='售后状态')
     total_amount = db.Column(db.Numeric(10, 2), default=0.00, comment='商品总额')
@@ -257,6 +258,8 @@ class OrderMaster(db.Model):
 
     # 关联
     user = db.relationship('User', backref=db.backref('orders', lazy=True))
+    address = db.relationship('UserAddress', backref=db.backref('orders', lazy=True))
+    zone = db.relationship('DeliveryZone', backref=db.backref('orders', lazy=True))
 
     def __repr__(self):
         return f'<OrderMaster {self.order_sn}>'

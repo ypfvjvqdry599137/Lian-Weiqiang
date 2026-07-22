@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app import db
+from extensions import db
 from datetime import datetime, date
 from decimal import Decimal
 

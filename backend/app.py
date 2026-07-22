@@ -1,9 +1,8 @@
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from config import Config
-
-db = SQLAlchemy()
+from extensions import db
+import os
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -13,6 +12,7 @@ def create_app(config_class=Config):
 
     # 导入模型
     import models
+
 
     # 导入并注册蓝图
     from admin_routes import admin_bp
@@ -28,6 +28,15 @@ def create_app(config_class=Config):
     @app.route('/')
     def index():
         return "Hello, Fresh Produce Mini Program Backend!"
+
+    # Serve static files from the 'admin-panel' directory
+    # This assumes admin-panel is a sibling directory to backend
+    # We need to get the absolute path to the admin-panel directory
+    ADMIN_PANEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'admin-panel')
+
+    @app.route('/admin-panel/<path:filename>')
+    def serve_admin_panel_static(filename):
+        return send_from_directory(ADMIN_PANEL_DIR, filename)
 
     return app
 

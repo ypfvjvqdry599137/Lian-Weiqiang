@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>鲜配居 - 供应商后台</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="/admin-panel/css/style.css">
     <style>
         /* 可以根据需要添加供应商后台特有的样式 */
     </style>
@@ -85,13 +85,15 @@
     </div>
 
     <script>
-        const BASE_URL = 'http://xianpeiju.site';
+        const BASE_URL = window.location.origin && window.location.origin !== 'null'
+            ? window.location.origin
+            : 'http://127.0.0.1:5000';
         let currentSupplierId = localStorage.getItem('supplier_id');
         let currentSupplierName = localStorage.getItem('supplier_name');
 
         if (!currentSupplierId || !currentSupplierName) {
             alert('请先登录！');
-            window.location.href = 'supplier_login.html';
+            window.location.href = '/admin-panel/supplier_login.html';
         }
 
         document.getElementById('supplier-dashboard-title').querySelector('span').textContent = currentSupplierName;
@@ -99,7 +101,7 @@
         function logout() {
             localStorage.removeItem('supplier_id');
             localStorage.removeItem('supplier_name');
-            window.location.href = 'supplier_login.html';
+            window.location.href = '/admin-panel/supplier_login.html';
         }
 
         // ==================== 辅助函数 ====================

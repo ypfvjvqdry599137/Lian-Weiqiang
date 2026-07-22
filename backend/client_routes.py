@@ -1,10 +1,10 @@
 from flask import Blueprint, request, jsonify
-from app import db
 from decimal import Decimal
 import random
 import string
 from datetime import datetime
 import math
+from extensions import db
 
 client_bp = Blueprint('client', __name__, url_prefix='/client')
 
