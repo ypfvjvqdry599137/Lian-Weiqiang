@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 from extensions import db
 from PIL import Image, ImageOps, UnidentifiedImageError
+from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -170,15 +171,25 @@ def create_ingredient():
 
 @admin_bp.route('/ingredients', methods=['GET'])
 def get_ingredients():
-    from models import Ingredient
+    from models import Ingredient, Supplier, Category
     supplier_id = request.args.get('supplier_id')
     is_active = request.args.get('is_active')
+    keyword = (request.args.get('q') or '').strip()
     
     query = Ingredient.query
     if supplier_id:
         query = query.filter_by(supplier_id=int(supplier_id))
     if is_active is not None:
         query = query.filter_by(is_active=is_active.lower() == 'true')
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.outerjoin(Supplier, Ingredient.supplier_id == Supplier.id) \
+            .outerjoin(Category, Ingredient.category_id == Category.id) \
+            .filter(or_(
+                Ingredient.name.ilike(like),
+                Supplier.name.ilike(like),
+                Category.name.ilike(like)
+            ))
     
     ingredients = query.order_by(Ingredient.created_at.desc()).all()
     output = []
@@ -197,6 +208,29 @@ def get_ingredients():
             'created_at': ing.created_at.strftime('%Y-%m-%d %H:%M:%S')
         })
     return jsonify({"ingredients": output}), 200
+
+@admin_bp.route('/ingredients/batch', methods=['DELETE'])
+def batch_delete_ingredients():
+    from models import Ingredient
+    data = request.get_json()
+    ids = data.get('ids') if data else None
+    if not ids:
+        return jsonify({"message": "请选择要删除的原料"}), 400
+
+    try:
+        ids = [int(item) for item in ids]
+    except (TypeError, ValueError):
+        return jsonify({"message": "原料ID格式不正确"}), 400
+
+    ingredients = Ingredient.query.filter(Ingredient.id.in_(ids)).all()
+    for ing in ingredients:
+        ing.is_active = False
+
+    db.session.commit()
+    return jsonify({
+        "message": "Ingredients disabled successfully",
+        "count": len(ingredients)
+    }), 200
 
 @admin_bp.route('/ingredients/<int:ingredient_id>', methods=['GET'])
 def get_ingredient(ingredient_id):
@@ -237,9 +271,9 @@ def update_ingredient(ingredient_id):
 def delete_ingredient(ingredient_id):
     from models import Ingredient
     ing = Ingredient.query.get_or_404(ingredient_id)
-    db.session.delete(ing)
+    ing.is_active = False
     db.session.commit()
-    return jsonify({"message": "Ingredient deleted successfully"}), 200
+    return jsonify({"message": "Ingredient disabled successfully"}), 200
 
 # ==================== 成品-原料关联管理 ====================
 
@@ -262,6 +296,10 @@ def add_product_ingredient(product_id):
     
     if ingredient_id:
         ingredient = Ingredient.query.get_or_404(ingredient_id)
+        if not ingredient.is_active:
+            return jsonify({"message": "原料已停用"}), 400
+        if ingredient.supplier and not ingredient.supplier.is_active:
+            return jsonify({"message": "供应商已禁用"}), 400
         ingredient_id = ingredient.id
     else:
         if not ingredient_name:

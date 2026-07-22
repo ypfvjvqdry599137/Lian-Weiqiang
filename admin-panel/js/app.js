@@ -752,13 +752,62 @@ async function deleteSupplier(supplierId) {
 
 // ==================== 原料管理 (Ingredients) ====================
 
+let currentIngredients = [];
+
+function getIngredientsListUrl() {
+    const params = new URLSearchParams();
+    const search = document.getElementById('ingredient-search')?.value.trim();
+    const status = document.getElementById('ingredient-status-filter')?.value || 'active';
+
+    if (search) {
+        params.set('q', search);
+    }
+    if (status === 'active') {
+        params.set('is_active', 'true');
+    } else if (status === 'inactive') {
+        params.set('is_active', 'false');
+    }
+
+    const query = params.toString();
+    return query ? `/admin/ingredients?${query}` : '/admin/ingredients';
+}
+
+function getSelectedIngredientIds() {
+    return Array.from(document.querySelectorAll('.ingredient-select:checked'))
+        .map(input => parseInt(input.value))
+        .filter(id => !Number.isNaN(id));
+}
+
+function toggleIngredientSelection(checked) {
+    document.querySelectorAll('.ingredient-select').forEach(input => {
+        input.checked = checked;
+    });
+}
+
+function syncIngredientsSelectAll() {
+    const selectAll = document.getElementById('ingredients-select-all');
+    if (!selectAll) return;
+
+    const checkboxes = Array.from(document.querySelectorAll('.ingredient-select'));
+    selectAll.checked = checkboxes.length > 0 && checkboxes.every(input => input.checked);
+}
+
 async function loadIngredients() {
-    const ingredientsData = await fetchData('/admin/ingredients');
+    const ingredientsData = await fetchData(getIngredientsListUrl());
     const ingredientsList = document.getElementById('ingredients-list');
     ingredientsList.innerHTML = '';
+    const selectAll = document.getElementById('ingredients-select-all');
+    if (selectAll) {
+        selectAll.checked = false;
+    }
 
     if (ingredientsData && ingredientsData.ingredients) {
-        ingredientsData.ingredients.forEach(ingredient => {
+        currentIngredients = ingredientsData.ingredients;
+        if (currentIngredients.length === 0) {
+            ingredientsList.innerHTML = '<p style="color:#888;">没有找到原料</p>';
+            return;
+        }
+        currentIngredients.forEach(ingredient => {
             const card = document.createElement('div');
             card.classList.add('data-card');
             card.innerHTML = `
@@ -770,12 +819,15 @@ async function loadIngredients() {
                     <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
                 </div>
                 <div class="data-card-actions">
+                    <input type="checkbox" class="ingredient-select" value="${ingredient.id}" onchange="syncIngredientsSelectAll()" title="选择">
                     <button class="btn btn-sm btn-success" onclick="showIngredientModal(${ingredient.id})">编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteIngredient(${ingredient.id})">删除</button>
                 </div>
             `;
             ingredientsList.appendChild(card);
         });
+    } else {
+        currentIngredients = [];
     }
 }
 
@@ -865,9 +917,25 @@ document.getElementById('ingredient-form').addEventListener('submit', async func
 
 async function deleteIngredient(ingredientId) {
     if (confirm('确定要删除此原料吗？')) {
-        const result = await fetchData(`/admin/ingredients/${ingredientId}`, 'DELETE');
+        const result = await fetchData(`/admin/ingredients/${ingredientId}`, 'DELETE', null, true);
         if (result) {
             alert('原料删除成功！');
+            await loadIngredients();
+        }
+    }
+}
+
+async function batchDeleteIngredients() {
+    const ids = getSelectedIngredientIds();
+    if (ids.length === 0) {
+        alert('请先选择要删除的原料');
+        return;
+    }
+
+    if (confirm(`确定要删除选中的 ${ids.length} 个原料吗？`)) {
+        const result = await fetchData('/admin/ingredients/batch', 'DELETE', { ids }, true);
+        if (result) {
+            alert(`已删除 ${result.count || ids.length} 个原料！`);
             await loadIngredients();
         }
     }
@@ -876,16 +944,17 @@ async function deleteIngredient(ingredientId) {
 // ==================== 商品原料配置 (Product Ingredients) ====================
 
 let currentProductIdForIngredients = null;
+let currentProductIngredientOptions = [];
 
 async function showProductIngredientsModal(productId) {
     currentProductIdForIngredients = productId;
     document.getElementById('pi-product-id').value = productId;
-    document.getElementById('pi-ingredient-name').value = '';
-    document.getElementById('pi-supplier-id').value = '';
+    document.getElementById('pi-ingredient-id').value = '';
+    document.getElementById('pi-ingredient-meta').textContent = '';
     document.getElementById('pi-quantity').value = '';
     
-    // 加载供应商选项
-    await loadSuppliersForPiSelect();
+    // 加载原料选项
+    await loadIngredientsForPiSelect();
 
     // 加载已配置的原料
     await loadProductIngredients();
@@ -893,20 +962,38 @@ async function showProductIngredientsModal(productId) {
     showModal('product-ingredients-modal');
 }
 
-async function loadSuppliersForPiSelect() {
-    const suppliersData = await fetchData('/admin/suppliers');
-    const select = document.getElementById('pi-supplier-id');
-    select.innerHTML = '<option value="">请选择供应商</option>';
-    if (suppliersData && suppliersData.suppliers) {
-        suppliersData.suppliers
-            .filter(s => s.is_active)
-            .forEach(supplier => {
-                const option = document.createElement('option');
-                option.value = supplier.id;
-                option.textContent = supplier.name;
-                select.appendChild(option);
-            });
+async function loadIngredientsForPiSelect() {
+    const ingredientsData = await fetchData('/admin/ingredients?is_active=true');
+    const select = document.getElementById('pi-ingredient-id');
+    select.innerHTML = '<option value="">请选择原料</option>';
+    currentProductIngredientOptions = ingredientsData && ingredientsData.ingredients ? ingredientsData.ingredients : [];
+
+    if (currentProductIngredientOptions.length === 0) {
+        select.innerHTML = '<option value="">暂无可用原料</option>';
+        updateProductIngredientMeta();
+        return;
     }
+
+    currentProductIngredientOptions.forEach(ingredient => {
+        const option = document.createElement('option');
+        const priceText = ingredient.price ? `¥${ingredient.price}` : '未设置单价';
+        option.value = ingredient.id;
+        option.textContent = `${ingredient.name} / ${ingredient.supplier_name || '未知供应商'} / ${ingredient.unit} / ${priceText}`;
+        select.appendChild(option);
+    });
+    updateProductIngredientMeta();
+}
+
+function updateProductIngredientMeta() {
+    const select = document.getElementById('pi-ingredient-id');
+    const meta = document.getElementById('pi-ingredient-meta');
+    if (!select || !meta) return;
+
+    const selectedId = parseInt(select.value);
+    const ingredient = currentProductIngredientOptions.find(item => item.id === selectedId);
+    meta.textContent = ingredient
+        ? `供应商: ${ingredient.supplier_name || '未知'} | 单位: ${ingredient.unit} | 单价: ${ingredient.price ? formatCurrency(ingredient.price) : '未设置'}`
+        : '';
 }
 
 async function loadProductIngredients() {
@@ -935,25 +1022,23 @@ async function loadProductIngredients() {
 }
 
 async function addProductIngredient() {
-    const ingredientName = document.getElementById('pi-ingredient-name').value.trim();
-    const supplierId = document.getElementById('pi-supplier-id').value;
+    const ingredientId = document.getElementById('pi-ingredient-id').value;
     const quantity = document.getElementById('pi-quantity').value;
     
-    if (!ingredientName || !supplierId || !quantity) {
-        alert('请输入原料名称、选择供应商并填写数量！');
+    if (!ingredientId || !quantity) {
+        alert('请选择原料并填写数量！');
         return;
     }
     
     const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`, 'POST', {
-        ingredient_name: ingredientName,
-        supplier_id: parseInt(supplierId),
+        ingredient_id: parseInt(ingredientId),
         quantity_needed: parseFloat(quantity)
     }, true);
     
     if (result) {
         alert('原料添加成功！');
-        document.getElementById('pi-ingredient-name').value = '';
-        document.getElementById('pi-supplier-id').value = '';
+        document.getElementById('pi-ingredient-id').value = '';
+        document.getElementById('pi-ingredient-meta').textContent = '';
         document.getElementById('pi-quantity').value = '';
         await loadProductIngredients();
     }
@@ -1071,6 +1156,28 @@ async function editSupplierOrderStatus(orderId) {
 
 // ==================== 初始化 ====================
 
+function setupIngredientControls() {
+    const search = document.getElementById('ingredient-search');
+    const statusFilter = document.getElementById('ingredient-status-filter');
+    const productIngredientSelect = document.getElementById('pi-ingredient-id');
+
+    if (search) {
+        search.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                loadIngredients();
+            }
+        });
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', loadIngredients);
+    }
+    if (productIngredientSelect) {
+        productIngredientSelect.addEventListener('change', updateProductIngredientMeta);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    setupIngredientControls();
     renderPage();
 });

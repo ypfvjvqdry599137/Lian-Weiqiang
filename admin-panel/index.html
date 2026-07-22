@@ -93,6 +93,20 @@
                     <h2>🥬 原料管理</h2>
                     <button class="btn btn-primary" onclick="showIngredientModal()">+ 添加原料</button>
                 </div>
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:15px;flex-wrap:wrap;">
+                    <input type="search" id="ingredient-search" placeholder="搜索原料、供应商、分类" style="max-width:260px;">
+                    <select id="ingredient-status-filter" style="max-width:140px;">
+                        <option value="active">启用中</option>
+                        <option value="inactive">已停用</option>
+                        <option value="all">全部</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadIngredients()">搜索</button>
+                    <label style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="ingredients-select-all" onchange="toggleIngredientSelection(this.checked)">
+                        全选当前
+                    </label>
+                    <button class="btn btn-danger" onclick="batchDeleteIngredients()">批量删除</button>
+                </div>
                 <div id="ingredients-list" class="data-list"></div>
             </div>
 
@@ -348,12 +362,9 @@
             <div id="product-ingredients-form">
                 <input type="hidden" id="pi-product-id">
                 <div class="form-group">
-                    <label>原料名称</label>
-                    <input type="text" id="pi-ingredient-name" placeholder="输入原料名称">
-                </div>
-                <div class="form-group">
-                    <label>供应商</label>
-                    <select id="pi-supplier-id"></select>
+                    <label>选择原料</label>
+                    <select id="pi-ingredient-id"></select>
+                    <div id="pi-ingredient-meta" style="margin-top: 8px; color: #666;"></div>
                 </div>
                 <div class="form-group">
                     <label>所需数量</label>
