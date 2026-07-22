@@ -32,6 +32,32 @@ def is_today(value):
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(BUSINESS_TZ).date() == datetime.now(BUSINESS_TZ).date()
 
+
+def to_business_datetime(value):
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BUSINESS_TZ)
+
+
+def get_month_range(month_value):
+    now = datetime.now(BUSINESS_TZ)
+
+    if month_value:
+        try:
+            year, month = [int(part) for part in month_value.split('-', 1)]
+            start_local = datetime(year, month, 1, tzinfo=BUSINESS_TZ)
+        except (ValueError, TypeError):
+            return None
+    else:
+        start_local = datetime(now.year, now.month, 1, tzinfo=BUSINESS_TZ)
+
+    if start_local.month == 12:
+        end_local = datetime(start_local.year + 1, 1, 1, tzinfo=BUSINESS_TZ)
+    else:
+        end_local = datetime(start_local.year, start_local.month + 1, 1, tzinfo=BUSINESS_TZ)
+
+    return start_local, end_local, start_local.strftime('%Y-%m')
+
 # ==================== 供应商登录和信息获取 ====================
 
 @supplier_bp.route('/login', methods=['POST'])
@@ -185,6 +211,132 @@ def update_supplier_order_status(order_id):
         "id": order_id,
         "new_status": new_status,
         "status_text": status_text
+    }), 200
+
+
+@supplier_bp.route('/settlement', methods=['GET'])
+def get_supplier_settlement():
+    from models import Supplier, SupplierOrder # Lazy import
+
+    supplier_id = request.args.get('supplier_id')
+    month_value = request.args.get('month')
+
+    if not supplier_id or not supplier_id.isdigit():
+        return jsonify({'message': '未授权'}), 401
+
+    supplier_id = int(supplier_id)
+    supplier = Supplier.query.get(supplier_id)
+    if not supplier:
+        return jsonify({'message': '供应商不存在'}), 404
+
+    month_range = get_month_range(month_value)
+    if month_range is None:
+        return jsonify({'message': '月份格式错误，请使用 YYYY-MM'}), 400
+
+    start_local, end_local, normalized_month = month_range
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    orders = SupplierOrder.query.filter(
+        SupplierOrder.supplier_id == supplier_id,
+        SupplierOrder.created_at >= start_utc,
+        SupplierOrder.created_at < end_utc
+    ).order_by(SupplierOrder.created_at.desc()).all()
+
+    summary = {
+        'month': normalized_month,
+        'supplier_name': supplier.name,
+        'order_count': len(orders),
+        'completed_count': 0,
+        'pending_count': 0,
+        'canceled_count': 0,
+        'total_cost': Decimal('0'),
+        'payable_total': Decimal('0'),
+        'pending_total': Decimal('0'),
+        'canceled_total': Decimal('0')
+    }
+    daily_totals = {}
+    orders_output = []
+
+    for order in orders:
+        order_total = get_supplier_order_total(order)
+        created_at = to_business_datetime(order.created_at)
+        day_key = created_at.strftime('%Y-%m-%d')
+        daily = daily_totals.setdefault(day_key, {
+            'date': day_key,
+            'order_count': 0,
+            'completed_count': 0,
+            'pending_count': 0,
+            'total_cost': Decimal('0'),
+            'payable_total': Decimal('0'),
+            'pending_total': Decimal('0')
+        })
+
+        daily['order_count'] += 1
+        if order.status == 30:
+            summary['completed_count'] += 1
+            summary['payable_total'] += order_total
+            summary['total_cost'] += order_total
+            daily['completed_count'] += 1
+            daily['payable_total'] += order_total
+            daily['total_cost'] += order_total
+        elif order.status in [10, 20]:
+            summary['pending_count'] += 1
+            summary['pending_total'] += order_total
+            summary['total_cost'] += order_total
+            daily['pending_count'] += 1
+            daily['pending_total'] += order_total
+            daily['total_cost'] += order_total
+        elif order.status == 40:
+            summary['canceled_count'] += 1
+
+        items_output = []
+        for item in order.items:
+            unit_price = item.unit_price if item.unit_price is not None else (item.ingredient.price if item.ingredient else None)
+            item_total = get_supplier_order_item_total(item)
+            items_output.append({
+                'ingredient_name': item.ingredient_name,
+                'quantity': str(item.quantity),
+                'unit': item.unit,
+                'unit_price': str(unit_price) if unit_price is not None else None,
+                'total_price': str(item_total)
+            })
+
+        status_text = {
+            10: '待备货',
+            20: '备货中',
+            30: '已完成',
+            40: '已取消'
+        }.get(order.status, '未知')
+
+        orders_output.append({
+            'id': order.id,
+            'order_sn': order.order_sn,
+            'status': order.status,
+            'status_text': status_text,
+            'total_cost': str(order_total),
+            'items': items_output,
+            'created_at': created_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    summary_output = {
+        key: (str(value) if isinstance(value, Decimal) else value)
+        for key, value in summary.items()
+    }
+
+    daily_output = []
+    for day_key in sorted(daily_totals.keys(), reverse=True):
+        item = daily_totals[day_key]
+        daily_output.append({
+            key: (str(value) if isinstance(value, Decimal) else value)
+            for key, value in item.items()
+        })
+
+    return jsonify({
+        'month': normalized_month,
+        'summary': summary_output,
+        'daily_totals': daily_output,
+        'supplier_orders': orders_output
     }), 200
 
 # ==================== 原料管理 (供应商视角) ====================

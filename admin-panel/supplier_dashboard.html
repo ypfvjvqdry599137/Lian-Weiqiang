@@ -19,6 +19,7 @@
         <nav class="sidebar">
             <ul class="menu">
                 <li class="menu-item active" data-page="supplier-orders">备货单管理</li>
+                <li class="menu-item" data-page="supplier-settlement">结算统计</li>
                 <li class="menu-item" data-page="supplier-ingredients">原料管理</li>
             </ul>
         </nav>
@@ -36,6 +37,26 @@
                 </div>
                 <div id="supplier-orders-summary" class="stats" style="margin-bottom: 20px;"></div>
                 <div id="supplier-orders-list" class="data-list"></div>
+            </div>
+
+            <!-- 结算统计 -->
+            <div id="page-supplier-settlement" class="page">
+                <div class="page-header">
+                    <h2>💰 结算统计</h2>
+                    <div class="settlement-controls">
+                        <input type="month" id="supplier-settlement-month">
+                        <button class="btn btn-primary" onclick="loadSupplierSettlement()">查询</button>
+                    </div>
+                </div>
+                <div id="supplier-settlement-summary" class="stats" style="margin-bottom: 20px;"></div>
+                <div class="settlement-section">
+                    <h3>每日汇总</h3>
+                    <div id="supplier-settlement-daily" class="settlement-daily-grid"></div>
+                </div>
+                <div class="settlement-section">
+                    <h3>备货单明细</h3>
+                    <div id="supplier-settlement-orders" class="data-list"></div>
+                </div>
             </div>
 
             <!-- 原料管理 -->
@@ -148,6 +169,20 @@
             return `¥${(parseFloat(value) || 0).toFixed(2)}`;
         }
 
+        function getCurrentMonthValue() {
+            const now = new Date();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            return `${now.getFullYear()}-${month}`;
+        }
+
+        function getSettlementMonthValue() {
+            const input = document.getElementById('supplier-settlement-month');
+            if (!input.value) {
+                input.value = getCurrentMonthValue();
+            }
+            return input.value;
+        }
+
         function showModal(id) {
             document.getElementById(id).classList.add('show');
         }
@@ -175,6 +210,9 @@
             switch (currentPage) {
                 case 'supplier-orders':
                     await loadSupplierOrders();
+                    break;
+                case 'supplier-settlement':
+                    await loadSupplierSettlement();
                     break;
                 case 'supplier-ingredients':
                     await loadSupplierIngredients();
@@ -268,9 +306,111 @@
                 const result = await fetchData(`/supplier/orders/${orderId}/status?supplier_id=${currentSupplierId}`, 'PUT', { status: parseInt(newStatus) });
                 if (result) {
                     alert('备货单状态更新成功！');
-                    await loadSupplierOrders();
+                    if (currentPage === 'supplier-settlement') {
+                        await loadSupplierSettlement();
+                    } else {
+                        await loadSupplierOrders();
+                    }
                 }
             }
+        }
+
+        // ==================== 结算统计 ====================
+
+        function renderSupplierSettlementSummary(summary) {
+            const summaryEl = document.getElementById('supplier-settlement-summary');
+            if (!summaryEl || !summary) return;
+
+            summaryEl.innerHTML = `
+                <div class="stat-card">
+                    <h3>${summary.month} 可结算金额</h3>
+                    <p class="number">${formatCurrency(summary.payable_total)}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>待确认金额</h3>
+                    <p class="number">${formatCurrency(summary.pending_total)}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>本月备货总额</h3>
+                    <p class="number">${formatCurrency(summary.total_cost)}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>已完成 / 待确认</h3>
+                    <p class="number">${summary.completed_count || 0} / ${summary.pending_count || 0}</p>
+                </div>
+            `;
+        }
+
+        function renderSupplierSettlementDaily(dailyTotals) {
+            const dailyEl = document.getElementById('supplier-settlement-daily');
+            dailyEl.innerHTML = '';
+
+            if (!dailyTotals || dailyTotals.length === 0) {
+                dailyEl.innerHTML = '<div class="empty-state">本月暂无备货记录</div>';
+                return;
+            }
+
+            dailyTotals.forEach(day => {
+                const item = document.createElement('div');
+                item.className = 'settlement-daily-card';
+                item.innerHTML = `
+                    <h4>${day.date}</h4>
+                    <p>可结算: <strong>${formatCurrency(day.payable_total)}</strong></p>
+                    <p>待确认: ${formatCurrency(day.pending_total)}</p>
+                    <p>备货单: ${day.order_count || 0} 单</p>
+                `;
+                dailyEl.appendChild(item);
+            });
+        }
+
+        function renderSupplierSettlementOrders(orders) {
+            const ordersEl = document.getElementById('supplier-settlement-orders');
+            ordersEl.innerHTML = '';
+
+            if (!orders || orders.length === 0) {
+                ordersEl.innerHTML = '<div class="empty-state">本月暂无备货单明细</div>';
+                return;
+            }
+
+            orders.forEach(order => {
+                const card = document.createElement('div');
+                card.classList.add('data-card', `status-${order.status}`);
+                const itemsHtml = order.items ? order.items.map(item => `
+                    <p>${item.ingredient_name} x ${item.quantity} ${item.unit} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
+                `).join('') : '';
+                const actionHtml = order.status === 10 || order.status === 20
+                    ? `<button class="btn btn-sm btn-success" onclick="editSupplierOrderStatus(${order.id})">修改状态</button>`
+                    : '';
+
+                card.innerHTML = `
+                    <div class="data-card-content">
+                        <h4>备货单 #${order.id} <span style="float:right;color:#666;">${order.status_text}</span></h4>
+                        <p>关联订单号: ${order.order_sn}</p>
+                        <p>材料费用: ${formatCurrency(order.total_cost)}</p>
+                        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
+                            ${itemsHtml}
+                        </div>
+                        <p style="font-size:12px;color:#999;margin-top:10px;">创建时间: ${formatDate(order.created_at)}</p>
+                    </div>
+                    <div class="data-card-actions">
+                        ${actionHtml}
+                    </div>
+                `;
+                ordersEl.appendChild(card);
+            });
+        }
+
+        async function loadSupplierSettlement() {
+            const month = getSettlementMonthValue();
+            const data = await fetchData(`/supplier/settlement?supplier_id=${currentSupplierId}&month=${encodeURIComponent(month)}`);
+
+            if (!data) {
+                return;
+            }
+
+            renderSupplierSettlementSummary(data.summary);
+            renderSupplierSettlementDaily(data.daily_totals);
+            renderSupplierSettlementOrders(data.supplier_orders);
         }
 
         // ==================== 原料管理 ====================
@@ -380,6 +520,7 @@
 
         // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('supplier-settlement-month').value = getCurrentMonthValue();
             renderPage();
         });
 
