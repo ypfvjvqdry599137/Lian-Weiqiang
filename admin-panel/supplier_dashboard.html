@@ -34,6 +34,7 @@
                     <button class="tab" data-status="30">已完成</button>
                     <button class="tab" data-status="40">已取消</button>
                 </div>
+                <div id="supplier-orders-summary" class="stats" style="margin-bottom: 20px;"></div>
                 <div id="supplier-orders-list" class="data-list"></div>
             </div>
 
@@ -143,6 +144,10 @@
             return date.toLocaleString();
         }
 
+        function formatCurrency(value) {
+            return `¥${(parseFloat(value) || 0).toFixed(2)}`;
+        }
+
         function showModal(id) {
             document.getElementById(id).classList.add('show');
         }
@@ -200,6 +205,26 @@
             return statusMap[status] || '未知';
         }
 
+        function renderSupplierOrdersSummary(summary) {
+            const summaryEl = document.getElementById('supplier-orders-summary');
+            if (!summaryEl || !summary) return;
+
+            summaryEl.innerHTML = `
+                <div class="stat-card">
+                    <h3>今日材料费用</h3>
+                    <p class="number">${formatCurrency(summary.today_total_cost)}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>当前列表费用</h3>
+                    <p class="number">${formatCurrency(summary.filtered_total_cost)}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>今日备货单</h3>
+                    <p class="number">${summary.today_order_count || 0}</p>
+                </div>
+            `;
+        }
+
         async function loadSupplierOrders() {
             let url = `/supplier/orders?supplier_id=${currentSupplierId}`;
             if (currentSupplierOrderStatusFilter !== 'all') {
@@ -208,18 +233,20 @@
             const ordersData = await fetchData(url);
             const ordersList = document.getElementById('supplier-orders-list');
             ordersList.innerHTML = '';
+            renderSupplierOrdersSummary(ordersData ? ordersData.summary : null);
 
             if (ordersData && ordersData.supplier_orders) {
                 ordersData.supplier_orders.forEach(order => {
                     const card = document.createElement('div');
                     card.classList.add('data-card', `status-${order.status}`);
                     const itemsHtml = order.items ? order.items.map(item => `
-                        <p>${item.ingredient_name} x ${item.quantity} ${item.unit}</p>
+                        <p>${item.ingredient_name} x ${item.quantity} ${item.unit} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
                     `).join('') : '';
                     card.innerHTML = `
                         <div class="data-card-content">
                             <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
                             <p>关联订单号: ${order.order_sn}</p>
+                            <p>材料费用: ${formatCurrency(order.total_cost)}</p>
                             <p>备注: ${order.notes || '无'}</p>
                             <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                                 ${itemsHtml}

@@ -105,6 +105,7 @@
                     <button class="tab" data-status="20">备货中</button>
                     <button class="tab" data-status="30">已完成</button>
                 </div>
+                <div id="supplier-orders-summary" class="stats" style="margin-bottom: 20px;"></div>
                 <div id="supplier-orders-list" class="data-list"></div>
             </div>
 
@@ -351,8 +352,8 @@
                     <input type="text" id="pi-ingredient-name" placeholder="输入原料名称">
                 </div>
                 <div class="form-group">
-                    <label>供应商名称</label>
-                    <input type="text" id="pi-supplier-name" placeholder="同名原料时填写">
+                    <label>供应商</label>
+                    <select id="pi-supplier-id"></select>
                 </div>
                 <div class="form-group">
                     <label>所需数量</label>

@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from decimal import Decimal
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 from extensions import db
@@ -11,11 +12,38 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 ALLOWED_PRODUCT_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
 PRODUCT_IMAGE_MAX_SIDE = 1200
 PRODUCT_IMAGE_QUALITY = 82
+BUSINESS_TZ = timezone(timedelta(hours=8))
 
 
 def get_public_upload_url(relative_path):
     base_url = (current_app.config.get('PUBLIC_BASE_URL') or request.host_url.rstrip('/')).rstrip('/')
     return f"{base_url}/{relative_path.lstrip('/')}"
+
+
+def get_supplier_order_item_total(item):
+    if item.total_price is not None:
+        return item.total_price
+
+    unit_price = item.unit_price
+    if unit_price is None and item.ingredient:
+        unit_price = item.ingredient.price
+    if unit_price is None:
+        return Decimal('0')
+    return item.quantity * unit_price
+
+
+def get_supplier_order_total(order):
+    if order.status == 40:
+        return Decimal('0')
+    return sum((get_supplier_order_item_total(item) for item in order.items), Decimal('0'))
+
+
+def is_today(value):
+    if not value:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BUSINESS_TZ).date() == datetime.now(BUSINESS_TZ).date()
 
 # ==================== 供应商管理 ====================
 
@@ -225,6 +253,7 @@ def add_product_ingredient(product_id):
     product = Product.query.get_or_404(product_id)
     ingredient_id = data.get('ingredient_id')
     ingredient_name = (data.get('ingredient_name') or '').strip()
+    supplier_id = data.get('supplier_id')
     supplier_name = (data.get('supplier_name') or '').strip()
     quantity_needed = data.get('quantity_needed')
     
@@ -238,18 +267,27 @@ def add_product_ingredient(product_id):
         if not ingredient_name:
             return jsonify({"message": "请输入原料名称"}), 400
 
+        if supplier_id:
+            supplier = Supplier.query.get_or_404(int(supplier_id))
+            if not supplier.is_active:
+                return jsonify({"message": "供应商已禁用"}), 400
+        elif not supplier_name:
+            return jsonify({"message": "请选择供应商"}), 400
+
         query = Ingredient.query.filter(
             Ingredient.name == ingredient_name,
             Ingredient.is_active == True
         )
+        if supplier_id:
+            query = query.filter(Ingredient.supplier_id == int(supplier_id))
         if supplier_name:
             query = query.join(Supplier).filter(Supplier.name == supplier_name)
 
         matches = query.order_by(Ingredient.id.asc()).limit(2).all()
         if not matches:
-            return jsonify({"message": "未找到该原料，请先在原料管理中添加"}), 404
+            return jsonify({"message": "未找到该供应商下的原料，请先在原料管理中添加并设置价格"}), 404
         if len(matches) > 1:
-            return jsonify({"message": "存在多个同名原料，请填写供应商名称"}), 409
+            return jsonify({"message": "该供应商下存在多个同名原料，请先整理原料数据"}), 409
 
         ingredient = matches[0]
         ingredient_id = ingredient.id
@@ -283,7 +321,9 @@ def get_product_ingredients(product_id):
             'ingredient_id': rel.ingredient_id,
             'ingredient_name': rel.ingredient.name if rel.ingredient else None,
             'ingredient_unit': rel.ingredient.unit if rel.ingredient else '斤',
+            'supplier_id': rel.ingredient.supplier_id if rel.ingredient else None,
             'supplier_name': rel.ingredient.supplier.name if (rel.ingredient and rel.ingredient.supplier) else None,
+            'ingredient_price': str(rel.ingredient.price) if (rel.ingredient and rel.ingredient.price is not None) else None,
             'quantity_needed': str(rel.quantity_needed)
         })
     return jsonify({"ingredients": output}), 200
@@ -311,6 +351,22 @@ def get_all_supplier_orders():
         query = query.filter_by(status=int(status_filter))
         
     orders = query.order_by(SupplierOrder.created_at.desc()).all()
+    summary_query = SupplierOrder.query
+    if supplier_id:
+        summary_query = summary_query.filter_by(supplier_id=int(supplier_id))
+    summary_orders = summary_query.all()
+    today_orders = [so for so in summary_orders if so.status != 40 and is_today(so.created_at)]
+    supplier_totals = {}
+    for so in today_orders:
+        sid = so.supplier_id
+        if sid not in supplier_totals:
+            supplier_totals[sid] = {
+                'supplier_id': sid,
+                'supplier_name': so.supplier.name if so.supplier else '未知供应商',
+                'today_total_cost': Decimal('0')
+            }
+        supplier_totals[sid]['today_total_cost'] += get_supplier_order_total(so)
+
     output = []
     for so in orders:
         status_text = {
@@ -323,12 +379,16 @@ def get_all_supplier_orders():
         items_output = []
         if so.items:
             for item in so.items:
+                unit_price = item.unit_price if item.unit_price is not None else (item.ingredient.price if item.ingredient else None)
+                total_price = get_supplier_order_item_total(item)
                 items_output.append({
                     'id': item.id,
                     'ingredient_id': item.ingredient_id,
                     'ingredient_name': item.ingredient_name,
                     'quantity': str(item.quantity),
-                    'unit': item.unit
+                    'unit': item.unit,
+                    'unit_price': str(unit_price) if unit_price is not None else None,
+                    'total_price': str(total_price)
                 })
         
         output.append({
@@ -340,10 +400,25 @@ def get_all_supplier_orders():
             'status_text': status_text,
             'notes': so.notes,
             'items': items_output,
+            'total_cost': str(get_supplier_order_total(so)),
             'created_at': so.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': so.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
-    return jsonify({"supplier_orders": output}), 200
+
+    summary = {
+        'today_total_cost': str(sum((get_supplier_order_total(so) for so in today_orders), Decimal('0'))),
+        'filtered_total_cost': str(sum((get_supplier_order_total(so) for so in orders), Decimal('0'))),
+        'today_order_count': len(today_orders),
+        'supplier_totals': [
+            {
+                'supplier_id': item['supplier_id'],
+                'supplier_name': item['supplier_name'],
+                'today_total_cost': str(item['today_total_cost'])
+            }
+            for item in supplier_totals.values()
+        ]
+    }
+    return jsonify({"supplier_orders": output, "summary": summary}), 200
 
 @admin_bp.route('/supplier-orders/<int:order_id>/status', methods=['PUT'])
 def update_supplier_order_status(order_id):

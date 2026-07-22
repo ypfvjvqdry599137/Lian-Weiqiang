@@ -87,6 +87,8 @@ class SupplierOrderItem(db.Model):
     ingredient_name = db.Column(db.String(200), nullable=False, comment='原料名称')
     quantity = db.Column(db.Numeric(10, 2), nullable=False, comment='需要数量')
     unit = db.Column(db.String(20), nullable=False, default='斤', comment='单位')
+    unit_price = db.Column(db.Numeric(10, 2), nullable=True, comment='原料单价快照')
+    total_price = db.Column(db.Numeric(10, 2), nullable=True, comment='原料小计快照')
 
     # 关联
     supplier_order = db.relationship('SupplierOrder', backref=db.backref('items', lazy=True))

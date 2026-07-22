@@ -120,6 +120,10 @@ function formatDate(dateString) {
     return date.toLocaleString();
 }
 
+function formatCurrency(value) {
+    return `¥${(parseFloat(value) || 0).toFixed(2)}`;
+}
+
 function getOrderStatusText(status) {
     const statusMap = {
         10: '待付款',
@@ -877,13 +881,32 @@ async function showProductIngredientsModal(productId) {
     currentProductIdForIngredients = productId;
     document.getElementById('pi-product-id').value = productId;
     document.getElementById('pi-ingredient-name').value = '';
-    document.getElementById('pi-supplier-name').value = '';
+    document.getElementById('pi-supplier-id').value = '';
     document.getElementById('pi-quantity').value = '';
     
+    // 加载供应商选项
+    await loadSuppliersForPiSelect();
+
     // 加载已配置的原料
     await loadProductIngredients();
     
     showModal('product-ingredients-modal');
+}
+
+async function loadSuppliersForPiSelect() {
+    const suppliersData = await fetchData('/admin/suppliers');
+    const select = document.getElementById('pi-supplier-id');
+    select.innerHTML = '<option value="">请选择供应商</option>';
+    if (suppliersData && suppliersData.suppliers) {
+        suppliersData.suppliers
+            .filter(s => s.is_active)
+            .forEach(supplier => {
+                const option = document.createElement('option');
+                option.value = supplier.id;
+                option.textContent = supplier.name;
+                select.appendChild(option);
+            });
+    }
 }
 
 async function loadProductIngredients() {
@@ -902,6 +925,7 @@ async function loadProductIngredients() {
                     <strong>${pi.ingredient_name}</strong>
                     <span style="color:#666;margin-left:10px;">${pi.quantity_needed} ${pi.ingredient_unit} / 份成品</span>
                     <span style="color:#999;margin-left:10px;">供应商: ${pi.supplier_name || '未知'}</span>
+                    <span style="color:#999;margin-left:10px;">单价: ${pi.ingredient_price ? formatCurrency(pi.ingredient_price) : '未设置'}</span>
                 </div>
                 <button class="btn btn-sm btn-danger" onclick="deleteProductIngredient(${pi.id})">删除</button>
             `;
@@ -912,24 +936,24 @@ async function loadProductIngredients() {
 
 async function addProductIngredient() {
     const ingredientName = document.getElementById('pi-ingredient-name').value.trim();
-    const supplierName = document.getElementById('pi-supplier-name').value.trim();
+    const supplierId = document.getElementById('pi-supplier-id').value;
     const quantity = document.getElementById('pi-quantity').value;
     
-    if (!ingredientName || !quantity) {
-        alert('请输入原料名称并填写数量！');
+    if (!ingredientName || !supplierId || !quantity) {
+        alert('请输入原料名称、选择供应商并填写数量！');
         return;
     }
     
     const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`, 'POST', {
         ingredient_name: ingredientName,
-        supplier_name: supplierName || null,
+        supplier_id: parseInt(supplierId),
         quantity_needed: parseFloat(quantity)
     }, true);
     
     if (result) {
         alert('原料添加成功！');
         document.getElementById('pi-ingredient-name').value = '';
-        document.getElementById('pi-supplier-name').value = '';
+        document.getElementById('pi-supplier-id').value = '';
         document.getElementById('pi-quantity').value = '';
         await loadProductIngredients();
     }
@@ -968,6 +992,34 @@ function getSupplierOrderStatusText(status) {
     return statusMap[status] || '未知';
 }
 
+function renderAdminSupplierOrdersSummary(summary) {
+    const summaryEl = document.getElementById('supplier-orders-summary');
+    if (!summaryEl || !summary) return;
+
+    const supplierTotals = (summary.supplier_totals || []).map(item => `
+        <div class="stat-card">
+            <h3>${item.supplier_name}</h3>
+            <p class="number">${formatCurrency(item.today_total_cost)}</p>
+        </div>
+    `).join('');
+
+    summaryEl.innerHTML = `
+        <div class="stat-card">
+            <h3>今日材料费用</h3>
+            <p class="number">${formatCurrency(summary.today_total_cost)}</p>
+        </div>
+        <div class="stat-card">
+            <h3>当前列表费用</h3>
+            <p class="number">${formatCurrency(summary.filtered_total_cost)}</p>
+        </div>
+        <div class="stat-card">
+            <h3>今日备货单</h3>
+            <p class="number">${summary.today_order_count || 0}</p>
+        </div>
+        ${supplierTotals}
+    `;
+}
+
 async function loadSupplierOrders() {
     let url = '/admin/supplier-orders';
     if (currentSupplierOrderStatusFilter !== 'all') {
@@ -976,19 +1028,21 @@ async function loadSupplierOrders() {
     const ordersData = await fetchData(url);
     const ordersList = document.getElementById('supplier-orders-list');
     ordersList.innerHTML = '';
+    renderAdminSupplierOrdersSummary(ordersData ? ordersData.summary : null);
 
     if (ordersData && ordersData.supplier_orders) {
         ordersData.supplier_orders.forEach(order => {
             const card = document.createElement('div');
             card.classList.add('data-card', `status-${order.status}`);
             const itemsHtml = order.items ? order.items.map(item => `
-                <p>${item.ingredient_name} x ${item.quantity} ${item.unit}</p>
+                <p>${item.ingredient_name} x ${item.quantity} ${item.unit} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
             `).join('') : '';
             card.innerHTML = `
                 <div class="data-card-content">
                     <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
                     <p>关联订单号: ${order.order_sn}</p>
                     <p>供应商: ${order.supplier_name || '未知'}</p>
+                    <p>材料费用: ${formatCurrency(order.total_cost)}</p>
                     <p>备注: ${order.notes || '无'}</p>
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                         ${itemsHtml}

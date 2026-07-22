@@ -78,9 +78,43 @@ CREATE TABLE IF NOT EXISTS supplier_order_item (
     ingredient_name VARCHAR(200) NOT NULL COMMENT '原料名称',
     quantity DECIMAL(10,2) NOT NULL COMMENT '需要数量',
     unit VARCHAR(20) NOT NULL DEFAULT '斤' COMMENT '单位',
+    unit_price DECIMAL(10,2) DEFAULT NULL COMMENT '原料单价快照',
+    total_price DECIMAL(10,2) DEFAULT NULL COMMENT '原料小计快照',
     FOREIGN KEY (supplier_order_id) REFERENCES supplier_order(id) ON DELETE CASCADE,
     FOREIGN KEY (ingredient_id) REFERENCES ingredient(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='供应商备货单项表';
+
+-- 给已存在的供应商备货单项表补结算字段
+SET @add_unit_price = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'supplier_order_item'
+       AND COLUMN_NAME = 'unit_price') = 0,
+    'ALTER TABLE supplier_order_item ADD COLUMN unit_price DECIMAL(10,2) DEFAULT NULL COMMENT ''原料单价快照'' AFTER unit',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_unit_price;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @add_total_price = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'supplier_order_item'
+       AND COLUMN_NAME = 'total_price') = 0,
+    'ALTER TABLE supplier_order_item ADD COLUMN total_price DECIMAL(10,2) DEFAULT NULL COMMENT ''原料小计快照'' AFTER unit_price',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_total_price;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+UPDATE supplier_order_item soi
+JOIN ingredient i ON i.id = soi.ingredient_id
+SET
+    soi.unit_price = COALESCE(soi.unit_price, i.price),
+    soi.total_price = COALESCE(soi.total_price, ROUND(soi.quantity * COALESCE(i.price, 0), 2))
+WHERE soi.unit_price IS NULL OR soi.total_price IS NULL;
 
 -- ============================================
 -- 插入测试数据 (使用 INSERT IGNORE 防止重复插入已存在的记录)

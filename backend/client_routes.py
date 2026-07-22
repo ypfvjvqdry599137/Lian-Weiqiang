@@ -440,12 +440,16 @@ def split_order_to_supplier_orders(order_sn):
         
         # 创建备货单项
         for item in items.values():
+            unit_price = item['ingredient'].price
+            total_price = item['quantity'] * unit_price if unit_price is not None else Decimal('0')
             soi = SupplierOrderItem(
                 supplier_order_id=supplier_order.id,
                 ingredient_id=item['ingredient'].id,
                 ingredient_name=item['ingredient'].name,
                 quantity=item['quantity'],
-                unit=item['ingredient'].unit
+                unit=item['ingredient'].unit,
+                unit_price=unit_price,
+                total_price=total_price
             )
             db.session.add(soi)
 

@@ -241,6 +241,8 @@ CREATE TABLE IF NOT EXISTS supplier_order_item (
     ingredient_name VARCHAR(200) NOT NULL COMMENT '原料名称',
     quantity DECIMAL(10,2) NOT NULL COMMENT '需要数量',
     unit VARCHAR(20) NOT NULL DEFAULT '斤' COMMENT '单位',
+    unit_price DECIMAL(10,2) DEFAULT NULL COMMENT '原料单价快照',
+    total_price DECIMAL(10,2) DEFAULT NULL COMMENT '原料小计快照',
     FOREIGN KEY (supplier_order_id) REFERENCES supplier_order(id) ON DELETE CASCADE,
     FOREIGN KEY (ingredient_id) REFERENCES ingredient(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='供应商备货单项表';

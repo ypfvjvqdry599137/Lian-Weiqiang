@@ -1,8 +1,36 @@
 from flask import Blueprint, request, jsonify
-from datetime import datetime
+from decimal import Decimal
+from datetime import datetime, timezone, timedelta
 from extensions import db
 
 supplier_bp = Blueprint('supplier', __name__, url_prefix='/supplier')
+BUSINESS_TZ = timezone(timedelta(hours=8))
+
+
+def get_supplier_order_item_total(item):
+    if item.total_price is not None:
+        return item.total_price
+
+    unit_price = item.unit_price
+    if unit_price is None and item.ingredient:
+        unit_price = item.ingredient.price
+    if unit_price is None:
+        return Decimal('0')
+    return item.quantity * unit_price
+
+
+def get_supplier_order_total(order):
+    if order.status == 40:
+        return Decimal('0')
+    return sum((get_supplier_order_item_total(item) for item in order.items), Decimal('0'))
+
+
+def is_today(value):
+    if not value:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BUSINESS_TZ).date() == datetime.now(BUSINESS_TZ).date()
 
 # ==================== 供应商登录和信息获取 ====================
 
@@ -69,6 +97,8 @@ def get_supplier_orders():
         query = query.filter_by(status=int(status_filter))
         
     orders = query.order_by(SupplierOrder.created_at.desc()).all()
+    summary_orders = SupplierOrder.query.filter_by(supplier_id=supplier_id).all()
+    today_orders = [so for so in summary_orders if so.status != 40 and is_today(so.created_at)]
     output = []
     for so in orders:
         status_text = {
@@ -81,12 +111,16 @@ def get_supplier_orders():
         items_output = []
         if so.items:
             for item in so.items:
+                unit_price = item.unit_price if item.unit_price is not None else (item.ingredient.price if item.ingredient else None)
+                total_price = get_supplier_order_item_total(item)
                 items_output.append({
                     'id': item.id,
                     'ingredient_id': item.ingredient_id,
                     'ingredient_name': item.ingredient_name,
                     'quantity': str(item.quantity),
-                    'unit': item.unit
+                    'unit': item.unit,
+                    'unit_price': str(unit_price) if unit_price is not None else None,
+                    'total_price': str(total_price)
                 })
         
         output.append({
@@ -98,10 +132,17 @@ def get_supplier_orders():
             'status_text': status_text,
             'notes': so.notes,
             'items': items_output,
+            'total_cost': str(get_supplier_order_total(so)),
             'created_at': so.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': so.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         })
-    return jsonify({"supplier_orders": output}), 200
+
+    summary = {
+        'today_total_cost': str(sum((get_supplier_order_total(so) for so in today_orders), Decimal('0'))),
+        'filtered_total_cost': str(sum((get_supplier_order_total(so) for so in orders), Decimal('0'))),
+        'today_order_count': len(today_orders)
+    }
+    return jsonify({"supplier_orders": output, "summary": summary}), 200
 
 @supplier_bp.route('/orders/<int:order_id>/status', methods=['PUT'])
 def update_supplier_order_status(order_id):
