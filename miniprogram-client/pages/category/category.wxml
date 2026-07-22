@@ -15,12 +15,13 @@
 
     <!-- 右侧商品列表 -->
     <scroll-view class="product-wrapper" scroll-y="true">
-      <view class="product-card" wx:for="{{products}}" wx:key="id">
-        <image src="{{item.image_url || ''}}" class="product-img" />
+      <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
+        <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="product-img" />
+        <view wx:else class="product-img product-placeholder">🥬</view>
         <view class="product-info">
           <view class="product-name">{{item.name}}</view>
           <view class="price">¥{{item.price}}/{{item.unit}}</view>
-          <view class="add-btn" bindtap="addToCart" data-id="{{item.id}}">+</view>
+          <view class="add-btn" catchtap="addToCart" data-id="{{item.id}}">+</view>
         </view>
       </view>
     </scroll-view>

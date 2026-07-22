@@ -50,7 +50,7 @@ Page({
 
   updateQuantity(e) {
     const itemId = e.currentTarget.dataset.id;
-    let newQuantity = e.currentTarget.dataset.quantity;
+    const newQuantity = parseInt(e.currentTarget.dataset.quantity);
     
     if (newQuantity <= 0) {
       // 删除商品
@@ -58,18 +58,17 @@ Page({
       return;
     }
 
-    // 更新数量（这里需要API支持，暂时先模拟，实际项目中应该调用更新接口）
-    // 目前我们的API没有直接更新数量的接口，所以我们简化处理：
-    // 先删除，再添加
-    // 实际项目中应该实现一个PUT /client/cart/:id 接口
-    
-    // 找到对应商品ID
-    const item = this.data.cartItems.find(i => i.id === itemId);
-    if (item) {
-      // 先加载购物车找到当前product_id
-      // 这里简化处理，直接重新加载
-      this.loadCart();
-    }
+    app.request({
+      url: `/client/cart/${itemId}`,
+      method: 'PUT',
+      data: {
+        quantity: newQuantity
+      },
+      success: () => {
+        this.loadCart();
+        app.updateCartCount();
+      }
+    });
   },
 
   removeItem(itemId) {
@@ -78,7 +77,15 @@ Page({
       content: '确定要删除这个商品吗？',
       success: (res) => {
         if (res.confirm) {
-          this.loadCart();
+          app.request({
+            url: `/client/cart/${itemId}`,
+            method: 'DELETE',
+            success: () => {
+              wx.showToast({ title: '已删除', icon: 'success' });
+              this.loadCart();
+              app.updateCartCount();
+            }
+          });
         }
       }
     });
@@ -97,7 +104,7 @@ Page({
       return;
     }
     wx.navigateTo({
-      url: '/pages/checkout/checkout'
+      url: '/pages/confirm-order/confirm-order'
     });
   },
 

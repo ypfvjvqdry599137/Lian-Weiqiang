@@ -67,6 +67,13 @@ Page({
     });
   },
 
+  goToDetail(e) {
+    const productId = e.currentTarget.dataset.id;
+    wx.navigateTo({
+      url: `/pages/product/product?id=${productId}`
+    });
+  },
+
   goToIndex(e) {
     wx.redirectTo({
       url: '/pages/index/index'

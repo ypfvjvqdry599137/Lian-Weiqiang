@@ -51,6 +51,15 @@
   margin-right: 20rpx;
 }
 
+.product-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef7ef;
+  color: #4CAF50;
+  font-size: 52rpx;
+}
+
 .product-info {
   flex: 1;
   position: relative;

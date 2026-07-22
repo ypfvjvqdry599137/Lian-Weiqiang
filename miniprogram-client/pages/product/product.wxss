@@ -1,0 +1,176 @@
+.container {
+  min-height: 100vh;
+  background: #f6f7f8;
+  padding-bottom: 160rpx;
+}
+
+.loading,
+.empty {
+  padding: 180rpx 40rpx;
+  text-align: center;
+  color: #888;
+  font-size: 28rpx;
+}
+
+.hero {
+  width: 100%;
+  height: 520rpx;
+  background: #eef7ef;
+}
+
+.hero-img {
+  width: 100%;
+  height: 100%;
+}
+
+.hero-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #7cbf80;
+}
+
+.placeholder-icon {
+  font-size: 96rpx;
+  margin-bottom: 16rpx;
+}
+
+.placeholder-text {
+  font-size: 26rpx;
+}
+
+.product-main,
+.section {
+  margin: 20rpx;
+  padding: 28rpx;
+  border-radius: 18rpx;
+  background: #fff;
+}
+
+.title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 20rpx;
+  align-items: flex-start;
+}
+
+.name {
+  flex: 1;
+  font-size: 38rpx;
+  font-weight: 600;
+  color: #222;
+  line-height: 1.35;
+}
+
+.stock {
+  flex: 0 0 auto;
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #edf8ef;
+  color: #4CAF50;
+  font-size: 22rpx;
+}
+
+.price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+  margin: 22rpx 0;
+}
+
+.price {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #ff5722;
+}
+
+.unit {
+  font-size: 26rpx;
+  color: #777;
+}
+
+.original-price {
+  margin-left: 12rpx;
+  color: #aaa;
+  font-size: 24rpx;
+  text-decoration: line-through;
+}
+
+.desc {
+  display: block;
+  color: #666;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 20rpx;
+}
+
+.quantity-control {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+}
+
+.quantity-btn {
+  width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 72rpx;
+  font-size: 36rpx;
+  background: #f2f4f5;
+  color: #333;
+}
+
+.quantity {
+  min-width: 70rpx;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.info-line {
+  display: block;
+  color: #666;
+  font-size: 26rpx;
+  line-height: 1.8;
+}
+
+.footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 20rpx;
+  padding: 18rpx 24rpx;
+  padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -4rpx 18rpx rgba(0, 0, 0, 0.08);
+}
+
+.cart-btn,
+.buy-btn {
+  flex: 1;
+  height: 88rpx;
+  border-radius: 999rpx;
+  font-size: 30rpx;
+  border: none;
+}
+
+.cart-btn {
+  background: #edf8ef;
+  color: #4CAF50;
+}
+
+.buy-btn {
+  background: #4CAF50;
+  color: #fff;
+}

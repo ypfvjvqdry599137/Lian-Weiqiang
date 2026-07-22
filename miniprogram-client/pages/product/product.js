@@ -1,66 +1,96 @@
-// pages/product/product.js
+const app = getApp();
+
 Page({
-
-  /**
-   * 页面的初始数据
-   */
   data: {
-
+    productId: null,
+    product: null,
+    quantity: 1,
+    loading: false
   },
 
-  /**
-   * 生命周期函数--监听页面加载
-   */
   onLoad(options) {
-
+    if (!options.id) {
+      wx.showToast({ title: '商品不存在', icon: 'none' });
+      return;
+    }
+    this.setData({ productId: options.id });
+    this.loadProduct(options.id);
   },
 
-  /**
-   * 生命周期函数--监听页面初次渲染完成
-   */
-  onReady() {
-
+  loadProduct(productId) {
+    this.setData({ loading: true });
+    app.request({
+      url: `/client/products/${productId}`,
+      success: (res) => {
+        if (res.data && res.data.id) {
+          this.setData({ product: res.data });
+          wx.setNavigationBarTitle({ title: res.data.name || '商品详情' });
+        } else {
+          wx.showToast({ title: '商品加载失败', icon: 'none' });
+        }
+        this.setData({ loading: false });
+      },
+      fail: () => {
+        this.setData({ loading: false });
+      }
+    });
   },
 
-  /**
-   * 生命周期函数--监听页面显示
-   */
-  onShow() {
-
+  decreaseQuantity() {
+    if (this.data.quantity <= 1) return;
+    this.setData({ quantity: this.data.quantity - 1 });
   },
 
-  /**
-   * 生命周期函数--监听页面隐藏
-   */
-  onHide() {
-
+  increaseQuantity() {
+    const availableStock = this.data.product ? this.data.product.available_stock : 0;
+    if (availableStock && this.data.quantity >= availableStock) {
+      wx.showToast({ title: '库存不足', icon: 'none' });
+      return;
+    }
+    this.setData({ quantity: this.data.quantity + 1 });
   },
 
-  /**
-   * 生命周期函数--监听页面卸载
-   */
-  onUnload() {
+  addToCart() {
+    if (!this.data.product) return;
 
+    app.request({
+      url: '/client/cart',
+      method: 'POST',
+      data: {
+        product_id: this.data.product.id,
+        quantity: this.data.quantity
+      },
+      success: () => {
+        wx.showToast({ title: '已加入购物车', icon: 'success' });
+        app.updateCartCount();
+      }
+    });
   },
 
-  /**
-   * 页面相关事件处理函数--监听用户下拉动作
-   */
-  onPullDownRefresh() {
+  buyNow() {
+    if (!this.data.product) return;
 
+    app.request({
+      url: '/client/cart',
+      method: 'POST',
+      data: {
+        product_id: this.data.product.id,
+        quantity: this.data.quantity
+      },
+      success: () => {
+        app.updateCartCount();
+        wx.navigateTo({
+          url: '/pages/confirm-order/confirm-order'
+        });
+      }
+    });
   },
 
-  /**
-   * 页面上拉触底事件的处理函数
-   */
-  onReachBottom() {
-
-  },
-
-  /**
-   * 用户点击右上角分享
-   */
   onShareAppMessage() {
-
+    const product = this.data.product || {};
+    return {
+      title: product.name || '鲜配居商品',
+      path: `/pages/product/product?id=${this.data.productId}`
+    };
   }
 })

@@ -55,7 +55,8 @@
     <scroll-view class="flash-list" scroll-x show-scrollbar="{{false}}">
       <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="flash-img">
-          <image src="{{item.image_url || ''}}" mode="aspectFill" class="img" />
+          <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="img" />
+          <view wx:else class="img-placeholder">🥬</view>
         </view>
         <view class="flash-info">
           <text class="flash-name">{{item.name}}</text>
@@ -79,7 +80,8 @@
     <view class="product-grid">
       <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="product-image">
-          <image src="{{item.image_url || ''}}" mode="aspectFill" class="product-img" />
+          <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="product-img" />
+          <view wx:else class="product-img product-placeholder">🥬</view>
         </view>
         <view class="product-info">
           <text class="product-name">{{item.name}}</text>
@@ -89,7 +91,7 @@
               <text class="price">¥{{item.price}}</text>
               <text class="unit">/ {{item.unit}}</text>
             </view>
-            <view class="add-btn" bindtap="addToCart" data-id="{{item.id}}" catchtap="true">
+            <view class="add-btn" catchtap="addToCart" data-id="{{item.id}}">
               <text class="add-icon">+</text>
             </view>
           </view>

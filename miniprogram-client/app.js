@@ -44,6 +44,17 @@ App({
         'content-type': 'application/json'
       },
       success: (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          const message = res.data && res.data.message ? res.data.message : '请求失败';
+          wx.showToast({
+            title: message,
+            icon: 'none'
+          });
+          if (options.fail) {
+            options.fail(res);
+          }
+          return;
+        }
         if (options.success) {
           options.success(res);
         }

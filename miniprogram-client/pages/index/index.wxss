@@ -247,6 +247,17 @@
   height: 100%;
 }
 
+.img-placeholder,
+.product-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4CAF50;
+  font-size: 64rpx;
+}
+
 .product-info {
   padding: 16rpx;
 }

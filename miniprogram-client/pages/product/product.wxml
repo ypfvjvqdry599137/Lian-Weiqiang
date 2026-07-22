@@ -1,2 +1,52 @@
-<!--pages/product/product.wxml-->
-<text>pages/product/product.wxml</text>
+<view class="container">
+  <view class="loading" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+
+  <view wx:elif="{{product}}">
+    <view class="hero">
+      <image wx:if="{{product.image_url}}" src="{{product.image_url}}" mode="aspectFill" class="hero-img" />
+      <view wx:else class="hero-placeholder">
+        <text class="placeholder-icon">🥬</text>
+        <text class="placeholder-text">暂无商品图片</text>
+      </view>
+    </view>
+
+    <view class="product-main">
+      <view class="title-row">
+        <text class="name">{{product.name}}</text>
+        <text class="stock">{{product.available_stock > 0 ? '库存 ' + product.available_stock : '暂时缺货'}}</text>
+      </view>
+      <view class="price-row">
+        <text class="price">¥{{product.price}}</text>
+        <text class="unit">/ {{product.unit}}</text>
+        <text class="original-price" wx:if="{{product.original_price}}">¥{{product.original_price}}</text>
+      </view>
+      <text class="desc">{{product.description || '新鲜直达，品质保障'}}</text>
+    </view>
+
+    <view class="section">
+      <view class="section-title">购买数量</view>
+      <view class="quantity-control">
+        <button class="quantity-btn" bindtap="decreaseQuantity" disabled="{{quantity <= 1}}">-</button>
+        <text class="quantity">{{quantity}}</text>
+        <button class="quantity-btn" bindtap="increaseQuantity" disabled="{{product.available_stock <= 0}}">+</button>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">配送说明</view>
+      <text class="info-line">下单后会自动生成供应商备货单</text>
+      <text class="info-line">请在确认订单页选择配送地址</text>
+    </view>
+  </view>
+
+  <view class="empty" wx:else>
+    <text>商品不存在或已下架</text>
+  </view>
+
+  <view class="footer" wx:if="{{product}}">
+    <button class="cart-btn" bindtap="addToCart" disabled="{{product.available_stock <= 0}}">加入购物车</button>
+    <button class="buy-btn" bindtap="buyNow" disabled="{{product.available_stock <= 0}}">立即购买</button>
+  </view>
+</view>
