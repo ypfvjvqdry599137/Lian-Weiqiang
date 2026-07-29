@@ -387,6 +387,51 @@ def remove_from_cart(cart_id):
 # ============================================
 # 工具函数：将订单拆分为供应商备货单
 # ============================================
+def get_recipe_key(ingredient):
+    return (
+        ingredient.name or '',
+        ingredient.unit or '',
+        ingredient.category_id or 0
+    )
+
+
+def select_product_ingredient_relations(product, zone_id):
+    groups = {}
+    for pi in product.ingredients:
+        ingredient = pi.ingredient
+        if not ingredient or not ingredient.supplier:
+            continue
+        if not ingredient.is_active or not ingredient.supplier.is_active:
+            continue
+
+        group = groups.setdefault(get_recipe_key(ingredient), {
+            'name': ingredient.name,
+            'zone_matches': [],
+            'global_matches': [],
+            'other_zone_matches': []
+        })
+        if zone_id and ingredient.zone_id == zone_id:
+            group['zone_matches'].append(pi)
+        elif ingredient.zone_id is None:
+            group['global_matches'].append(pi)
+        else:
+            group['other_zone_matches'].append(pi)
+
+    selected = []
+    missing = []
+    for group in groups.values():
+        if zone_id and group['zone_matches']:
+            selected.extend(group['zone_matches'])
+        elif group['global_matches']:
+            selected.extend(group['global_matches'])
+        elif group['other_zone_matches']:
+            missing.append(group['name'])
+
+    return selected, missing
+
+
+# 工具函数：将订单拆分为供应商备货单
+# 同名同单位原料支持按配送区域覆盖：当前区域原料优先，否则使用通用原料。
 def split_order_to_supplier_orders(order_sn):
     from models import OrderMaster, SupplierOrder, SupplierOrderItem
     
@@ -397,22 +442,20 @@ def split_order_to_supplier_orders(order_sn):
     if SupplierOrder.query.filter_by(order_sn=order_sn).first():
         return 0
     
-    # 按供应商分组统计所需原料
     supplier_ingredients = {}
+    missing_configs = []
     
     for order_item in order.items:
         product = order_item.product
         if not product:
             continue
+
+        selected_relations, missing_names = select_product_ingredient_relations(product, order.zone_id)
+        if missing_names:
+            missing_configs.extend([f'{product.name}-{name}' for name in missing_names])
         
-        # 获取该成品所需的所有原料
-        for pi in product.ingredients:
+        for pi in selected_relations:
             ingredient = pi.ingredient
-            if not ingredient or not ingredient.supplier:
-                continue
-            if not ingredient.is_active or not ingredient.supplier.is_active:
-                continue
-            
             supplier_id = ingredient.supplier.id
             ingredient_id = ingredient.id
             supplier_items = supplier_ingredients.setdefault(supplier_id, {})
@@ -420,25 +463,24 @@ def split_order_to_supplier_orders(order_sn):
                 'ingredient': ingredient,
                 'quantity': Decimal('0')
             })
-            
-            # 计算所需原料总量 = 成品数量 × 每份成品所需原料量
-            total_quantity = pi.quantity_needed * order_item.quantity
-            item['quantity'] += total_quantity
+            item['quantity'] += pi.quantity_needed * order_item.quantity
+
+    if missing_configs:
+        unique_missing = '、'.join(sorted(set(missing_configs)))
+        raise ValueError(f'当前配送区域缺少原料配置：{unique_missing}，请先在主后台配置该区域原料')
     
-    # 为每个供应商创建备货单
     supplier_order_count = 0
     for supplier_id, items in supplier_ingredients.items():
         supplier_order = SupplierOrder(
             order_sn=order_sn,
             supplier_id=supplier_id,
-            status=10,  # 待备货
+            status=10,
             notes=f'订单 {order_sn} 所需原料'
         )
         db.session.add(supplier_order)
-        db.session.flush()  # 为了获取 supplier_order.id
+        db.session.flush()
         supplier_order_count += 1
         
-        # 创建备货单项
         for item in items.values():
             unit_price = item['ingredient'].price
             total_price = item['quantity'] * unit_price if unit_price is not None else Decimal('0')
@@ -454,7 +496,6 @@ def split_order_to_supplier_orders(order_sn):
             db.session.add(soi)
 
     return supplier_order_count
-
 
 def can_user_cancel_order(order):
     if order.order_status not in [10, 20]:
@@ -560,7 +601,11 @@ def create_order():
         db.session.delete(item)
 
     db.session.flush()
-    supplier_order_count = split_order_to_supplier_orders(order_sn)
+    try:
+        supplier_order_count = split_order_to_supplier_orders(order_sn)
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'message': str(exc)}), 400
     
     db.session.commit()
     
@@ -666,7 +711,11 @@ def pay_order(order_sn):
             product.sales_count += item.quantity
     
     # 自动拆分为供应商备货单
-    split_order_to_supplier_orders(order_sn)
+    try:
+        split_order_to_supplier_orders(order_sn)
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'message': str(exc)}), 400
     
     db.session.commit()
     return jsonify({'message': '支付成功'})

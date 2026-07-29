@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS ingredient (
     unit VARCHAR(20) NOT NULL DEFAULT '斤' COMMENT '单位',
     category_id INT DEFAULT NULL COMMENT '所属分类ID',
     supplier_id INT NOT NULL COMMENT '供应商ID',
+    zone_id INT DEFAULT NULL COMMENT '配送区域ID，空表示通用',
     price DECIMAL(10,2) DEFAULT NULL COMMENT '原料价格',
     stock INT NOT NULL DEFAULT 0 COMMENT '库存数量',
     is_active BOOLEAN DEFAULT TRUE COMMENT '是否启用',
@@ -34,7 +35,8 @@ CREATE TABLE IF NOT EXISTS ingredient (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     FOREIGN KEY (supplier_id) REFERENCES supplier(id) ON DELETE CASCADE,
     FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE SET NULL,
-    INDEX idx_supplier_id (supplier_id)
+    INDEX idx_supplier_id (supplier_id),
+    INDEX idx_ingredient_zone_id (zone_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='原料表';
 
 -- ============================================
@@ -157,3 +159,27 @@ CREATE TABLE IF NOT EXISTS ingredient_price_change_request (
     INDEX idx_ingredient_price_request_supplier (supplier_id),
     INDEX idx_ingredient_price_request_ingredient (ingredient_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='原料价格变更审核表';
+-- 给已有原料补配送区域字段，NULL 表示通用区域
+SET @add_ingredient_zone_id = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'ingredient'
+       AND COLUMN_NAME = 'zone_id') = 0,
+    'ALTER TABLE ingredient ADD COLUMN zone_id INT DEFAULT NULL COMMENT ''配送区域ID，空表示通用'' AFTER supplier_id',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_ingredient_zone_id;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @add_ingredient_zone_index = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'ingredient'
+       AND INDEX_NAME = 'idx_ingredient_zone_id') = 0,
+    'ALTER TABLE ingredient ADD INDEX idx_ingredient_zone_id (zone_id)',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_ingredient_zone_index;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

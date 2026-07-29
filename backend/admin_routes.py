@@ -92,6 +92,8 @@ def serialize_admin_ingredient(ing):
         'category_name': ing.category.name if ing.category else None,
         'supplier_id': ing.supplier_id,
         'supplier_name': ing.supplier.name if ing.supplier else None,
+        'zone_id': ing.zone_id,
+        'zone_name': ing.zone.zone_name if ing.zone else None,
         'price': str(ing.price) if ing.price is not None else None,
         'stock': ing.stock,
         'is_active': ing.is_active,
@@ -206,6 +208,7 @@ def create_ingredient():
 
     name = data.get('name')
     supplier_id = data.get('supplier_id')
+    zone_id = data.get('zone_id') or None
     if not all([name, supplier_id]):
         return jsonify({"message": "Name and supplier are required"}), 400
 
@@ -214,6 +217,7 @@ def create_ingredient():
         unit=data.get('unit', '斤'),
         category_id=data.get('category_id'),
         supplier_id=supplier_id,
+        zone_id=zone_id,
         price=Decimal(str(data.get('price'))) if data.get('price') is not None else None,
         stock=data.get('stock', 0),
         is_active=data.get('is_active', True)
@@ -224,24 +228,32 @@ def create_ingredient():
 
 @admin_bp.route('/ingredients', methods=['GET'])
 def get_ingredients():
-    from models import Ingredient, Supplier, Category
+    from models import Ingredient, Supplier, Category, DeliveryZone
     supplier_id = request.args.get('supplier_id')
+    zone_id_filter = request.args.get('zone_id')
     is_active = request.args.get('is_active')
     keyword = (request.args.get('q') or '').strip()
     
     query = Ingredient.query
     if supplier_id:
         query = query.filter_by(supplier_id=int(supplier_id))
+    if zone_id_filter:
+        if zone_id_filter == 'global':
+            query = query.filter(Ingredient.zone_id.is_(None))
+        elif zone_id_filter.isdigit():
+            query = query.filter_by(zone_id=int(zone_id_filter))
     if is_active is not None:
         query = query.filter_by(is_active=is_active.lower() == 'true')
     if keyword:
         like = f"%{keyword}%"
         query = query.outerjoin(Supplier, Ingredient.supplier_id == Supplier.id) \
             .outerjoin(Category, Ingredient.category_id == Category.id) \
+            .outerjoin(DeliveryZone, Ingredient.zone_id == DeliveryZone.id) \
             .filter(or_(
                 Ingredient.name.ilike(like),
                 Supplier.name.ilike(like),
-                Category.name.ilike(like)
+                Category.name.ilike(like),
+                DeliveryZone.zone_name.ilike(like)
             ))
     
     ingredients = query.order_by(Ingredient.created_at.desc()).all()
@@ -284,6 +296,8 @@ def update_ingredient(ingredient_id):
     ing.unit = data.get('unit', ing.unit)
     ing.category_id = data.get('category_id', ing.category_id)
     ing.supplier_id = data.get('supplier_id', ing.supplier_id)
+    if 'zone_id' in data:
+        ing.zone_id = data.get('zone_id') or None
     if 'price' in data:
         ing.price = Decimal(str(data['price'])) if data['price'] is not None else None
     ing.stock = data.get('stock', ing.stock)
@@ -386,6 +400,7 @@ def add_product_ingredient(product_id):
     ingredient_id = data.get('ingredient_id')
     ingredient_name = (data.get('ingredient_name') or '').strip()
     supplier_id = data.get('supplier_id')
+    zone_id = data.get('zone_id')
     supplier_name = (data.get('supplier_name') or '').strip()
     quantity_needed = data.get('quantity_needed')
     
@@ -416,6 +431,10 @@ def add_product_ingredient(product_id):
         )
         if supplier_id:
             query = query.filter(Ingredient.supplier_id == int(supplier_id))
+        if zone_id == 'global':
+            query = query.filter(Ingredient.zone_id.is_(None))
+        elif zone_id and str(zone_id).isdigit():
+            query = query.filter(Ingredient.zone_id == int(zone_id))
         if supplier_name:
             query = query.join(Supplier).filter(Supplier.name == supplier_name)
 
@@ -459,6 +478,8 @@ def get_product_ingredients(product_id):
             'ingredient_unit': rel.ingredient.unit if rel.ingredient else '斤',
             'supplier_id': rel.ingredient.supplier_id if rel.ingredient else None,
             'supplier_name': rel.ingredient.supplier.name if (rel.ingredient and rel.ingredient.supplier) else None,
+            'ingredient_zone_id': rel.ingredient.zone_id if rel.ingredient else None,
+            'ingredient_zone_name': rel.ingredient.zone.zone_name if (rel.ingredient and rel.ingredient.zone) else None,
             'ingredient_price': str(rel.ingredient.price) if (rel.ingredient and rel.ingredient.price is not None) else None,
             'quantity_needed': str(rel.quantity_needed)
         })
@@ -532,6 +553,8 @@ def get_all_supplier_orders():
             'order_sn': so.order_sn,
             'supplier_id': so.supplier_id,
             'supplier_name': so.supplier.name if so.supplier else None,
+            'zone_id': so.order.zone_id if so.order else None,
+            'zone_name': so.order.zone.zone_name if (so.order and so.order.zone) else None,
             'status': so.status,
             'status_text': status_text,
             'notes': so.notes,

@@ -96,6 +96,7 @@
                 </div>
                 <div style="display:flex;gap:10px;align-items:center;margin-bottom:15px;flex-wrap:wrap;">
                     <input type="search" id="ingredient-search" placeholder="搜索原料、供应商、分类" style="max-width:260px;">
+                    <select id="ingredient-zone-filter" style="max-width:180px;"><option value="all">全部区域</option></select>
                     <select id="ingredient-status-filter" style="max-width:140px;">
                         <option value="active">启用中</option>
                         <option value="inactive">已停用</option>
@@ -358,6 +359,10 @@
                     <select id="ingredient-category-id"></select>
                 </div>
                 <div class="form-group">
+                    <label>配送区域</label>
+                    <select id="ingredient-zone-id"></select>
+                </div>
+                <div class="form-group">
                     <label>价格（用于内部核算）</label>
                     <input type="number" step="0.01" id="ingredient-price">
                 </div>
@@ -381,6 +386,10 @@
             <h2>配置成品原料</h2>
             <div id="product-ingredients-form">
                 <input type="hidden" id="pi-product-id">
+                <div class="form-group">
+                    <label>配送区域筛选</label>
+                    <select id="pi-zone-filter"></select>
+                </div>
                 <div class="form-group">
                     <label>选择原料</label>
                     <select id="pi-ingredient-id"></select>

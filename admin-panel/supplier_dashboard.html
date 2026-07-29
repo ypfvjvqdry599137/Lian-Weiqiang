@@ -89,6 +89,10 @@
                     <input type="text" id="si-ingredient-category-name" readonly>
                 </div>
                 <div class="form-group">
+                    <label>配送区域</label>
+                    <input type="text" id="si-ingredient-zone-name" readonly>
+                </div>
+                <div class="form-group">
                     <label>申请新价格（需主后台审核）</label>
                     <input type="number" step="0.01" id="si-ingredient-price">
                     <div id="si-price-review-note" style="margin-top:8px;color:#b26a00;font-size:13px;line-height:1.6;"></div>
@@ -167,6 +171,10 @@
 
         function formatCurrency(value) {
             return `¥${(parseFloat(value) || 0).toFixed(2)}`;
+        }
+
+        function formatZoneName(zoneName) {
+            return zoneName || '通用区域';
         }
 
         function getCurrentMonthValue() {
@@ -283,7 +291,7 @@
                     card.innerHTML = `
                         <div class="data-card-content">
                             <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
-                            <p>关联订单号: ${order.order_sn}</p>
+                            <p>关联订单号: ${order.order_sn} | 备货区域: ${formatZoneName(order.zone_name)}</p>
                             <p>材料费用: ${formatCurrency(order.total_cost)}</p>
                             <p>备注: ${order.notes || '无'}</p>
                             <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
@@ -385,7 +393,7 @@
                 card.innerHTML = `
                     <div class="data-card-content">
                         <h4>备货单 #${order.id} <span style="float:right;color:#666;">${order.status_text}</span></h4>
-                        <p>关联订单号: ${order.order_sn}</p>
+                        <p>关联订单号: ${order.order_sn} | 备货区域: ${formatZoneName(order.zone_name)}</p>
                         <p>材料费用: ${formatCurrency(order.total_cost)}</p>
                         <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                             ${itemsHtml}
@@ -427,7 +435,7 @@
                     card.innerHTML = `
                         <div class="data-card-content">
                             <h4>${ingredient.name}</h4>
-                            <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'}</p>
+                            <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'} | 区域: ${formatZoneName(ingredient.zone_name)}</p>
                             <p>价格: ${ingredient.price ? '¥' + ingredient.price : '未设置'} | 库存: ${ingredient.stock}</p>
                             ${ingredient.pending_price_request ? `<p style="color:#b26a00;">待审核新价: ${formatCurrency(ingredient.pending_price_request.requested_price)}</p>` : ''}
                             <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
@@ -455,6 +463,7 @@
                 document.getElementById('si-ingredient-name').value = ingredient.name;
                 document.getElementById('si-ingredient-unit').value = ingredient.unit;
                 document.getElementById('si-ingredient-category-name').value = ingredient.category_name || '无';
+                document.getElementById('si-ingredient-zone-name').value = formatZoneName(ingredient.zone_name);
                 document.getElementById('si-ingredient-price').value = ingredient.pending_price_request ? ingredient.pending_price_request.requested_price || '' : ingredient.price || '';
                 const priceNote = document.getElementById('si-price-review-note');
                 priceNote.textContent = ingredient.pending_price_request

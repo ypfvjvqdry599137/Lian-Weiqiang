@@ -28,6 +28,7 @@ class Ingredient(db.Model):
     unit = db.Column(db.String(20), nullable=False, default='斤', comment='单位（斤、个、份等）')
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=True, comment='所属分类ID')
     supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
+    zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=True, comment='配送区域ID，空表示通用')
     price = db.Column(db.Numeric(10, 2), nullable=True, comment='原料价格（可选，用于内部核算）')
     stock = db.Column(db.Integer, default=0, comment='库存数量')
     is_active = db.Column(db.Boolean, default=True, comment='是否启用')
@@ -37,6 +38,7 @@ class Ingredient(db.Model):
     # 关联
     supplier = db.relationship('Supplier', backref=db.backref('ingredients', lazy=True))
     category = db.relationship('Category', backref=db.backref('ingredients', lazy=True))
+    zone = db.relationship('DeliveryZone', backref=db.backref('ingredients', lazy=True))
 
     def __repr__(self):
         return f'<Ingredient {self.name}>'

@@ -124,6 +124,10 @@ function formatCurrency(value) {
     return `¥${(parseFloat(value) || 0).toFixed(2)}`;
 }
 
+function formatZoneName(zoneName) {
+    return zoneName || '通用区域';
+}
+
 function getOrderStatusText(status) {
     const statusMap = {
         10: '待付款',
@@ -762,9 +766,13 @@ function getIngredientsListUrl() {
     const params = new URLSearchParams();
     const search = document.getElementById('ingredient-search')?.value.trim();
     const status = document.getElementById('ingredient-status-filter')?.value || 'active';
+    const zoneId = document.getElementById('ingredient-zone-filter')?.value || 'all';
 
     if (search) {
         params.set('q', search);
+    }
+    if (zoneId && zoneId !== 'all') {
+        params.set('zone_id', zoneId);
     }
     if (status === 'active') {
         params.set('is_active', 'true');
@@ -775,7 +783,6 @@ function getIngredientsListUrl() {
     const query = params.toString();
     return query ? `/admin/ingredients?${query}` : '/admin/ingredients';
 }
-
 function getSelectedIngredientIds() {
     return Array.from(document.querySelectorAll('.ingredient-select:checked'))
         .map(input => parseInt(input.value))
@@ -818,7 +825,7 @@ async function loadIngredients() {
                 <div class="data-card-content">
                     <h4>${ingredient.name}</h4>
                     <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'}</p>
-                    <p>供应商: ${ingredient.supplier_name || '未知'}</p>
+                    <p>供应商: ${ingredient.supplier_name || '未知'} | 区域: ${formatZoneName(ingredient.zone_name)}</p>
                     <p>价格: ${ingredient.price ? '¥' + ingredient.price : '未设置'} | 库存: ${ingredient.stock}</p>
                     ${ingredient.pending_price_request ? `<p style="color:#b26a00;">待审核新价: ${formatCurrency(ingredient.pending_price_request.requested_price)}（供应商申请）</p>` : ''}
                     <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
@@ -849,6 +856,7 @@ async function showIngredientModal(ingredientId = null) {
     // 加载供应商和分类选项
     await loadSuppliersForSelect();
     await loadCategoriesForSelect();
+    await loadDeliveryZonesForIngredientSelect('ingredient-zone-id');
 
     if (ingredientId) {
         title.textContent = '编辑原料';
@@ -859,6 +867,7 @@ async function showIngredientModal(ingredientId = null) {
             document.getElementById('ingredient-unit').value = ingredient.unit;
             document.getElementById('ingredient-supplier-id').value = ingredient.supplier_id;
             document.getElementById('ingredient-category-id').value = ingredient.category_id || '';
+            document.getElementById('ingredient-zone-id').value = ingredient.zone_id || '';
             document.getElementById('ingredient-price').value = ingredient.price || '';
             document.getElementById('ingredient-stock').value = ingredient.stock;
             document.getElementById('ingredient-active').checked = ingredient.is_active;
@@ -883,6 +892,24 @@ async function loadSuppliersForSelect() {
     }
 }
 
+async function loadDeliveryZonesForIngredientSelect(selectId, includeAll = false) {
+    const zonesData = await fetchData('/admin/delivery-zones');
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    select.innerHTML = includeAll
+        ? '<option value="all">全部区域</option><option value="global">通用区域</option>'
+        : '<option value="">通用区域</option>';
+
+    if (zonesData && zonesData.zones) {
+        zonesData.zones.forEach(zone => {
+            const option = document.createElement('option');
+            option.value = zone.id;
+            option.textContent = zone.zone_name;
+            select.appendChild(option);
+        });
+    }
+}
 async function loadCategoriesForSelect() {
     const categoriesData = await fetchData('/admin/categories');
     const select1 = document.getElementById('ingredient-category-id');
@@ -907,6 +934,7 @@ document.getElementById('ingredient-form').addEventListener('submit', async func
         unit: document.getElementById('ingredient-unit').value,
         supplier_id: parseInt(document.getElementById('ingredient-supplier-id').value),
         category_id: document.getElementById('ingredient-category-id').value ? parseInt(document.getElementById('ingredient-category-id').value) : null,
+        zone_id: document.getElementById('ingredient-zone-id').value ? parseInt(document.getElementById('ingredient-zone-id').value) : null,
         price: document.getElementById('ingredient-price').value ? parseFloat(document.getElementById('ingredient-price').value) : null,
         stock: parseInt(document.getElementById('ingredient-stock').value) || 0,
         is_active: document.getElementById('ingredient-active').checked,
@@ -1028,6 +1056,7 @@ async function showProductIngredientsModal(productId) {
     document.getElementById('pi-product-id').value = productId;
     document.getElementById('pi-ingredient-id').value = '';
     document.getElementById('pi-ingredient-meta').textContent = '';
+    await loadDeliveryZonesForIngredientSelect('pi-zone-filter', true);
     document.getElementById('pi-quantity').value = '';
     
     // 加载原料选项
@@ -1040,7 +1069,9 @@ async function showProductIngredientsModal(productId) {
 }
 
 async function loadIngredientsForPiSelect() {
-    const ingredientsData = await fetchData('/admin/ingredients?is_active=true');
+    const zoneFilter = document.getElementById('pi-zone-filter')?.value || 'all';
+    const zoneQuery = zoneFilter && zoneFilter !== 'all' ? `&zone_id=${encodeURIComponent(zoneFilter)}` : '';
+    const ingredientsData = await fetchData(`/admin/ingredients?is_active=true${zoneQuery}`);
     const select = document.getElementById('pi-ingredient-id');
     select.innerHTML = '<option value="">请选择原料</option>';
     currentProductIngredientOptions = ingredientsData && ingredientsData.ingredients ? ingredientsData.ingredients : [];
@@ -1055,12 +1086,11 @@ async function loadIngredientsForPiSelect() {
         const option = document.createElement('option');
         const priceText = ingredient.price ? `¥${ingredient.price}` : '未设置单价';
         option.value = ingredient.id;
-        option.textContent = `${ingredient.name} / ${ingredient.supplier_name || '未知供应商'} / ${ingredient.unit} / ${priceText}`;
+        option.textContent = `${ingredient.name} / ${formatZoneName(ingredient.zone_name)} / ${ingredient.supplier_name || '未知供应商'} / ${ingredient.unit} / ${priceText}`;
         select.appendChild(option);
     });
     updateProductIngredientMeta();
 }
-
 function updateProductIngredientMeta() {
     const select = document.getElementById('pi-ingredient-id');
     const meta = document.getElementById('pi-ingredient-meta');
@@ -1069,10 +1099,9 @@ function updateProductIngredientMeta() {
     const selectedId = parseInt(select.value);
     const ingredient = currentProductIngredientOptions.find(item => item.id === selectedId);
     meta.textContent = ingredient
-        ? `供应商: ${ingredient.supplier_name || '未知'} | 单位: ${ingredient.unit} | 单价: ${ingredient.price ? formatCurrency(ingredient.price) : '未设置'}`
+        ? `区域: ${formatZoneName(ingredient.zone_name)} | 供应商: ${ingredient.supplier_name || '未知'} | 单位: ${ingredient.unit} | 单价: ${ingredient.price ? formatCurrency(ingredient.price) : '未设置'}`
         : '';
 }
-
 async function loadProductIngredients() {
     if (!currentProductIdForIngredients) return;
     
@@ -1088,6 +1117,7 @@ async function loadProductIngredients() {
                 <div>
                     <strong>${pi.ingredient_name}</strong>
                     <span style="color:#666;margin-left:10px;">${pi.quantity_needed} ${pi.ingredient_unit} / 份成品</span>
+                    <span style="color:#999;margin-left:10px;">区域: ${formatZoneName(pi.ingredient_zone_name)}</span>
                     <span style="color:#999;margin-left:10px;">供应商: ${pi.supplier_name || '未知'}</span>
                     <span style="color:#999;margin-left:10px;">单价: ${pi.ingredient_price ? formatCurrency(pi.ingredient_price) : '未设置'}</span>
                 </div>
@@ -1203,7 +1233,7 @@ async function loadSupplierOrders() {
                 <div class="data-card-content">
                     <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
                     <p>关联订单号: ${order.order_sn}</p>
-                    <p>供应商: ${order.supplier_name || '未知'}</p>
+                    <p>供应商: ${order.supplier_name || '未知'} | 备货区域: ${formatZoneName(order.zone_name)}</p>
                     <p>材料费用: ${formatCurrency(order.total_cost)}</p>
                     <p>备注: ${order.notes || '无'}</p>
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
@@ -1236,7 +1266,9 @@ async function editSupplierOrderStatus(orderId) {
 function setupIngredientControls() {
     const search = document.getElementById('ingredient-search');
     const statusFilter = document.getElementById('ingredient-status-filter');
+    const ingredientZoneFilter = document.getElementById('ingredient-zone-filter');
     const productIngredientSelect = document.getElementById('pi-ingredient-id');
+    const productIngredientZoneFilter = document.getElementById('pi-zone-filter');
     const priceReviewSearch = document.getElementById('price-review-search');
     const priceReviewStatusFilter = document.getElementById('price-review-status-filter');
 
@@ -1251,8 +1283,15 @@ function setupIngredientControls() {
     if (statusFilter) {
         statusFilter.addEventListener('change', loadIngredients);
     }
+    if (ingredientZoneFilter) {
+        loadDeliveryZonesForIngredientSelect('ingredient-zone-filter', true);
+        ingredientZoneFilter.addEventListener('change', loadIngredients);
+    }
     if (productIngredientSelect) {
         productIngredientSelect.addEventListener('change', updateProductIngredientMeta);
+    }
+    if (productIngredientZoneFilter) {
+        productIngredientZoneFilter.addEventListener('change', loadIngredientsForPiSelect);
     }
     if (priceReviewSearch) {
         priceReviewSearch.addEventListener('keydown', event => {
@@ -1266,7 +1305,6 @@ function setupIngredientControls() {
         priceReviewStatusFilter.addEventListener('change', loadPriceReviews);
     }
 }
-
 document.addEventListener('DOMContentLoaded', () => {
     setupIngredientControls();
     renderPage();
