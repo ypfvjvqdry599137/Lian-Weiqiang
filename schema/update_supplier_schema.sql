@@ -202,3 +202,45 @@ INSERT IGNORE INTO supplier_service_zone (supplier_id, zone_id)
 SELECT DISTINCT supplier_id, zone_id
 FROM ingredient
 WHERE zone_id IS NOT NULL;
+
+-- Supplier business delete and supplier-order display snapshot.
+SET @add_supplier_is_deleted = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'supplier'
+       AND COLUMN_NAME = 'is_deleted') = 0,
+    'ALTER TABLE supplier ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE COMMENT ''是否已删除'' AFTER is_active',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_supplier_is_deleted;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @add_supplier_deleted_at = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'supplier'
+       AND COLUMN_NAME = 'deleted_at') = 0,
+    'ALTER TABLE supplier ADD COLUMN deleted_at DATETIME DEFAULT NULL COMMENT ''删除时间'' AFTER updated_at',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_supplier_deleted_at;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @add_supplier_order_name_snapshot = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'supplier_order'
+       AND COLUMN_NAME = 'supplier_name_snapshot') = 0,
+    'ALTER TABLE supplier_order ADD COLUMN supplier_name_snapshot VARCHAR(200) DEFAULT NULL COMMENT ''供应商名称快照'' AFTER supplier_id',
+    'SELECT 1'
+);
+PREPARE stmt FROM @add_supplier_order_name_snapshot;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+UPDATE supplier_order so
+JOIN supplier s ON s.id = so.supplier_id
+SET so.supplier_name_snapshot = COALESCE(NULLIF(so.supplier_name_snapshot, ''), s.name)
+WHERE so.supplier_name_snapshot IS NULL OR so.supplier_name_snapshot = '';

@@ -20,8 +20,10 @@ class Supplier(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False, comment='登录账号')
     password = db.Column(db.String(255), nullable=False, comment='登录密码（简单存储，实际生产建议加密）')
     is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False, comment='是否已删除')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+    deleted_at = db.Column(db.DateTime, nullable=True, comment='删除时间')
 
     service_zones = db.relationship(
         'DeliveryZone',
@@ -102,6 +104,7 @@ class SupplierOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='备货单ID')
     order_sn = db.Column(db.String(32), db.ForeignKey('order_master.order_sn'), nullable=False, comment='关联订单号')
     supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
+    supplier_name_snapshot = db.Column(db.String(200), nullable=True, comment='供应商名称快照')
     status = db.Column(db.SmallInteger, nullable=False, default=10, comment='状态：10-待备货，20-备货中，30-已完成，40-已取消')
     notes = db.Column(db.Text, nullable=True, comment='备注')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')

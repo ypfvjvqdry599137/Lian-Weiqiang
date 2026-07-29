@@ -220,6 +220,13 @@ def get_supplier_order_item_total(item):
     return item.quantity * unit_price
 
 
+def get_supplier_order_supplier_name(order):
+    if getattr(order, 'supplier_name_snapshot', None):
+        return order.supplier_name_snapshot
+    if order.supplier:
+        return order.supplier.name
+    return '已删除供应商'
+
 def get_supplier_order_total(order):
     if order.status == 40:
         return Decimal('0')
@@ -406,7 +413,7 @@ def create_supplier():
     if not all([name, username]):
         return jsonify({"message": "Name and username are required"}), 400
 
-    if Supplier.query.filter_by(username=username).first():
+    if Supplier.query.filter_by(username=username, is_deleted=False).first():
         return jsonify({"message": "Username already exists"}), 409
 
     supplier = Supplier(
@@ -428,7 +435,7 @@ def create_supplier():
 @admin_bp.route('/suppliers', methods=['GET'])
 def get_suppliers():
     from models import Supplier
-    suppliers = Supplier.query.order_by(Supplier.created_at.desc()).all()
+    suppliers = Supplier.query.filter_by(is_deleted=False).order_by(Supplier.created_at.desc()).all()
     output = []
     for supplier in suppliers:
         zone_payload = serialize_supplier_service_zones(supplier)
@@ -447,7 +454,7 @@ def get_suppliers():
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['GET'])
 def get_supplier(supplier_id):
     from models import Supplier
-    supplier = Supplier.query.get_or_404(supplier_id)
+    supplier = Supplier.query.filter_by(id=supplier_id, is_deleted=False).first_or_404()
     zone_payload = serialize_supplier_service_zones(supplier)
     return jsonify({
         'id': supplier.id,
@@ -463,7 +470,7 @@ def get_supplier(supplier_id):
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['PUT'])
 def update_supplier(supplier_id):
     from models import Supplier
-    supplier = Supplier.query.get_or_404(supplier_id)
+    supplier = Supplier.query.filter_by(id=supplier_id, is_deleted=False).first_or_404()
     data = request.get_json()
 
     supplier.name = data.get('name', supplier.name)
@@ -477,7 +484,8 @@ def update_supplier(supplier_id):
     if 'username' in data:
         existing = Supplier.query.filter(
             Supplier.username == data['username'],
-            Supplier.id != supplier_id
+            Supplier.id != supplier_id,
+            Supplier.is_deleted == False
         ).first()
         if existing:
             return jsonify({"message": "Username already exists"}), 409
@@ -495,25 +503,39 @@ def update_supplier(supplier_id):
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['DELETE'])
 def delete_supplier(supplier_id):
     from models import Supplier, Ingredient, IngredientPriceChangeRequest, SupplierOrder
-    supplier = Supplier.query.get_or_404(supplier_id)
+    supplier = Supplier.query.filter_by(id=supplier_id, is_deleted=False).first_or_404()
+
+    pending_count = SupplierOrder.query.filter(
+        SupplierOrder.supplier_id == supplier_id,
+        SupplierOrder.status.in_([10, 20])
+    ).count()
+    if pending_count > 0:
+        return jsonify({
+            "message": f"该供应商还有 {pending_count} 个待备货/备货中的备货单，请先处理完成或取消后再删除。",
+            "pending_supplier_orders": pending_count
+        }), 400
 
     linked_counts = {
         'ingredients': Ingredient.query.filter_by(supplier_id=supplier_id).count(),
         'price_requests': IngredientPriceChangeRequest.query.filter_by(supplier_id=supplier_id).count(),
         'supplier_orders': SupplierOrder.query.filter_by(supplier_id=supplier_id).count()
     }
-    has_linked_data = any(count > 0 for count in linked_counts.values())
+    has_history = any(count > 0 for count in linked_counts.values())
 
-    if has_linked_data:
-        supplier.is_active = False
+    if has_history:
         disabled_ingredients = Ingredient.query.filter_by(supplier_id=supplier_id, is_active=True).update(
             {'is_active': False},
             synchronize_session=False
         )
+        supplier.service_zones = []
+        supplier.is_active = False
+        supplier.is_deleted = True
+        supplier.deleted_at = datetime.utcnow()
+        supplier.username = f"deleted_{supplier.id}_{int(supplier.deleted_at.timestamp())}"
         db.session.commit()
         return jsonify({
-            "message": "该供应商已有历史业务数据，为确保数据安全，已改为禁用；名下启用中的原料也已同步禁用，避免后续订单继续分配。",
-            "action": "deactivated",
+            "message": "供应商已删除，历史订单和备货单会继续保留该供应商名称；名下原料已停用，后续订单不会再分配给它。",
+            "action": "deleted_with_history",
             "disabled_ingredients": disabled_ingredients,
             "linked_counts": linked_counts
         }), 200
@@ -521,7 +543,6 @@ def delete_supplier(supplier_id):
     db.session.delete(supplier)
     db.session.commit()
     return jsonify({"message": "供应商已删除", "action": "deleted"}), 200
-
 # ==================== 原料管理 ====================
 
 @admin_bp.route('/ingredients', methods=['POST'])
@@ -885,7 +906,7 @@ def get_all_supplier_orders():
         if sid not in supplier_totals:
             supplier_totals[sid] = {
                 'supplier_id': sid,
-                'supplier_name': so.supplier.name if so.supplier else '未知供应商',
+                'supplier_name': get_supplier_order_supplier_name(so),
                 'today_total_cost': Decimal('0')
             }
         supplier_totals[sid]['today_total_cost'] += get_supplier_order_total(so)
@@ -914,7 +935,7 @@ def get_all_supplier_orders():
             'id': so.id,
             'order_sn': so.order_sn,
             'supplier_id': so.supplier_id,
-            'supplier_name': so.supplier.name if so.supplier else None,
+            'supplier_name': get_supplier_order_supplier_name(so),
             'zone_id': so.order.zone_id if so.order else None,
             'zone_name': so.order.zone.zone_name if (so.order and so.order.zone) else None,
             'status': so.status,

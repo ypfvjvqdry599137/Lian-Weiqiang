@@ -1110,7 +1110,7 @@ document.getElementById('supplier-form').addEventListener('submit', async functi
 });
 
 async function deleteSupplier(supplierId) {
-    if (confirm('确定要删除此供应商吗？如果已有历史业务数据，系统会改为禁用以保护数据。')) {
+    if (confirm('确定要删除此供应商吗？没有待备货/备货中的备货单才允许删除；历史订单会保留供应商名称。')) {
         const result = await fetchData(`/admin/suppliers/${supplierId}`, 'DELETE', null, true);
         if (result) {
             alert(result.message || '供应商处理成功');

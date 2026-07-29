@@ -515,6 +515,7 @@ def split_order_to_supplier_orders(order_sn):
             supplier_items = supplier_ingredients.setdefault(supplier_id, {})
             item = supplier_items.setdefault(ingredient_id, {
                 'ingredient': ingredient,
+                'supplier_name': ingredient.supplier.name,
                 'quantity': Decimal('0')
             })
             item['quantity'] += pi.quantity_needed * order_item.quantity
@@ -540,6 +541,7 @@ def split_order_to_supplier_orders(order_sn):
         supplier_order = SupplierOrder(
             order_sn=order_sn,
             supplier_id=supplier_id,
+            supplier_name_snapshot=next(iter(items.values()))['supplier_name'],
             status=10,
             notes=f'订单 {order_sn} 所需原料'
         )

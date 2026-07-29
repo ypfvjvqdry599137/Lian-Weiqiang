@@ -24,6 +24,13 @@ def get_supplier_order_item_total(item):
     return item.quantity * unit_price
 
 
+def get_supplier_order_supplier_name(order):
+    if getattr(order, 'supplier_name_snapshot', None):
+        return order.supplier_name_snapshot
+    if order.supplier:
+        return order.supplier.name
+    return '已删除供应商'
+
 def get_supplier_order_total(order):
     if order.status == 40:
         return Decimal('0')
@@ -78,11 +85,11 @@ def supplier_login():
     if not all([username, password]):
         return jsonify({'message': '请输入账号和密码'}), 400
     
-    supplier = Supplier.query.filter_by(username=username).first()
+    supplier = Supplier.query.filter_by(username=username, is_deleted=False).first()
     if not supplier or supplier.password != password: # 生产环境请使用加密密码验证
         return jsonify({'message': '账号或密码错误'}), 401
     
-    if not supplier.is_active:
+    if not supplier.is_active or supplier.is_deleted:
         return jsonify({'message': '供应商账号已被禁用'}), 403
     
     return jsonify({
@@ -154,7 +161,7 @@ def get_supplier_orders():
             'id': so.id,
             'order_sn': so.order_sn,
             'supplier_id': so.supplier_id,
-            'supplier_name': so.supplier.name if so.supplier else None,
+            'supplier_name': get_supplier_order_supplier_name(so),
             'zone_id': so.order.zone_id if so.order else None,
             'zone_name': so.order.zone.zone_name if (so.order and so.order.zone) else None,
             'status': so.status,
