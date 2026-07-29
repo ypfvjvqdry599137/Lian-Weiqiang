@@ -209,6 +209,36 @@ h2 {
     justify-content: flex-end;
 }
 
+.status-control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    min-width: 128px;
+}
+
+.status-control span,
+.status-note {
+    font-size: 12px;
+    color: #666;
+}
+
+.status-select {
+    min-height: 34px;
+    min-width: 128px;
+    padding: 6px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.status-select:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
 .order-card {
     border-left: 4px solid #4CAF50;
 }

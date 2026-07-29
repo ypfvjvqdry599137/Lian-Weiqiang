@@ -431,7 +431,7 @@ def confirm_delivery(order_sn):
     order.order_status = 40
     db.session.commit()
 
-    return jsonify({'message': '已确认送达'}), 200
+    return jsonify({'message': '已送达'}), 200
 
 
 @merchant_bp.route('/statistics', methods=['GET'])

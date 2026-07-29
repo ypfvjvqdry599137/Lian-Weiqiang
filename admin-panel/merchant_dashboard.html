@@ -290,7 +290,7 @@
                 return `<button class="btn btn-sm btn-success" ${disabled} ${title} onclick="startDelivery('${order.order_sn}')">开始配送</button>`;
             }
             if (order.order_status === 30) {
-                return `<button class="btn btn-sm btn-success" onclick="confirmDelivery('${order.order_sn}')">确认送达</button>`;
+                return `<button class="btn btn-sm btn-success" onclick="confirmDelivery('${order.order_sn}')">送达</button>`;
             }
             return '';
         }
@@ -349,7 +349,7 @@
             if (!confirm('确认该订单已送达吗？')) return;
             const result = await fetchData(withAuth(`/merchant/orders/${orderSn}/confirm-delivery`), 'POST', null, true);
             if (result) {
-                alert(result.message || '已确认送达');
+                alert(result.message || '已送达');
                 await renderPage();
             }
         }

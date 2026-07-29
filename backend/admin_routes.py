@@ -9,6 +9,11 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 from extensions import db
+from status_utils import (
+    get_order_status_text,
+    get_supplier_order_status_text,
+    sync_order_status_after_supplier_update,
+)
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import or_
 from werkzeug.utils import secure_filename
@@ -752,12 +757,8 @@ def get_all_supplier_orders():
 
     output = []
     for so in orders:
-        status_text = {
-            10: '待备货',
-            20: '备货中',
-            30: '已完成',
-            40: '已取消'
-        }.get(so.status, '未知')
+        status_text = get_supplier_order_status_text(so.status)
+
         
         items_output = []
         if so.items:
@@ -811,25 +812,31 @@ def update_supplier_order_status(order_id):
     so = SupplierOrder.query.get_or_404(order_id)
     data = request.get_json()
     
-    new_status = data.get('status')
+    try:
+        new_status = int(data.get('status'))
+    except (TypeError, ValueError):
+        new_status = None
     if new_status not in [10, 20, 30, 40]:
         return jsonify({"message": "无效的备货单状态"}), 400
     
     so.status = new_status
+    order, order_status_updated = sync_order_status_after_supplier_update(so.order_sn)
     db.session.commit()
-    
-    status_text = {
-        10: '待备货',
-        20: '备货中',
-        30: '已完成',
-        40: '已取消'
-    }.get(new_status, '未知')
-    
+
+    status_text = get_supplier_order_status_text(new_status)
+    message = f'备货单已更新为{status_text}'
+    if order_status_updated:
+        message += '，关联订单已进入待配送'
+
     return jsonify({
-        "message": "备货单状态已更新",
+        "message": message,
         "id": order_id,
         "new_status": new_status,
-        "status_text": status_text
+        "status_text": status_text,
+        "order_sn": so.order_sn,
+        "order_status": order.order_status if order else None,
+        "order_status_text": get_order_status_text(order.order_status) if order else None,
+        "order_status_updated": order_status_updated
     }), 200
 
 # ==================== 配送区域管理 ====================
@@ -1093,14 +1100,8 @@ def get_all_orders():
     orders = query.order_by(OrderMaster.created_at.desc()).all()
     output = []
     for order in orders:
-        status_text = {
-            10: '待付款',
-            20: '待配货',
-            30: '配送中',
-            40: '已送达',
-            50: '已完成',
-            60: '已取消'
-        }.get(order.order_status, '未知')
+        status_text = get_order_status_text(order.order_status)
+
         
         items_output = []
         if order.items:
@@ -1137,24 +1138,21 @@ def update_order_status(order_sn):
     order = OrderMaster.query.get_or_404(order_sn)
     data = request.get_json()
     
-    new_status = data.get('status')
+    try:
+        new_status = int(data.get('status'))
+    except (TypeError, ValueError):
+        new_status = None
     if new_status not in [10, 20, 30, 40, 50, 60]:
         return jsonify({"message": "无效的订单状态"}), 400
     
     order.order_status = new_status
     db.session.commit()
     
-    status_text = {
-        10: '待付款',
-        20: '待配货',
-        30: '配送中',
-        40: '已送达',
-        50: '已完成',
-        60: '已取消'
-    }.get(new_status, '未知')
+    status_text = get_order_status_text(new_status)
+
     
     return jsonify({
-        "message": "订单状态已更新",
+        "message": f"订单状态已更新为{status_text}",
         "order_sn": order_sn,
         "new_status": new_status,
         "status_text": status_text

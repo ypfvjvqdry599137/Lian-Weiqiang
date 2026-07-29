@@ -369,16 +369,54 @@ function formatZoneName(zoneName) {
     return zoneName || '通用区域';
 }
 
+const ORDER_STATUS_OPTIONS = [
+    { value: 10, label: '待付款' },
+    { value: 20, label: '待配货' },
+    { value: 30, label: '配送中' },
+    { value: 40, label: '已送达' },
+    { value: 50, label: '已完成' },
+    { value: 60, label: '已取消' }
+];
+
+const SUPPLIER_ORDER_STATUS_OPTIONS = [
+    { value: 10, label: '待备货' },
+    { value: 20, label: '备货中' },
+    { value: 30, label: '已完成' },
+    { value: 40, label: '已取消' }
+];
+
 function getOrderStatusText(status) {
-    const statusMap = {
-        10: '待付款',
-        20: '待配货',
-        30: '配送中',
-        40: '已送达',
-        50: '已完成',
-        60: '已关闭'
-    };
-    return statusMap[status] || '未知';
+    const option = ORDER_STATUS_OPTIONS.find(item => item.value === Number(status));
+    return option ? option.label : '未知';
+}
+
+function renderStatusOptions(options, currentValue) {
+    const value = Number(currentValue);
+    return options.map(option => `
+        <option value="${option.value}" ${option.value === value ? 'selected' : ''}>${option.label}</option>
+    `).join('');
+}
+
+function renderOrderStatusSelect(order) {
+    return `
+        <label class="status-control">
+            <span>订单状态</span>
+            <select class="status-select" data-current="${order.order_status}" onchange="updateOrderStatusFromSelect('${order.order_sn}', this)">
+                ${renderStatusOptions(ORDER_STATUS_OPTIONS, order.order_status)}
+            </select>
+        </label>
+    `;
+}
+
+function renderSupplierOrderStatusSelect(order) {
+    return `
+        <label class="status-control">
+            <span>备货状态</span>
+            <select class="status-select" data-current="${order.status}" onchange="updateSupplierOrderStatusFromSelect(${order.id}, this)">
+                ${renderStatusOptions(SUPPLIER_ORDER_STATUS_OPTIONS, order.status)}
+            </select>
+        </label>
+    `;
 }
 
 function showModal(id) {
@@ -918,7 +956,7 @@ async function loadOrders() {
                     <p style="font-size:12px;color:#999;margin-top:10px;">下单时间: ${formatDate(order.created_at)}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="editOrderStatus('${order.order_sn}')">修改状态</button>
+                    ${renderOrderStatusSelect(order)}
                 </div>
             `;
             ordersList.appendChild(card);
@@ -926,15 +964,20 @@ async function loadOrders() {
     }
 }
 
-async function editOrderStatus(orderSn) {
-    const newStatus = prompt('请输入新的订单状态 (10=待付款, 20=待配货, 30=配送中, 40=已送达, 50=已完成, 60=已关闭):');
-    if (newStatus && !isNaN(newStatus)) {
-        const result = await fetchData(`/admin/orders/${orderSn}/status`, 'PUT', { status: parseInt(newStatus) });
-        if (result) {
-            alert('订单状态更新成功！');
-            await loadOrders();
-            await loadDashboardStats();
-        }
+async function updateOrderStatusFromSelect(orderSn, selectEl) {
+    const previousStatus = parseInt(selectEl.dataset.current, 10);
+    const nextStatus = parseInt(selectEl.value, 10);
+    if (nextStatus === previousStatus) return;
+
+    selectEl.disabled = true;
+    const result = await fetchData(`/admin/orders/${orderSn}/status`, 'PUT', { status: nextStatus }, true);
+    if (result) {
+        alert(result.message || '订单状态更新成功');
+        await loadOrders();
+        await loadDashboardStats();
+    } else {
+        selectEl.value = String(previousStatus);
+        selectEl.disabled = false;
     }
 }
 
@@ -1593,7 +1636,7 @@ async function loadSupplierOrders() {
                     <p style="font-size:12px;color:#999;margin-top:10px;">创建时间: ${formatDate(order.created_at)}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="editSupplierOrderStatus(${order.id})">修改状态</button>
+                    ${renderSupplierOrderStatusSelect(order)}
                 </div>
             `;
             ordersList.appendChild(card);
@@ -1601,14 +1644,21 @@ async function loadSupplierOrders() {
     }
 }
 
-async function editSupplierOrderStatus(orderId) {
-    const newStatus = prompt('请输入新的备货单状态 (10=待备货, 20=备货中, 30=已完成, 40=已取消):');
-    if (newStatus && !isNaN(newStatus)) {
-        const result = await fetchData(`/admin/supplier-orders/${orderId}/status`, 'PUT', { status: parseInt(newStatus) });
-        if (result) {
-            alert('备货单状态更新成功！');
-            await loadSupplierOrders();
-        }
+async function updateSupplierOrderStatusFromSelect(orderId, selectEl) {
+    const previousStatus = parseInt(selectEl.dataset.current, 10);
+    const nextStatus = parseInt(selectEl.value, 10);
+    if (nextStatus === previousStatus) return;
+
+    selectEl.disabled = true;
+    const result = await fetchData(`/admin/supplier-orders/${orderId}/status`, 'PUT', { status: nextStatus }, true);
+    if (result) {
+        alert(result.message || '备货单状态更新成功');
+        await loadSupplierOrders();
+        await loadOrders();
+        await loadDashboardStats();
+    } else {
+        selectEl.value = String(previousStatus);
+        selectEl.disabled = false;
     }
 }
 

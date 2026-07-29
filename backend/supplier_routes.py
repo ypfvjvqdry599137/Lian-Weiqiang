@@ -2,6 +2,11 @@ from flask import Blueprint, request, jsonify
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from extensions import db
+from status_utils import (
+    get_order_status_text,
+    get_supplier_order_status_text,
+    sync_order_status_after_supplier_update,
+)
 
 supplier_bp = Blueprint('supplier', __name__, url_prefix='/supplier')
 BUSINESS_TZ = timezone(timedelta(hours=8))
@@ -127,12 +132,8 @@ def get_supplier_orders():
     today_orders = [so for so in summary_orders if so.status != 40 and is_today(so.created_at)]
     output = []
     for so in orders:
-        status_text = {
-            10: '待备货',
-            20: '备货中',
-            30: '已完成',
-            40: '已取消'
-        }.get(so.status, '未知')
+        status_text = get_supplier_order_status_text(so.status)
+
         
         items_output = []
         if so.items:
@@ -183,7 +184,10 @@ def update_supplier_order_status(order_id):
     so = SupplierOrder.query.filter_by(id=order_id, supplier_id=supplier_id).first_or_404()
     data = request.get_json()
     
-    new_status = data.get('status')
+    try:
+        new_status = int(data.get('status'))
+    except (TypeError, ValueError):
+        new_status = None
     # 供应商只能更新为 备货中 或 已完成
     if new_status not in [20, 30]:
         return jsonify({'message': '无效的备货单状态，供应商只能更新为备货中或已完成'}), 400
@@ -199,20 +203,23 @@ def update_supplier_order_status(order_id):
         return jsonify({'message': f'备货单当前状态 {so.status} 无法更新为 {new_status}'}), 400
 
     so.status = new_status
+    order, order_status_updated = sync_order_status_after_supplier_update(so.order_sn)
     db.session.commit()
-    
-    status_text = {
-        10: '待备货',
-        20: '备货中',
-        30: '已完成',
-        40: '已取消'
-    }.get(new_status, '未知')
-    
+
+    status_text = get_supplier_order_status_text(new_status)
+    message = f'备货单已更新为{status_text}'
+    if order_status_updated:
+        message += '，关联订单已进入待配送'
+
     return jsonify({
-        "message": "备货单状态已更新",
+        "message": message,
         "id": order_id,
         "new_status": new_status,
-        "status_text": status_text
+        "status_text": status_text,
+        "order_sn": so.order_sn,
+        "order_status": order.order_status if order else None,
+        "order_status_text": get_order_status_text(order.order_status) if order else None,
+        "order_status_updated": order_status_updated
     }), 200
 
 
@@ -304,12 +311,8 @@ def get_supplier_settlement():
                 'total_price': str(item_total)
             })
 
-        status_text = {
-            10: '待备货',
-            20: '备货中',
-            30: '已完成',
-            40: '已取消'
-        }.get(order.status, '未知')
+        status_text = get_supplier_order_status_text(order.status)
+
 
         orders_output.append({
             'id': order.id,
