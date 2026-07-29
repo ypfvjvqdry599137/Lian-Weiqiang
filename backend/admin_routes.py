@@ -64,6 +64,7 @@ def format_tencent_place_result(item, keyword):
     if location.get('lng') is None or location.get('lat') is None:
         return None
     return {
+        'id': item.get('id'),
         'title': item.get('title') or keyword,
         'address': item.get('address') or item.get('title') or keyword,
         'lng': location.get('lng'),
@@ -71,16 +72,19 @@ def format_tencent_place_result(item, keyword):
         'province': item.get('province'),
         'city': item.get('city'),
         'district': item.get('district'),
+        'category': item.get('category'),
         'source': 'place_suggestion'
     }
 
 
-def search_tencent_place(keyword, region=None):
+def collect_tencent_place_results(keyword, region=None, limit=10):
     attempts = []
     if region:
         attempts.append({'keyword': keyword, 'region': region})
     attempts.append({'keyword': keyword})
 
+    results = []
+    seen = set()
     last_message = None
     for params in attempts:
         payload, error = request_tencent_map_api('/ws/place/v1/suggestion', params, accept_statuses=None)
@@ -93,9 +97,28 @@ def search_tencent_place(keyword, region=None):
             continue
         for item in payload.get('data') or []:
             result = format_tencent_place_result(item, keyword)
-            if result:
-                return result, None
-    return None, last_message
+            if not result:
+                continue
+            dedupe_key = (
+                result.get('title'),
+                result.get('address'),
+                str(result.get('lng')),
+                str(result.get('lat'))
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            results.append(result)
+            if len(results) >= limit:
+                return results, None
+    return results, last_message
+
+
+def map_search_response(results):
+    primary = dict(results[0])
+    primary['results'] = results
+    primary['count'] = len(results)
+    return jsonify(primary), 200
 
 @admin_bp.route('/map/config', methods=['GET'])
 def get_map_config():
@@ -114,9 +137,9 @@ def geocode_map_address():
     if not address:
         return jsonify({'message': '请输入要搜索的地址'}), 400
 
-    place_result, place_message = search_tencent_place(address, region or None)
-    if place_result:
-        return jsonify(place_result), 200
+    place_results, place_message = collect_tencent_place_results(address, region or None)
+    if place_results:
+        return map_search_response(place_results)
 
     params = {'address': address}
     if region:
@@ -143,7 +166,7 @@ def geocode_map_address():
     if location.get('lng') is None or location.get('lat') is None:
         return jsonify({'message': '没有解析到有效坐标，请换一个更完整的地址'}), 400
 
-    return jsonify({
+    geocode_result = {
         'title': result.get('title') or address,
         'address': result.get('address') or address,
         'lng': location.get('lng'),
@@ -154,7 +177,8 @@ def geocode_map_address():
         'reliability': result.get('reliability'),
         'similarity': result.get('similarity'),
         'source': 'geocoder'
-    }), 200
+    }
+    return map_search_response([geocode_result])
 
 @admin_bp.route('/map/reverse-geocode', methods=['GET'])
 def reverse_geocode_map_location():

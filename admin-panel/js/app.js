@@ -10,6 +10,7 @@ let circleLayer = null;
 let selectedLng = null;
 let selectedLat = null;
 let tencentMapSdkPromise = null;
+let mapSearchResults = [];
 
 function getZoneRadiusValue() {
     const radius = parseInt(document.getElementById('zone-radius')?.value, 10);
@@ -162,6 +163,7 @@ async function showMapPicker() {
         return;
     }
 
+    clearMapSearchResults();
     document.getElementById('map-modal').classList.add('show');
     setTimeout(() => {
         initTencentMap();
@@ -180,27 +182,96 @@ async function showMapPicker() {
     }, 120);
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
+function clearMapSearchResults() {
+    mapSearchResults = [];
+    const container = document.getElementById('map-search-results');
+    if (!container) return;
+    container.classList.remove('show');
+    container.innerHTML = '';
+}
+
+function formatMapResultAddress(result) {
+    const parts = [result.province, result.city, result.district, result.address]
+        .filter(Boolean)
+        .map(part => String(part).trim())
+        .filter(Boolean);
+    return [...new Set(parts)].join(' ');
+}
+
+function renderMapSearchResults(results) {
+    const container = document.getElementById('map-search-results');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!results || results.length <= 1) {
+        container.classList.remove('show');
+        return;
+    }
+
+    results.forEach((result, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `map-result-item${index === 0 ? ' active' : ''}`;
+        button.onclick = () => selectMapSearchResult(index);
+        button.innerHTML = `
+            <span class="map-result-title">${index + 1}. ${escapeHtml(result.title || '未命名地址')}</span>
+            <span class="map-result-address">${escapeHtml(formatMapResultAddress(result) || `${result.lng}, ${result.lat}`)}</span>
+        `;
+        container.appendChild(button);
+    });
+    container.classList.add('show');
+}
+
+function selectMapSearchResult(index) {
+    const result = mapSearchResults[index];
+    if (!result || result.lng == null || result.lat == null) return;
+    document.querySelectorAll('.map-result-item').forEach((item, itemIndex) => {
+        item.classList.toggle('active', itemIndex === index);
+    });
+    setMapPoint(result.lat, result.lng);
+    updateMapPickStatus(`已选择：${result.title || result.address || '候选地址'}，确认后会写入表单。`);
+}
+
 async function searchMapAddress() {
     const input = document.getElementById('map-search-input');
     const keyword = input ? input.value.trim() : '';
     if (!keyword) {
+        clearMapSearchResults();
         updateMapPickStatus('请输入要搜索的地址。', true);
         return;
     }
 
+    clearMapSearchResults();
     updateMapPickStatus('正在通过腾讯地图搜索地址...');
     const result = await fetchData(`/admin/map/geocode?address=${encodeURIComponent(keyword)}`, 'GET', null, false);
     if (!result) {
         updateMapPickStatus(window.lastFetchError || '没有找到有效坐标，请输入城市 + 小区名，或直接点击地图选点。', true);
         return;
     }
-    if (result.lng == null || result.lat == null) {
+
+    const results = Array.isArray(result.results) && result.results.length > 0
+        ? result.results
+        : (result.lng != null && result.lat != null ? [result] : []);
+    if (results.length === 0) {
         updateMapPickStatus('没有解析到有效坐标，请换一个更完整的地址。', true);
         return;
     }
 
-    setMapPoint(result.lat, result.lng);
-    updateMapPickStatus(`已定位：${result.address || result.title || keyword}`);
+    mapSearchResults = results;
+    renderMapSearchResults(results);
+    selectMapSearchResult(0);
+    if (results.length > 1) {
+        updateMapPickStatus(`找到 ${results.length} 个候选地址，请从列表中选择正确地址。`);
+    }
 }
 function handleMapSearchKeydown(event) {
     if (event.key === 'Enter') {
