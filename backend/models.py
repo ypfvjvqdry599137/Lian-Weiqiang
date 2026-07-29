@@ -42,6 +42,27 @@ class Ingredient(db.Model):
         return f'<Ingredient {self.name}>'
 
 # ============================================
+# 原料价格变更审核
+# ============================================
+class IngredientPriceChangeRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='价格变更申请ID')
+    ingredient_id = db.Column(db.Integer, db.ForeignKey('ingredient.id'), nullable=False, comment='原料ID')
+    supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
+    old_price = db.Column(db.Numeric(10, 2), nullable=True, comment='原价格')
+    requested_price = db.Column(db.Numeric(10, 2), nullable=True, comment='申请新价格')
+    status = db.Column(db.SmallInteger, nullable=False, default=10, comment='状态：10-待审核，20-已通过，30-已驳回')
+    remark = db.Column(db.String(255), nullable=True, comment='审核备注')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='申请时间')
+    reviewed_at = db.Column(db.DateTime, nullable=True, comment='审核时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    ingredient = db.relationship('Ingredient', backref=db.backref('price_change_requests', lazy=True))
+    supplier = db.relationship('Supplier', backref=db.backref('price_change_requests', lazy=True))
+
+    def __repr__(self):
+        return f'<IngredientPriceChangeRequest {self.id}>'
+
+# ============================================
 # 成品-原料关联模型
 # ============================================
 class ProductIngredient(db.Model):

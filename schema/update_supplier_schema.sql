@@ -136,3 +136,24 @@ INSERT IGNORE INTO ingredient (name, unit, category_id, supplier_id, price, stoc
 INSERT IGNORE INTO product_ingredient (product_id, ingredient_id, quantity_needed) VALUES
 (1, 1, 0.8),  -- 1份套餐需要0.8斤西红柿
 (1, 2, 4);    -- 1份套餐需要4个鸡蛋
+
+-- ============================================
+-- 原料价格变更审核表
+-- ============================================
+CREATE TABLE IF NOT EXISTS ingredient_price_change_request (
+    id INT PRIMARY KEY AUTO_INCREMENT COMMENT '价格变更申请ID',
+    ingredient_id INT NOT NULL COMMENT '原料ID',
+    supplier_id INT NOT NULL COMMENT '供应商ID',
+    old_price DECIMAL(10,2) DEFAULT NULL COMMENT '原价格',
+    requested_price DECIMAL(10,2) DEFAULT NULL COMMENT '申请新价格',
+    status SMALLINT NOT NULL DEFAULT 10 COMMENT '状态：10-待审核，20-已通过，30-已驳回',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '审核备注',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',
+    reviewed_at DATETIME DEFAULT NULL COMMENT '审核时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    FOREIGN KEY (ingredient_id) REFERENCES ingredient(id) ON DELETE CASCADE,
+    FOREIGN KEY (supplier_id) REFERENCES supplier(id) ON DELETE CASCADE,
+    INDEX idx_ingredient_price_request_status (status),
+    INDEX idx_ingredient_price_request_supplier (supplier_id),
+    INDEX idx_ingredient_price_request_ingredient (ingredient_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='原料价格变更审核表';

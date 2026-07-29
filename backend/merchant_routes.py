@@ -1,295 +1,310 @@
 from flask import Blueprint, request, jsonify
 from extensions import db
-from datetime import datetime, date
-from decimal import Decimal
+from datetime import date
+from hashlib import sha256
 
 merchant_bp = Blueprint('merchant', __name__, url_prefix='/merchant')
 
-# ==================== 合作商登录和获取信息 ====================
+
+def get_merchant_key(zone):
+    raw = f"{zone.id}:{zone.merchant_username or ''}:{zone.merchant_password or ''}:fresh-produce-merchant"
+    return sha256(raw.encode('utf-8')).hexdigest()
+
 
 def get_zone_by_merchant(username, password):
     from models import DeliveryZone
-    """根据合作商账号密码获取配送区域（简化版，生产环境密码需要加密）"""
     zone = DeliveryZone.query.filter_by(merchant_username=username).first()
-    if zone and zone.merchant_password == password:
+    if zone and zone.merchant_password == password and zone.is_active:
         return zone
     return None
 
-@merchant_bp.route('/login', methods=['POST'])
-def merchant_login():
+
+def require_merchant_zone():
     from models import DeliveryZone
-    """合作商登录"""
-    data = request.get_json()
-    if not data:
-        return jsonify({'message': '无效请求'}), 400
-    
-    username = data.get('username')
-    password = data.get('password')
-    
-    if not all([username, password]):
-        return jsonify({'message': '请输入账号和密码'}), 400
-    
-    zone = get_zone_by_merchant(username, password)
-    if not zone:
-        return jsonify({'message': '账号或密码错误'}), 401
-    
-    return jsonify({
-        'message': '登录成功',
-        'zone_id': zone.id,
-        'zone_name': zone.zone_name
-    }), 200
-
-# ==================== 今日待办（工作台） ====================
-
-@merchant_bp.route('/dashboard/today-arrival', methods=['GET'])
-def get_today_arrival():
-    from models import OrderMaster
-    """获取今日待配送商品汇总"""
     zone_id = request.args.get('zone_id')
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
-    orders = OrderMaster.query.filter(
-        OrderMaster.zone_id == zone_id,
-        OrderMaster.order_status.in_([20, 30])
-    ).all()
-    
-    product_summary = {}
-    for order in orders:
-        for item in order.items:
-            if item.product_id not in product_summary:
-                product_summary[item.product_id] = {
-                    'product_id': item.product_id,
-                    'product_name': item.product_name,
-                    'product_image': item.product_image,
-                    'unit': item.unit,
-                    'total_quantity': 0
-                }
-            product_summary[item.product_id]['total_quantity'] += item.quantity
-    
-    return jsonify({
-        'total_orders': len(orders),
-        'products': list(product_summary.values())
-    }), 200
+    merchant_key = request.args.get('merchant_key') or request.headers.get('X-Merchant-Key')
 
-@merchant_bp.route('/dashboard/delivering', methods=['GET'])
-def get_delivering():
-    from models import OrderMaster
-    """获取配送中订单列表"""
-    zone_id = request.args.get('zone_id')
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
-    orders = OrderMaster.query.filter_by(
-        zone_id=zone_id,
-        order_status=30
-    ).order_by(OrderMaster.created_at.desc()).all()
-    
-    output = []
-    for order in orders:
-        items = []
-        for item in order.items:
-            items.append({
-                'product_name': item.product_name,
-                'quantity': item.quantity,
-                'unit': item.unit
-            })
-        
-        output.append({
-            'order_sn': order.order_sn,
-            'receiver_name': order.receiver_name,
-            'receiver_phone': order.receiver_phone,
-            'receiver_address': order.receiver_address,
-            'items': items,
-            'total_amount': str(order.total_amount),
-            'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        })
-    
-    return jsonify({'orders': output}), 200
+    if not zone_id or not str(zone_id).isdigit() or not merchant_key:
+        return None, (jsonify({'message': '请先登录区域配送后台'}), 401)
 
-# ==================== 订单管理 ====================
+    zone = DeliveryZone.query.get(int(zone_id))
+    if not zone or not zone.is_active or get_merchant_key(zone) != merchant_key:
+        return None, (jsonify({'message': '登录已失效，请重新登录'}), 401)
 
-@merchant_bp.route('/orders', methods=['GET'])
-def get_merchant_orders():
-    from models import OrderMaster
-    """获取合作商的订单列表"""
-    zone_id = request.args.get('zone_id')
-    status = request.args.get('status')
-    keyword = request.args.get('keyword')
-    
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
-    query = OrderMaster.query.filter_by(zone_id=zone_id)
-    
-    if status == 'pending':
-        query = query.filter_by(order_status=20)
-    elif status == 'delivering':
-        query = query.filter_by(order_status=30)
-    elif status == 'completed':
-        query = query.filter_by(order_status=50)
-    
-    if keyword:
-        query = query.filter(
-            (OrderMaster.receiver_name.contains(keyword)) |
-            (OrderMaster.receiver_phone.contains(keyword)) |
-            (OrderMaster.order_sn.contains(keyword))
-        )
-    
-    orders = query.order_by(OrderMaster.created_at.desc()).all()
-    output = []
-    
-    for order in orders:
-        items = []
-        for item in order.items:
-            items.append({
-                'product_name': item.product_name,
-                'quantity': item.quantity,
-                'unit': item.unit
-            })
-        
-        status_text = {
-            10: '待付款',
-            20: '待配货',
-            30: '配送中',
-            40: '已送达',
-            50: '已完成',
-            60: '已关闭'
-        }.get(order.order_status, '未知')
-        
-        output.append({
-            'order_sn': order.order_sn,
-            'order_status': order.order_status,
-            'status_text': status_text,
-            'receiver_name': order.receiver_name,
-            'receiver_phone': order.receiver_phone,
-            'receiver_address': order.receiver_address,
-            'items': items,
-            'total_amount': str(order.total_amount),
-            'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        })
-    
-    return jsonify({'orders': output}), 200
+    return zone, None
 
-@merchant_bp.route('/orders/<order_sn>', methods=['GET'])
-def get_merchant_order_detail(order_sn):
-    from models import OrderMaster
-    """获取订单详情"""
-    zone_id = request.args.get('zone_id')
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
-    order = OrderMaster.query.filter_by(
-        order_sn=order_sn,
-        zone_id=zone_id
-    ).first_or_404()
-    
-    items = []
-    for item in order.items:
-        items.append({
-            'product_name': item.product_name,
-            'product_image': item.product_image,
-            'price': str(item.price),
-            'quantity': item.quantity,
-            'unit': item.unit
-        })
-    
-    status_text = {
+
+def get_order_status_text(status):
+    return {
         10: '待付款',
         20: '待配货',
         30: '配送中',
         40: '已送达',
         50: '已完成',
-        60: '已关闭'
-    }.get(order.order_status, '未知')
-    
-    return jsonify({
+        60: '已取消'
+    }.get(status, '未知')
+
+
+def get_supplier_order_status_text(status):
+    return {
+        10: '待备货',
+        20: '备货中',
+        30: '已完成',
+        40: '已取消'
+    }.get(status, '未知')
+
+
+def are_supplier_orders_ready(order):
+    if not order.supplier_orders:
+        return True
+    return all(supplier_order.status == 30 for supplier_order in order.supplier_orders)
+
+
+def serialize_order(order, include_items=True, include_supplier_orders=True):
+    data = {
         'order_sn': order.order_sn,
         'order_status': order.order_status,
-        'status_text': status_text,
+        'status_text': get_order_status_text(order.order_status),
         'receiver_name': order.receiver_name,
         'receiver_phone': order.receiver_phone,
         'receiver_address': order.receiver_address,
         'remark': order.remark,
-        'items': items,
         'total_amount': str(order.total_amount),
-        'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        'delivery_fee': str(order.delivery_fee),
+        'final_amount': str(order.final_amount),
+        'supplier_ready': are_supplier_orders_ready(order),
+        'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else None
+    }
+
+    if include_items:
+        data['items'] = [
+            {
+                'product_name': item.product_name,
+                'product_image': item.product_image,
+                'price': str(item.price),
+                'quantity': item.quantity,
+                'unit': item.unit
+            }
+            for item in order.items
+        ]
+
+    if include_supplier_orders:
+        data['supplier_orders'] = [
+            {
+                'id': supplier_order.id,
+                'supplier_name': supplier_order.supplier.name if supplier_order.supplier else None,
+                'status': supplier_order.status,
+                'status_text': get_supplier_order_status_text(supplier_order.status)
+            }
+            for supplier_order in order.supplier_orders
+        ]
+
+    return data
+
+
+@merchant_bp.route('/login', methods=['POST'])
+def merchant_login():
+    data = request.get_json()
+    if not data:
+        return jsonify({'message': '无效请求'}), 400
+
+    username = data.get('username')
+    password = data.get('password')
+
+    if not all([username, password]):
+        return jsonify({'message': '请输入账号和密码'}), 400
+
+    zone = get_zone_by_merchant(username, password)
+    if not zone:
+        return jsonify({'message': '账号或密码错误，或该配送区域已禁用'}), 401
+
+    return jsonify({
+        'message': '登录成功',
+        'zone_id': zone.id,
+        'zone_name': zone.zone_name,
+        'merchant_key': get_merchant_key(zone)
     }), 200
+
+
+@merchant_bp.route('/dashboard/today-arrival', methods=['GET'])
+def get_today_arrival():
+    from models import OrderMaster
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
+    orders = OrderMaster.query.filter(
+        OrderMaster.zone_id == zone.id,
+        OrderMaster.order_status.in_([20, 30])
+    ).all()
+
+    product_summary = {}
+    for order in orders:
+        for item in order.items:
+            product = product_summary.setdefault(item.product_id, {
+                'product_id': item.product_id,
+                'product_name': item.product_name,
+                'product_image': item.product_image,
+                'unit': item.unit,
+                'total_quantity': 0
+            })
+            product['total_quantity'] += item.quantity
+
+    return jsonify({
+        'total_orders': len(orders),
+        'ready_orders': len([order for order in orders if are_supplier_orders_ready(order)]),
+        'products': list(product_summary.values())
+    }), 200
+
+
+@merchant_bp.route('/dashboard/delivering', methods=['GET'])
+def get_delivering():
+    from models import OrderMaster
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
+    orders = OrderMaster.query.filter_by(
+        zone_id=zone.id,
+        order_status=30
+    ).order_by(OrderMaster.created_at.desc()).all()
+
+    return jsonify({'orders': [serialize_order(order) for order in orders]}), 200
+
+
+@merchant_bp.route('/orders', methods=['GET'])
+def get_merchant_orders():
+    from models import OrderMaster
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
+    status = (request.args.get('status') or 'all').strip().lower()
+    keyword = (request.args.get('keyword') or '').strip()
+
+    query = OrderMaster.query.filter_by(zone_id=zone.id)
+    status_map = {
+        'pending': 20,
+        'delivering': 30,
+        'delivered': 40,
+        'completed': 50,
+        'canceled': 60,
+        '10': 10,
+        '20': 20,
+        '30': 30,
+        '40': 40,
+        '50': 50,
+        '60': 60
+    }
+    if status != 'all':
+        status_value = status_map.get(status)
+        if status_value is None:
+            return jsonify({'message': '订单状态不正确'}), 400
+        query = query.filter_by(order_status=status_value)
+
+    if keyword:
+        query = query.filter(
+            (OrderMaster.receiver_name.contains(keyword)) |
+            (OrderMaster.receiver_phone.contains(keyword)) |
+            (OrderMaster.order_sn.contains(keyword)) |
+            (OrderMaster.receiver_address.contains(keyword))
+        )
+
+    orders = query.order_by(OrderMaster.created_at.desc()).all()
+    return jsonify({'orders': [serialize_order(order) for order in orders]}), 200
+
+
+@merchant_bp.route('/orders/<order_sn>', methods=['GET'])
+def get_merchant_order_detail(order_sn):
+    from models import OrderMaster
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
+    order = OrderMaster.query.filter_by(
+        order_sn=order_sn,
+        zone_id=zone.id
+    ).first_or_404()
+
+    return jsonify(serialize_order(order)), 200
+
 
 @merchant_bp.route('/orders/<order_sn>/start-delivery', methods=['POST'])
 def start_delivery(order_sn):
     from models import OrderMaster
-    """开始配送"""
-    zone_id = request.args.get('zone_id')
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
     order = OrderMaster.query.filter_by(
         order_sn=order_sn,
-        zone_id=zone_id
+        zone_id=zone.id
     ).first_or_404()
-    
+
     if order.order_status != 20:
         return jsonify({'message': '订单状态异常，无法开始配送'}), 400
-    
+    if not are_supplier_orders_ready(order):
+        return jsonify({'message': '供应商备货未全部完成，暂不能开始配送'}), 400
+
     order.order_status = 30
     db.session.commit()
-    
+
     return jsonify({'message': '已开始配送'}), 200
+
 
 @merchant_bp.route('/orders/<order_sn>/confirm-delivery', methods=['POST'])
 def confirm_delivery(order_sn):
     from models import OrderMaster
-    """确认送达"""
-    zone_id = request.args.get('zone_id')
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
     order = OrderMaster.query.filter_by(
         order_sn=order_sn,
-        zone_id=zone_id
+        zone_id=zone.id
     ).first_or_404()
-    
+
     if order.order_status != 30:
         return jsonify({'message': '订单状态异常，无法确认送达'}), 400
-    
+
     order.order_status = 40
     db.session.commit()
-    
+
     return jsonify({'message': '已确认送达'}), 200
 
-# ==================== 数据统计 ====================
 
 @merchant_bp.route('/statistics', methods=['GET'])
 def get_statistics():
     from models import OrderMaster
-    """获取数据统计：今日营业额、今日订单量"""
-    zone_id = request.args.get('zone_id')
-    if not zone_id:
-        return jsonify({'message': '请先登录'}), 401
-    
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
     today = date.today()
-    
-    today_orders = OrderMaster.query.filter(
-        OrderMaster.zone_id == zone_id,
-        OrderMaster.order_status.in_([40, 50]),
+
+    today_created_orders = OrderMaster.query.filter(
+        OrderMaster.zone_id == zone.id,
+        OrderMaster.order_status != 60,
         db.func.date(OrderMaster.created_at) == today
     ).all()
-    
-    today_revenue = sum(order.total_amount for order in today_orders if order.total_amount)
-    today_order_count = len(today_orders)
-    
+    today_finished_orders = [order for order in today_created_orders if order.order_status in [40, 50]]
+
     month_start = today.replace(day=1)
     month_orders = OrderMaster.query.filter(
-        OrderMaster.zone_id == zone_id,
+        OrderMaster.zone_id == zone.id,
         OrderMaster.order_status.in_([40, 50]),
         OrderMaster.created_at >= month_start
     ).all()
-    
-    month_revenue = sum(order.total_amount for order in month_orders if order.total_amount)
-    
+
+    pending_count = OrderMaster.query.filter_by(zone_id=zone.id, order_status=20).count()
+    delivering_count = OrderMaster.query.filter_by(zone_id=zone.id, order_status=30).count()
+
     return jsonify({
-        'today_revenue': str(today_revenue),
-        'today_order_count': today_order_count,
-        'month_revenue': str(month_revenue)
+        'zone_id': zone.id,
+        'zone_name': zone.zone_name,
+        'today_revenue': str(sum((order.total_amount for order in today_finished_orders if order.total_amount), 0)),
+        'today_order_count': len(today_created_orders),
+        'month_revenue': str(sum((order.total_amount for order in month_orders if order.total_amount), 0)),
+        'pending_count': pending_count,
+        'delivering_count': delivering_count
     }), 200

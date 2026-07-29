@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鲜配居 - 区域配送后台</title>
+    <link rel="stylesheet" href="/admin-panel/css/style.css">
+    <style>
+        .merchant-toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        .merchant-toolbar input,
+        .merchant-toolbar select {
+            min-height: 40px;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .supplier-state-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .supplier-state {
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #f0f2f5;
+            color: #555;
+            font-size: 12px;
+        }
+        .supplier-state.ready {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .supplier-state.waiting {
+            background: #fff7e6;
+            color: #b26a00;
+        }
+        .btn[disabled] {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+        @media (max-width: 768px) {
+            .merchant-toolbar input,
+            .merchant-toolbar select,
+            .merchant-toolbar .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>区域配送后台 - <span id="merchant-zone-name"></span></h1>
+            <button class="btn btn-danger" onclick="logout()">退出登录</button>
+        </header>
+
+        <nav class="sidebar">
+            <ul class="menu">
+                <li class="menu-item active" data-page="merchant-overview">工作台</li>
+                <li class="menu-item" data-page="merchant-orders">订单配送</li>
+                <li class="menu-item" data-page="merchant-delivering">配送中</li>
+            </ul>
+        </nav>
+
+        <main class="content">
+            <div id="page-merchant-overview" class="page active">
+                <h2>工作台</h2>
+                <div id="merchant-stats" class="stats" style="margin-bottom: 20px;"></div>
+                <div class="settlement-section">
+                    <h3>待配送商品汇总</h3>
+                    <div id="merchant-arrival-summary" class="data-list"></div>
+                </div>
+            </div>
+
+            <div id="page-merchant-orders" class="page">
+                <h2>订单配送</h2>
+                <div class="tabs" id="merchant-order-tabs">
+                    <button class="tab active" data-status="all">全部</button>
+                    <button class="tab" data-status="pending">待配货</button>
+                    <button class="tab" data-status="delivering">配送中</button>
+                    <button class="tab" data-status="delivered">已送达</button>
+                    <button class="tab" data-status="completed">已完成</button>
+                </div>
+                <div class="merchant-toolbar">
+                    <input type="search" id="merchant-order-keyword" placeholder="搜索订单、电话、地址">
+                    <button class="btn btn-primary" onclick="loadMerchantOrders()">搜索</button>
+                </div>
+                <div id="merchant-orders-list" class="data-list"></div>
+            </div>
+
+            <div id="page-merchant-delivering" class="page">
+                <h2>配送中</h2>
+                <div id="merchant-delivering-list" class="data-list"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const BASE_URL = window.location.origin && window.location.origin !== 'null'
+            ? window.location.origin
+            : 'http://127.0.0.1:5000';
+        const currentMerchantZoneId = localStorage.getItem('merchant_zone_id');
+        const currentMerchantZoneName = localStorage.getItem('merchant_zone_name');
+        const currentMerchantKey = localStorage.getItem('merchant_key');
+        let currentPage = 'merchant-overview';
+        let currentOrderStatus = 'all';
+
+        if (!currentMerchantZoneId || !currentMerchantKey) {
+            window.location.href = '/admin-panel/merchant_login.html';
+        }
+
+        document.getElementById('merchant-zone-name').textContent = currentMerchantZoneName || '未命名区域';
+
+        function logout() {
+            localStorage.removeItem('merchant_zone_id');
+            localStorage.removeItem('merchant_zone_name');
+            localStorage.removeItem('merchant_key');
+            window.location.href = '/admin-panel/merchant_login.html';
+        }
+
+        function withAuth(path, params = {}) {
+            const query = new URLSearchParams(params);
+            query.set('zone_id', currentMerchantZoneId);
+            query.set('merchant_key', currentMerchantKey);
+            return `${path}?${query.toString()}`;
+        }
+
+        async function fetchData(path, method = 'GET', data = null, showAlert = false) {
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(`${BASE_URL}${path}`, options);
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(result.message || `HTTP ${response.status}`);
+                }
+                return result;
+            } catch (error) {
+                if (showAlert) {
+                    alert(error.message || '操作失败');
+                }
+                return null;
+            }
+        }
+
+        function formatCurrency(value) {
+            return `¥${(parseFloat(value) || 0).toFixed(2)}`;
+        }
+
+        function formatDate(dateString) {
+            return dateString ? new Date(dateString).toLocaleString() : '';
+        }
+
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', function() {
+                document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+                currentPage = this.dataset.page;
+                renderPage();
+            });
+        });
+
+        document.querySelectorAll('#merchant-order-tabs .tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('#merchant-order-tabs .tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                currentOrderStatus = this.dataset.status;
+                loadMerchantOrders();
+            });
+        });
+
+        document.getElementById('merchant-order-keyword').addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                loadMerchantOrders();
+            }
+        });
+
+        async function renderPage() {
+            document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+            document.getElementById(`page-${currentPage}`).classList.add('active');
+
+            if (currentPage === 'merchant-overview') {
+                await loadMerchantOverview();
+            } else if (currentPage === 'merchant-orders') {
+                await loadMerchantOrders();
+            } else if (currentPage === 'merchant-delivering') {
+                await loadMerchantDelivering();
+            }
+        }
+
+        async function loadMerchantOverview() {
+            const [stats, arrival] = await Promise.all([
+                fetchData(withAuth('/merchant/statistics')),
+                fetchData(withAuth('/merchant/dashboard/today-arrival'))
+            ]);
+
+            const statsEl = document.getElementById('merchant-stats');
+            if (stats) {
+                statsEl.innerHTML = `
+                    <div class="stat-card"><h3>今日订单</h3><p class="number">${stats.today_order_count || 0}</p></div>
+                    <div class="stat-card"><h3>今日已送达金额</h3><p class="number">${formatCurrency(stats.today_revenue)}</p></div>
+                    <div class="stat-card"><h3>待配货订单</h3><p class="number">${stats.pending_count || 0}</p></div>
+                    <div class="stat-card"><h3>配送中订单</h3><p class="number">${stats.delivering_count || 0}</p></div>
+                `;
+            }
+
+            const list = document.getElementById('merchant-arrival-summary');
+            list.innerHTML = '';
+            if (!arrival || !arrival.products || arrival.products.length === 0) {
+                list.innerHTML = '<div class="empty-state">暂无待配送商品</div>';
+                return;
+            }
+            arrival.products.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'data-card';
+                card.innerHTML = `
+                    <div class="data-card-content">
+                        <h4>${product.product_name}</h4>
+                        <p>汇总数量: ${product.total_quantity} ${product.unit}</p>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        function renderSupplierStates(order) {
+            if (!order.supplier_orders || order.supplier_orders.length === 0) {
+                return '<p>供应商备货: 无需拆分</p>';
+            }
+            const states = order.supplier_orders.map(item => {
+                const cls = item.status === 30 ? 'ready' : 'waiting';
+                return `<span class="supplier-state ${cls}">${item.supplier_name || '未知供应商'}: ${item.status_text}</span>`;
+            }).join('');
+            return `<div class="supplier-state-list">${states}</div>`;
+        }
+
+        function renderOrderActions(order) {
+            if (order.order_status === 20) {
+                const disabled = order.supplier_ready ? '' : 'disabled';
+                const title = order.supplier_ready ? '' : 'title="供应商备货未全部完成"';
+                return `<button class="btn btn-sm btn-success" ${disabled} ${title} onclick="startDelivery('${order.order_sn}')">开始配送</button>`;
+            }
+            if (order.order_status === 30) {
+                return `<button class="btn btn-sm btn-success" onclick="confirmDelivery('${order.order_sn}')">确认送达</button>`;
+            }
+            return '';
+        }
+
+        function renderOrders(targetId, orders) {
+            const list = document.getElementById(targetId);
+            list.innerHTML = '';
+            if (!orders || orders.length === 0) {
+                list.innerHTML = '<div class="empty-state">暂无订单</div>';
+                return;
+            }
+
+            orders.forEach(order => {
+                const itemsHtml = (order.items || []).map(item => `<p>${item.product_name} x ${item.quantity} ${item.unit}</p>`).join('');
+                const card = document.createElement('div');
+                card.classList.add('data-card', `status-${order.order_status}`);
+                card.innerHTML = `
+                    <div class="data-card-content">
+                        <h4>订单号: ${order.order_sn} <span style="float:right;color:#666;">${order.status_text}</span></h4>
+                        <p>收货人: ${order.receiver_name || '-'} | 电话: ${order.receiver_phone || '-'}</p>
+                        <p>地址: ${order.receiver_address || '-'}</p>
+                        <p>金额: ${formatCurrency(order.total_amount)} | 配送费: ${formatCurrency(order.delivery_fee)}</p>
+                        ${itemsHtml}
+                        ${renderSupplierStates(order)}
+                        <p style="font-size:12px;color:#999;margin-top:8px;">创建时间: ${formatDate(order.created_at)}</p>
+                    </div>
+                    <div class="data-card-actions">${renderOrderActions(order)}</div>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        async function loadMerchantOrders() {
+            const keyword = document.getElementById('merchant-order-keyword').value.trim();
+            const data = await fetchData(withAuth('/merchant/orders', {
+                status: currentOrderStatus,
+                keyword
+            }));
+            renderOrders('merchant-orders-list', data ? data.orders : []);
+        }
+
+        async function loadMerchantDelivering() {
+            const data = await fetchData(withAuth('/merchant/dashboard/delivering'));
+            renderOrders('merchant-delivering-list', data ? data.orders : []);
+        }
+
+        async function startDelivery(orderSn) {
+            const result = await fetchData(withAuth(`/merchant/orders/${orderSn}/start-delivery`), 'POST', null, true);
+            if (result) {
+                alert(result.message || '已开始配送');
+                await renderPage();
+            }
+        }
+
+        async function confirmDelivery(orderSn) {
+            if (!confirm('确认该订单已送达吗？')) return;
+            const result = await fetchData(withAuth(`/merchant/orders/${orderSn}/confirm-delivery`), 'POST', null, true);
+            if (result) {
+                alert(result.message || '已确认送达');
+                await renderPage();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', renderPage);
+    </script>
+</body>
+</html>

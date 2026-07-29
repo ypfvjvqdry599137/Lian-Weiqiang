@@ -342,46 +342,40 @@ def get_supplier_settlement():
 # ==================== 原料管理 (供应商视角) ====================
 # 供应商只能管理自己提供的原料
 
-@supplier_bp.route('/ingredients', methods=['GET'])
-def get_supplier_ingredients():
-    from models import Ingredient # Lazy import
-    supplier_id = request.args.get('supplier_id')
-    is_active = request.args.get('is_active')
-    
-    if not supplier_id:
-        return jsonify({'message': '未授权'}), 401
+def parse_optional_price(value):
+    if value is None or value == '':
+        return None
+    price = Decimal(str(value))
+    if price < 0:
+        raise ValueError('negative price')
+    return price
 
-    query = Ingredient.query.filter_by(supplier_id=supplier_id)
-    if is_active is not None:
-        query = query.filter_by(is_active=is_active.lower() == 'true')
-    
-    ingredients = query.order_by(Ingredient.created_at.desc()).all()
-    output = []
-    for ing in ingredients:
-        output.append({
-            'id': ing.id,
-            'name': ing.name,
-            'unit': ing.unit,
-            'category_id': ing.category_id,
-            'category_name': ing.category.name if ing.category else None,
-            'supplier_id': ing.supplier_id,
-            'supplier_name': ing.supplier.name if ing.supplier else None,
-            'price': str(ing.price) if ing.price else None,
-            'stock': ing.stock,
-            'is_active': ing.is_active,
-            'created_at': ing.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        })
-    return jsonify({"ingredients": output}), 200
 
-@supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['GET'])
-def get_supplier_ingredient(ingredient_id):
-    from models import Ingredient # Lazy import
-    supplier_id = request.args.get('supplier_id')
-    if not supplier_id:
-        return jsonify({'message': '未授权'}), 401
+def get_pending_price_request(ingredient_id, supplier_id):
+    from models import IngredientPriceChangeRequest
+    return IngredientPriceChangeRequest.query.filter_by(
+        ingredient_id=ingredient_id,
+        supplier_id=supplier_id,
+        status=10
+    ).order_by(IngredientPriceChangeRequest.created_at.desc()).first()
 
-    ing = Ingredient.query.filter_by(id=ingredient_id, supplier_id=supplier_id).first_or_404()
-    return jsonify({
+
+def serialize_pending_price_request(request_item):
+    if not request_item:
+        return None
+    return {
+        'id': request_item.id,
+        'old_price': str(request_item.old_price) if request_item.old_price is not None else None,
+        'requested_price': str(request_item.requested_price) if request_item.requested_price is not None else None,
+        'status': request_item.status,
+        'status_text': '待审核',
+        'created_at': request_item.created_at.strftime('%Y-%m-%d %H:%M:%S') if request_item.created_at else None
+    }
+
+
+def serialize_supplier_ingredient(ing):
+    pending_request = get_pending_price_request(ing.id, ing.supplier_id)
+    return {
         'id': ing.id,
         'name': ing.name,
         'unit': ing.unit,
@@ -389,29 +383,54 @@ def get_supplier_ingredient(ingredient_id):
         'category_name': ing.category.name if ing.category else None,
         'supplier_id': ing.supplier_id,
         'supplier_name': ing.supplier.name if ing.supplier else None,
-        'price': str(ing.price) if ing.price else None,
+        'price': str(ing.price) if ing.price is not None else None,
         'stock': ing.stock,
-        'is_active': ing.is_active
-    }), 200
+        'is_active': ing.is_active,
+        'pending_price_request': serialize_pending_price_request(pending_request),
+        'created_at': ing.created_at.strftime('%Y-%m-%d %H:%M:%S') if ing.created_at else None
+    }
+
+
+@supplier_bp.route('/ingredients', methods=['GET'])
+def get_supplier_ingredients():
+    from models import Ingredient # Lazy import
+    supplier_id = request.args.get('supplier_id')
+    is_active = request.args.get('is_active')
+    
+    if not supplier_id or not supplier_id.isdigit():
+        return jsonify({'message': '未授权'}), 401
+
+    supplier_id = int(supplier_id)
+    query = Ingredient.query.filter_by(supplier_id=supplier_id)
+    if is_active is not None:
+        query = query.filter_by(is_active=is_active.lower() == 'true')
+    
+    ingredients = query.order_by(Ingredient.created_at.desc()).all()
+    return jsonify({"ingredients": [serialize_supplier_ingredient(ing) for ing in ingredients]}), 200
+
+@supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['GET'])
+def get_supplier_ingredient(ingredient_id):
+    from models import Ingredient # Lazy import
+    supplier_id = request.args.get('supplier_id')
+    if not supplier_id or not supplier_id.isdigit():
+        return jsonify({'message': '未授权'}), 401
+
+    supplier_id = int(supplier_id)
+    ing = Ingredient.query.filter_by(id=ingredient_id, supplier_id=supplier_id).first_or_404()
+    return jsonify(serialize_supplier_ingredient(ing)), 200
 
 @supplier_bp.route('/ingredients/<int:ingredient_id>', methods=['PUT'])
 def update_supplier_ingredient(ingredient_id):
-    from models import Ingredient # Lazy import
+    from models import Ingredient, IngredientPriceChangeRequest # Lazy import
     supplier_id = request.args.get('supplier_id')
-    if not supplier_id:
+    if not supplier_id or not supplier_id.isdigit():
         return jsonify({'message': '未授权'}), 401
 
+    supplier_id = int(supplier_id)
     ing = Ingredient.query.filter_by(id=ingredient_id, supplier_id=supplier_id).first_or_404()
     data = request.get_json() or {}
+    messages = []
 
-    if 'price' in data:
-        try:
-            price = data['price']
-            ing.price = None if price is None or price == '' else Decimal(str(price))
-            if ing.price is not None and ing.price < 0:
-                return jsonify({'message': '价格不能小于0'}), 400
-        except (InvalidOperation, ValueError, TypeError):
-            return jsonify({'message': '价格格式不正确'}), 400
     if 'stock' in data:
         try:
             stock = int(data.get('stock') or 0)
@@ -420,10 +439,38 @@ def update_supplier_ingredient(ingredient_id):
         if stock < 0:
             return jsonify({'message': '库存不能小于0'}), 400
         ing.stock = stock
+        messages.append('库存已更新')
+
+    if 'price' in data:
+        try:
+            requested_price = parse_optional_price(data.get('price'))
+        except (InvalidOperation, ValueError, TypeError):
+            return jsonify({'message': '价格格式不正确，且不能小于0'}), 400
+
+        if requested_price != ing.price:
+            pending_request = get_pending_price_request(ing.id, supplier_id)
+            if pending_request:
+                pending_request.old_price = ing.price
+                pending_request.requested_price = requested_price
+                pending_request.updated_at = datetime.utcnow()
+            else:
+                pending_request = IngredientPriceChangeRequest(
+                    ingredient_id=ing.id,
+                    supplier_id=supplier_id,
+                    old_price=ing.price,
+                    requested_price=requested_price,
+                    status=10
+                )
+                db.session.add(pending_request)
+            messages.append('价格变更已提交主后台审核，通过后才会生效')
+        else:
+            messages.append('价格未变化，无需审核')
     
     db.session.commit()
-    return jsonify({"message": "价格和库存已更新"}), 200
-
+    return jsonify({
+        "message": '；'.join(messages) if messages else '没有需要保存的变化',
+        "ingredient": serialize_supplier_ingredient(ing)
+    }), 200
 @supplier_bp.route('/ingredients', methods=['POST'])
 def create_supplier_ingredient():
     supplier_id = request.args.get('supplier_id')

@@ -46,6 +46,59 @@ def is_today(value):
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(BUSINESS_TZ).date() == datetime.now(BUSINESS_TZ).date()
 
+def get_price_request_status_text(status):
+    return {
+        10: '待审核',
+        20: '已通过',
+        30: '已驳回'
+    }.get(status, '未知')
+
+
+def serialize_ingredient_price_request(request_item):
+    if not request_item:
+        return None
+    return {
+        'id': request_item.id,
+        'ingredient_id': request_item.ingredient_id,
+        'ingredient_name': request_item.ingredient.name if request_item.ingredient else None,
+        'supplier_id': request_item.supplier_id,
+        'supplier_name': request_item.supplier.name if request_item.supplier else None,
+        'old_price': str(request_item.old_price) if request_item.old_price is not None else None,
+        'requested_price': str(request_item.requested_price) if request_item.requested_price is not None else None,
+        'status': request_item.status,
+        'status_text': get_price_request_status_text(request_item.status),
+        'remark': request_item.remark,
+        'created_at': request_item.created_at.strftime('%Y-%m-%d %H:%M:%S') if request_item.created_at else None,
+        'reviewed_at': request_item.reviewed_at.strftime('%Y-%m-%d %H:%M:%S') if request_item.reviewed_at else None,
+        'updated_at': request_item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if request_item.updated_at else None
+    }
+
+
+def get_pending_ingredient_price_request(ingredient_id):
+    from models import IngredientPriceChangeRequest
+    return IngredientPriceChangeRequest.query.filter_by(
+        ingredient_id=ingredient_id,
+        status=10
+    ).order_by(IngredientPriceChangeRequest.created_at.desc()).first()
+
+
+def serialize_admin_ingredient(ing):
+    pending_request = get_pending_ingredient_price_request(ing.id)
+    return {
+        'id': ing.id,
+        'name': ing.name,
+        'unit': ing.unit,
+        'category_id': ing.category_id,
+        'category_name': ing.category.name if ing.category else None,
+        'supplier_id': ing.supplier_id,
+        'supplier_name': ing.supplier.name if ing.supplier else None,
+        'price': str(ing.price) if ing.price is not None else None,
+        'stock': ing.stock,
+        'is_active': ing.is_active,
+        'pending_price_request': serialize_ingredient_price_request(pending_request),
+        'created_at': ing.created_at.strftime('%Y-%m-%d %H:%M:%S') if ing.created_at else None
+    }
+
 # ==================== 供应商管理 ====================
 
 @admin_bp.route('/suppliers', methods=['POST'])
@@ -192,23 +245,7 @@ def get_ingredients():
             ))
     
     ingredients = query.order_by(Ingredient.created_at.desc()).all()
-    output = []
-    for ing in ingredients:
-        output.append({
-            'id': ing.id,
-            'name': ing.name,
-            'unit': ing.unit,
-            'category_id': ing.category_id,
-            'category_name': ing.category.name if ing.category else None,
-            'supplier_id': ing.supplier_id,
-            'supplier_name': ing.supplier.name if ing.supplier else None,
-            'price': str(ing.price) if ing.price else None,
-            'stock': ing.stock,
-            'is_active': ing.is_active,
-            'created_at': ing.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        })
-    return jsonify({"ingredients": output}), 200
-
+    return jsonify({"ingredients": [serialize_admin_ingredient(ing) for ing in ingredients]}), 200
 @admin_bp.route('/ingredients/batch', methods=['DELETE'])
 def batch_delete_ingredients():
     from models import Ingredient
@@ -236,19 +273,7 @@ def batch_delete_ingredients():
 def get_ingredient(ingredient_id):
     from models import Ingredient
     ing = Ingredient.query.get_or_404(ingredient_id)
-    return jsonify({
-        'id': ing.id,
-        'name': ing.name,
-        'unit': ing.unit,
-        'category_id': ing.category_id,
-        'category_name': ing.category.name if ing.category else None,
-        'supplier_id': ing.supplier_id,
-        'supplier_name': ing.supplier.name if ing.supplier else None,
-        'price': str(ing.price) if ing.price else None,
-        'stock': ing.stock,
-        'is_active': ing.is_active
-    }), 200
-
+    return jsonify(serialize_admin_ingredient(ing)), 200
 @admin_bp.route('/ingredients/<int:ingredient_id>', methods=['PUT'])
 def update_ingredient(ingredient_id):
     from models import Ingredient
@@ -275,6 +300,79 @@ def delete_ingredient(ingredient_id):
     db.session.commit()
     return jsonify({"message": "Ingredient disabled successfully"}), 200
 
+# ==================== 原料价格审核 ====================
+
+@admin_bp.route('/ingredient-price-requests', methods=['GET'])
+def get_ingredient_price_requests():
+    from models import IngredientPriceChangeRequest, Ingredient, Supplier
+    status_filter = (request.args.get('status') or 'pending').strip().lower()
+    keyword = (request.args.get('q') or '').strip()
+
+    query = IngredientPriceChangeRequest.query
+    if status_filter != 'all':
+        status_map = {
+            'pending': 10,
+            'approved': 20,
+            'rejected': 30,
+            '10': 10,
+            '20': 20,
+            '30': 30
+        }
+        status_value = status_map.get(status_filter)
+        if status_value is None:
+            return jsonify({"message": "审核状态不正确"}), 400
+        query = query.filter_by(status=status_value)
+
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.join(Ingredient, IngredientPriceChangeRequest.ingredient_id == Ingredient.id) \
+            .join(Supplier, IngredientPriceChangeRequest.supplier_id == Supplier.id) \
+            .filter(or_(
+                Ingredient.name.ilike(like),
+                Supplier.name.ilike(like)
+            ))
+
+    requests = query.order_by(IngredientPriceChangeRequest.created_at.desc()).all()
+    summary = {
+        'pending_count': IngredientPriceChangeRequest.query.filter_by(status=10).count(),
+        'approved_count': IngredientPriceChangeRequest.query.filter_by(status=20).count(),
+        'rejected_count': IngredientPriceChangeRequest.query.filter_by(status=30).count()
+    }
+    return jsonify({
+        "requests": [serialize_ingredient_price_request(item) for item in requests],
+        "summary": summary
+    }), 200
+
+
+@admin_bp.route('/ingredient-price-requests/<int:request_id>/review', methods=['PUT'])
+def review_ingredient_price_request(request_id):
+    from models import IngredientPriceChangeRequest
+    request_item = IngredientPriceChangeRequest.query.get_or_404(request_id)
+    data = request.get_json() or {}
+    action = (data.get('action') or '').strip().lower()
+
+    if request_item.status != 10:
+        return jsonify({"message": "该价格申请已经审核过，不能重复处理"}), 400
+
+    if action in ['approve', 'approved']:
+        request_item.status = 20
+        if request_item.ingredient:
+            request_item.ingredient.price = request_item.requested_price
+        message = '价格申请已通过，新价格已生效'
+    elif action in ['reject', 'rejected']:
+        request_item.status = 30
+        message = '价格申请已驳回，原价格保持不变'
+    else:
+        return jsonify({"message": "请传入 approve 或 reject"}), 400
+
+    request_item.remark = data.get('remark') or None
+    request_item.reviewed_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        "message": message,
+        "request": serialize_ingredient_price_request(request_item)
+    }), 200
 # ==================== 成品-原料关联管理 ====================
 
 @admin_bp.route('/products/<int:product_id>/ingredients', methods=['POST'])

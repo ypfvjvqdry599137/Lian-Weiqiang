@@ -89,8 +89,9 @@
                     <input type="text" id="si-ingredient-category-name" readonly>
                 </div>
                 <div class="form-group">
-                    <label>价格</label>
+                    <label>申请新价格（需主后台审核）</label>
                     <input type="number" step="0.01" id="si-ingredient-price">
+                    <div id="si-price-review-note" style="margin-top:8px;color:#b26a00;font-size:13px;line-height:1.6;"></div>
                 </div>
                 <div class="form-group">
                     <label>库存</label>
@@ -100,7 +101,7 @@
                     <label>状态</label>
                     <input type="text" id="si-ingredient-status" readonly>
                 </div>
-                <button type="submit" class="btn btn-primary">保存价格和库存</button>
+                <button type="submit" class="btn btn-primary">保存库存/提交改价申请</button>
             </form>
         </div>
     </div>
@@ -428,6 +429,7 @@
                             <h4>${ingredient.name}</h4>
                             <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'}</p>
                             <p>价格: ${ingredient.price ? '¥' + ingredient.price : '未设置'} | 库存: ${ingredient.stock}</p>
+                            ${ingredient.pending_price_request ? `<p style="color:#b26a00;">待审核新价: ${formatCurrency(ingredient.pending_price_request.requested_price)}</p>` : ''}
                             <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
                         </div>
                         <div class="data-card-actions">
@@ -453,7 +455,11 @@
                 document.getElementById('si-ingredient-name').value = ingredient.name;
                 document.getElementById('si-ingredient-unit').value = ingredient.unit;
                 document.getElementById('si-ingredient-category-name').value = ingredient.category_name || '无';
-                document.getElementById('si-ingredient-price').value = ingredient.price || '';
+                document.getElementById('si-ingredient-price').value = ingredient.pending_price_request ? ingredient.pending_price_request.requested_price || '' : ingredient.price || '';
+                const priceNote = document.getElementById('si-price-review-note');
+                priceNote.textContent = ingredient.pending_price_request
+                    ? `已有待审核申请：当前价 ${formatCurrency(ingredient.pending_price_request.old_price)}，申请新价 ${formatCurrency(ingredient.pending_price_request.requested_price)}。再次保存会更新这条申请。`
+                    : '当前价格如果需要调整，提交后会进入主后台审核，通过后才会生效。';
                 document.getElementById('si-ingredient-stock').value = ingredient.stock;
                 document.getElementById('si-ingredient-status').value = ingredient.is_active ? '已启用' : '已禁用';
                 showModal('supplier-ingredient-modal');
@@ -470,7 +476,7 @@
 
             const result = await fetchData(`/supplier/ingredients/${ingredientId}?supplier_id=${currentSupplierId}`, 'PUT', data, true);
             if (result) {
-                alert('价格和库存保存成功！');
+                alert(result.message || '保存成功！');
                 closeModal('supplier-ingredient-modal');
                 await loadSupplierIngredients();
             }

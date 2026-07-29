@@ -19,6 +19,7 @@
                 <li class="menu-item active" data-page="dashboard">首页概览</li>
                 <li class="menu-item" data-page="suppliers">供应商管理</li>
                 <li class="menu-item" data-page="ingredients">原料管理</li>
+                <li class="menu-item" data-page="price-reviews">价格审核</li>
                 <li class="menu-item" data-page="products">商品管理</li>
                 <li class="menu-item" data-page="categories">分类管理</li>
                 <li class="menu-item" data-page="delivery-zones">配送区域</li>
@@ -110,6 +111,25 @@
                 <div id="ingredients-list" class="data-list"></div>
             </div>
 
+
+            <!-- 原料价格审核 -->
+            <div id="page-price-reviews" class="page">
+                <div class="page-header">
+                    <h2>价格审核</h2>
+                    <div class="settlement-controls">
+                        <input type="search" id="price-review-search" placeholder="搜索原料或供应商">
+                        <select id="price-review-status-filter">
+                            <option value="pending">待审核</option>
+                            <option value="approved">已通过</option>
+                            <option value="rejected">已驳回</option>
+                            <option value="all">全部</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadPriceReviews()">查询</button>
+                    </div>
+                </div>
+                <div id="price-review-summary" class="stats" style="margin-bottom: 20px;"></div>
+                <div id="price-reviews-list" class="data-list"></div>
+            </div>
             <!-- 供应商备货单管理 -->
             <div id="page-supplier-orders" class="page">
                 <h2>📋 供应商备货单</h2>

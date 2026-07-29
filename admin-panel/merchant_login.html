@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鲜配居 - 区域配送登录</title>
+    <link rel="stylesheet" href="/admin-panel/css/style.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f4f7f6;
+            padding: 16px;
+        }
+        .login-container {
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .login-container h2 {
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: bold;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .btn-primary {
+            width: 100%;
+            padding: 12px;
+            font-size: 18px;
+        }
+        .error-message {
+            color: red;
+            margin-top: 15px;
+            font-size: 14px;
+            min-height: 20px;
+        }
+        @media (max-width: 480px) {
+            body {
+                align-items: flex-start;
+                padding-top: 12vh;
+            }
+            .login-container {
+                padding: 28px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2>区域配送登录</h2>
+        <form id="merchant-login-form">
+            <div class="form-group">
+                <label for="username">账号:</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">密码:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary">登录</button>
+            <p id="error-message" class="error-message"></p>
+        </form>
+    </div>
+
+    <script>
+        const BASE_URL = window.location.origin && window.location.origin !== 'null'
+            ? window.location.origin
+            : 'http://127.0.0.1:5000';
+
+        document.getElementById('merchant-login-form').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.textContent = '';
+
+            try {
+                const response = await fetch(`${BASE_URL}/merchant/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(result.message || `登录失败（HTTP ${response.status}）`);
+                }
+
+                localStorage.setItem('merchant_zone_id', result.zone_id);
+                localStorage.setItem('merchant_zone_name', result.zone_name);
+                localStorage.setItem('merchant_key', result.merchant_key);
+                window.location.href = '/admin-panel/merchant_dashboard.html';
+            } catch (error) {
+                errorMessage.textContent = error.message || '网络错误，请稍后再试。';
+            }
+        });
+    </script>
+</body>
+</html>

@@ -171,6 +171,9 @@ async function renderPage() {
         case 'ingredients':
             await loadIngredients();
             break;
+        case 'price-reviews':
+            await loadPriceReviews();
+            break;
         case 'products':
             await loadProducts();
             break;
@@ -519,6 +522,7 @@ async function loadDeliveryZones() {
                     <p>配送半径: ${zone.radius}米 | 配送费: ¥${zone.delivery_fee}</p>
                     <p>预计送达: ${zone.delivery_time}</p>
                     <p>合作商: ${zone.merchant_username || '无'}</p>
+                    <p>区域后台: <a href="/admin-panel/merchant_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${zone.is_active ? '启用' : '禁用'}</p>
                 </div>
                 <div class="data-card-actions">
@@ -816,6 +820,7 @@ async function loadIngredients() {
                     <p>单位: ${ingredient.unit} | 分类: ${ingredient.category_name || '无'}</p>
                     <p>供应商: ${ingredient.supplier_name || '未知'}</p>
                     <p>价格: ${ingredient.price ? '¥' + ingredient.price : '未设置'} | 库存: ${ingredient.stock}</p>
+                    ${ingredient.pending_price_request ? `<p style="color:#b26a00;">待审核新价: ${formatCurrency(ingredient.pending_price_request.requested_price)}（供应商申请）</p>` : ''}
                     <p>状态: ${ingredient.is_active ? '已启用' : '已禁用'}</p>
                 </div>
                 <div class="data-card-actions">
@@ -941,6 +946,78 @@ async function batchDeleteIngredients() {
     }
 }
 
+// ==================== 原料价格审核 (Price Reviews) ====================
+
+function getPriceReviewsUrl() {
+    const params = new URLSearchParams();
+    const status = document.getElementById('price-review-status-filter')?.value || 'pending';
+    const keyword = document.getElementById('price-review-search')?.value.trim();
+    params.set('status', status);
+    if (keyword) {
+        params.set('q', keyword);
+    }
+    return `/admin/ingredient-price-requests?${params.toString()}`;
+}
+
+function renderPriceReviewSummary(summary) {
+    const summaryEl = document.getElementById('price-review-summary');
+    if (!summaryEl || !summary) return;
+    summaryEl.innerHTML = `
+        <div class="stat-card"><h3>待审核</h3><p class="number">${summary.pending_count || 0}</p></div>
+        <div class="stat-card"><h3>已通过</h3><p class="number">${summary.approved_count || 0}</p></div>
+        <div class="stat-card"><h3>已驳回</h3><p class="number">${summary.rejected_count || 0}</p></div>
+    `;
+}
+
+async function loadPriceReviews() {
+    const data = await fetchData(getPriceReviewsUrl());
+    const list = document.getElementById('price-reviews-list');
+    list.innerHTML = '';
+    renderPriceReviewSummary(data ? data.summary : null);
+
+    if (!data || !data.requests || data.requests.length === 0) {
+        list.innerHTML = '<div class="empty-state">暂无价格审核记录</div>';
+        return;
+    }
+
+    data.requests.forEach(item => {
+        const card = document.createElement('div');
+        card.classList.add('data-card', `status-${item.status}`);
+        const actionHtml = item.status === 10
+            ? `<button class="btn btn-sm btn-primary" onclick="reviewIngredientPriceRequest(${item.id}, 'approve')">通过</button>
+               <button class="btn btn-sm btn-danger" onclick="reviewIngredientPriceRequest(${item.id}, 'reject')">驳回</button>`
+            : '';
+        card.innerHTML = `
+            <div class="data-card-content">
+                <h4>${item.ingredient_name || '未知原料'} <span style="float:right;color:#666;">${item.status_text}</span></h4>
+                <p>供应商: ${item.supplier_name || '未知供应商'}</p>
+                <p>当前价格: ${item.old_price ? formatCurrency(item.old_price) : '未设置'} | 申请价格: ${item.requested_price ? formatCurrency(item.requested_price) : '未设置'}</p>
+                <p>申请时间: ${formatDate(item.created_at)}${item.reviewed_at ? ` | 审核时间: ${formatDate(item.reviewed_at)}` : ''}</p>
+                ${item.remark ? `<p>备注: ${item.remark}</p>` : ''}
+            </div>
+            <div class="data-card-actions">${actionHtml}</div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+async function reviewIngredientPriceRequest(requestId, action) {
+    const actionText = action === 'approve' ? '通过' : '驳回';
+    const remark = action === 'reject' ? prompt('请输入驳回原因（可留空）:') : '';
+    if (!confirm(`确认${actionText}这条价格申请吗？`)) return;
+
+    const result = await fetchData(`/admin/ingredient-price-requests/${requestId}/review`, 'PUT', {
+        action,
+        remark: remark || null
+    }, true);
+    if (result) {
+        alert(result.message || '审核完成');
+        await loadPriceReviews();
+        if (currentPage === 'ingredients') {
+            await loadIngredients();
+        }
+    }
+}
 // ==================== 商品原料配置 (Product Ingredients) ====================
 
 let currentProductIdForIngredients = null;
@@ -1160,6 +1237,8 @@ function setupIngredientControls() {
     const search = document.getElementById('ingredient-search');
     const statusFilter = document.getElementById('ingredient-status-filter');
     const productIngredientSelect = document.getElementById('pi-ingredient-id');
+    const priceReviewSearch = document.getElementById('price-review-search');
+    const priceReviewStatusFilter = document.getElementById('price-review-status-filter');
 
     if (search) {
         search.addEventListener('keydown', event => {
@@ -1174,6 +1253,17 @@ function setupIngredientControls() {
     }
     if (productIngredientSelect) {
         productIngredientSelect.addEventListener('change', updateProductIngredientMeta);
+    }
+    if (priceReviewSearch) {
+        priceReviewSearch.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                loadPriceReviews();
+            }
+        });
+    }
+    if (priceReviewStatusFilter) {
+        priceReviewStatusFilter.addEventListener('change', loadPriceReviews);
     }
 }
 
