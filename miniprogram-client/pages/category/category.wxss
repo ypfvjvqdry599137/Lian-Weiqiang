@@ -1,6 +1,6 @@
 .container {
   height: 100vh;
-  padding-bottom: 120rpx;
+  padding-bottom: calc(190rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -34,6 +34,8 @@
   flex: 1;
   background: white;
   padding: 20rpx;
+  padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .product-card {
@@ -102,6 +104,7 @@
   right: 0;
   display: flex;
   background: white;
+  min-height: 98rpx;
   padding: 15rpx 0;
   padding-bottom: calc(15rpx + env(safe-area-inset-bottom));
   box-shadow: 0 -4rpx 20rpx rgba(0,0,0,0.08);
