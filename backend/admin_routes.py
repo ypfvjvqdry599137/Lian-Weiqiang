@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from flask import Blueprint, request, jsonify, current_app
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -1222,6 +1222,49 @@ def get_zone_statistics():
     }), 200
 # ==================== 订单状态管理（总后台） ====================
 
+def get_order_delete_stock_units(quantity):
+    quantity = Decimal(str(quantity or 0))
+    if quantity <= 0:
+        return 0
+    return int(quantity.to_integral_value(rounding=ROUND_CEILING))
+
+
+def restore_inventory_for_deleted_order(order):
+    restored_product_units = 0
+    restored_ingredient_units = 0
+
+    for item in list(order.items):
+        product = item.product
+        if not product or not product.stock:
+            continue
+
+        quantity = item.quantity or 0
+        if quantity <= 0:
+            continue
+
+        if order.order_status == 10:
+            released = min(product.stock.lock_stock or 0, quantity)
+            product.stock.lock_stock = max(0, (product.stock.lock_stock or 0) - released)
+            restored_product_units += released
+        elif order.order_status in [20, 30]:
+            product.stock.total_stock = (product.stock.total_stock or 0) + quantity
+            product.sales_count = max(0, (product.sales_count or 0) - quantity)
+            restored_product_units += quantity
+
+    for supplier_order in list(order.supplier_orders):
+        if supplier_order.status != 10:
+            continue
+        for item in list(supplier_order.items):
+            if item.ingredient:
+                units = get_order_delete_stock_units(item.quantity)
+                item.ingredient.stock = (item.ingredient.stock or 0) + units
+                restored_ingredient_units += units
+
+    return {
+        'restored_product_units': restored_product_units,
+        'restored_ingredient_units': restored_ingredient_units
+    }
+
 @admin_bp.route('/orders', methods=['GET'])
 def get_all_orders():
     from models import OrderMaster
@@ -1293,6 +1336,41 @@ def update_order_status(order_sn):
         "status_text": status_text
     }), 200
 
+@admin_bp.route('/orders/<order_sn>', methods=['DELETE'])
+def delete_order(order_sn):
+    from models import OrderMaster
+    """删除订单，并同步清理供应商备货单和区域配送订单数据"""
+    order = OrderMaster.query.get_or_404(order_sn)
+
+    supplier_order_count = len(order.supplier_orders or [])
+    order_item_count = len(order.items or [])
+
+    try:
+        restore_info = restore_inventory_for_deleted_order(order)
+
+        for supplier_order in list(order.supplier_orders):
+            for item in list(supplier_order.items):
+                db.session.delete(item)
+            db.session.delete(supplier_order)
+
+        for item in list(order.items):
+            db.session.delete(item)
+
+        db.session.delete(order)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Failed to delete order %s', order_sn)
+        return jsonify({"message": "订单删除失败，请稍后重试"}), 500
+
+    return jsonify({
+        "message": "订单已删除，并已同步移除供应商备货单和区域配送订单",
+        "order_sn": order_sn,
+        "deleted_supplier_orders": supplier_order_count,
+        "deleted_order_items": order_item_count,
+        "inventory_note": "待付款/待配货/配送中的库存已按安全规则回补，已送达/已完成订单不会自动回补库存",
+        **restore_info
+    }), 200
 # ==================== 商品分类管理 ====================
 
 @admin_bp.route('/categories', methods=['POST'])

@@ -969,6 +969,7 @@ async function loadOrders() {
                 </div>
                 <div class="data-card-actions">
                     ${renderOrderStatusSelect(order)}
+                    <button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.order_sn}')">删除订单</button>
                 </div>
             `;
             ordersList.appendChild(card);
@@ -993,6 +994,18 @@ async function updateOrderStatusFromSelect(orderSn, selectEl) {
     }
 }
 
+async function deleteOrder(orderSn) {
+    if (!confirm('确定要删除该订单吗？删除后会同步从供应商后台和区域配送后台移除，并按安全规则回补未完成库存。')) {
+        return;
+    }
+
+    const result = await fetchData(`/admin/orders/${orderSn}`, 'DELETE', null, true);
+    if (result) {
+        alert([result.message, result.inventory_note].filter(Boolean).join('\n'));
+        await loadOrders();
+        await loadDashboardStats();
+    }
+}
 // ==================== 供应商管理 (Suppliers) ====================
 
 async function loadSuppliers() {
