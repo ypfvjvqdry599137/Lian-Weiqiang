@@ -188,9 +188,13 @@ async function searchMapAddress() {
         return;
     }
 
-    updateMapPickStatus('正在通过腾讯地图解析地址...');
-    const result = await fetchData(`/admin/map/geocode?address=${encodeURIComponent(keyword)}`, 'GET', null, true);
-    if (!result || result.lng == null || result.lat == null) {
+    updateMapPickStatus('正在通过腾讯地图搜索地址...');
+    const result = await fetchData(`/admin/map/geocode?address=${encodeURIComponent(keyword)}`, 'GET', null, false);
+    if (!result) {
+        updateMapPickStatus(window.lastFetchError || '没有找到有效坐标，请输入城市 + 小区名，或直接点击地图选点。', true);
+        return;
+    }
+    if (result.lng == null || result.lat == null) {
         updateMapPickStatus('没有解析到有效坐标，请换一个更完整的地址。', true);
         return;
     }
@@ -198,7 +202,6 @@ async function searchMapAddress() {
     setMapPoint(result.lat, result.lng);
     updateMapPickStatus(`已定位：${result.address || result.title || keyword}`);
 }
-
 function handleMapSearchKeydown(event) {
     if (event.key === 'Enter') {
         event.preventDefault();
@@ -241,6 +244,7 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
         options.body = JSON.stringify(data);
     }
 
+    window.lastFetchError = '';
     try {
         const response = await fetch(fullUrl, options);
         console.log('响应状态:', response.status);
@@ -260,6 +264,7 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
         return result;
     } catch (error) {
         console.error('请求失败:', error);
+        window.lastFetchError = error.message;
         if (showAlert) {
             alert('操作失败: ' + error.message);
         }

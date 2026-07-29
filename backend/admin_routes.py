@@ -34,7 +34,7 @@ def get_tencent_map_server_key():
     return (current_app.config.get('TENCENT_MAP_SERVER_KEY') or '').strip()
 
 
-def request_tencent_map_api(path, params):
+def request_tencent_map_api(path, params, accept_statuses=(0,)):
     key = get_tencent_map_server_key()
     if not key:
         return None, ({'message': '请先在服务器环境变量 TENCENT_MAP_SERVER_KEY 配置腾讯地图 WebService Key'}, 400)
@@ -48,10 +48,54 @@ def request_tencent_map_api(path, params):
     except (URLError, TimeoutError, ValueError, OSError):
         return None, ({'message': '腾讯地图服务暂时不可用，请稍后再试'}, 502)
 
-    if payload.get('status') != 0:
+    if accept_statuses is not None and payload.get('status') not in accept_statuses:
         return None, ({'message': payload.get('message') or '腾讯地图解析失败'}, 400)
     return payload, None
 
+
+def get_tencent_payload_message(payload):
+    if not payload:
+        return None
+    return payload.get('message') or payload.get('msg')
+
+
+def format_tencent_place_result(item, keyword):
+    location = item.get('location') or {}
+    if location.get('lng') is None or location.get('lat') is None:
+        return None
+    return {
+        'title': item.get('title') or keyword,
+        'address': item.get('address') or item.get('title') or keyword,
+        'lng': location.get('lng'),
+        'lat': location.get('lat'),
+        'province': item.get('province'),
+        'city': item.get('city'),
+        'district': item.get('district'),
+        'source': 'place_suggestion'
+    }
+
+
+def search_tencent_place(keyword, region=None):
+    attempts = []
+    if region:
+        attempts.append({'keyword': keyword, 'region': region})
+    attempts.append({'keyword': keyword})
+
+    last_message = None
+    for params in attempts:
+        payload, error = request_tencent_map_api('/ws/place/v1/suggestion', params, accept_statuses=None)
+        if error:
+            body, _ = error
+            last_message = body.get('message')
+            continue
+        if payload.get('status') != 0:
+            last_message = get_tencent_payload_message(payload)
+            continue
+        for item in payload.get('data') or []:
+            result = format_tencent_place_result(item, keyword)
+            if result:
+                return result, None
+    return None, last_message
 
 @admin_bp.route('/map/config', methods=['GET'])
 def get_map_config():
@@ -70,16 +114,35 @@ def geocode_map_address():
     if not address:
         return jsonify({'message': '请输入要搜索的地址'}), 400
 
+    place_result, place_message = search_tencent_place(address, region or None)
+    if place_result:
+        return jsonify(place_result), 200
+
     params = {'address': address}
     if region:
         params['region'] = region
-    payload, error = request_tencent_map_api('/ws/geocoder/v1/', params)
+    payload, error = request_tencent_map_api('/ws/geocoder/v1/', params, accept_statuses=None)
     if error:
         body, status = error
         return jsonify(body), status
 
+    if payload.get('status') != 0:
+        message = get_tencent_payload_message(payload)
+        if place_message and '达到上限' in place_message:
+            message = place_message
+        elif not message:
+            message = place_message
+        if message and '达到上限' in message:
+            message = '腾讯地图服务端 Key 的相关接口额度不足，请在额度管理里给“关键词输入提示/地址解析”分配额度'
+        else:
+            message = '没有找到有效坐标，请输入“城市 + 小区/门店名”，或直接点击地图选点'
+        return jsonify({'message': message}), 400
+
     result = payload.get('result') or {}
     location = result.get('location') or {}
+    if location.get('lng') is None or location.get('lat') is None:
+        return jsonify({'message': '没有解析到有效坐标，请换一个更完整的地址'}), 400
+
     return jsonify({
         'title': result.get('title') or address,
         'address': result.get('address') or address,
@@ -89,9 +152,9 @@ def geocode_map_address():
         'city': (result.get('address_components') or {}).get('city'),
         'district': (result.get('address_components') or {}).get('district'),
         'reliability': result.get('reliability'),
-        'similarity': result.get('similarity')
+        'similarity': result.get('similarity'),
+        'source': 'geocoder'
     }), 200
-
 
 @admin_bp.route('/map/reverse-geocode', methods=['GET'])
 def reverse_geocode_map_location():
