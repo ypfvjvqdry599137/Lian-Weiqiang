@@ -1,21 +1,49 @@
 const app = getApp();
 
+function emptyForm() {
+  return {
+    id: null,
+    receiver_name: '',
+    receiver_phone: '',
+    address: '',
+    full_address: '',
+    detail_address: '',
+    name: '',
+    lng: null,
+    lat: null,
+    is_default: false
+  };
+}
+
+function normalizeAddress(address) {
+  const addressText = address.address || address.full_address || address.detail_address || '';
+  return {
+    ...address,
+    address: addressText,
+    full_address: address.full_address || addressText,
+    detail_address: address.detail_address || addressText,
+    lng: address.lng === 'None' ? null : address.lng,
+    lat: address.lat === 'None' ? null : address.lat
+  };
+}
+
+function buildAddressText(location) {
+  const name = location.name || '';
+  const address = location.address || '';
+  if (address && name && address.indexOf(name) === -1) {
+    return `${address}${name}`;
+  }
+  return address || name;
+}
+
 Page({
   data: {
     addresses: [],
     selectedAddressId: null,
-    mode: 'list', // list, add, edit
+    mode: 'list',
     editingAddress: null,
-    form: {
-      id: null,
-      receiver_name: '',
-      receiver_phone: '',
-      address: '',
-      lng: null,
-      lat: null,
-      is_default: false
-    },
-    canSelect: false // 是否可以选择地址（用于确认订单页跳转过来的情况）
+    form: emptyForm(),
+    canSelect: false
   },
 
   onLoad(options) {
@@ -26,18 +54,16 @@ Page({
     this.loadAddresses();
   },
 
-  // 加载地址列表
   loadAddresses() {
     app.request({
       url: '/client/addresses',
       success: (res) => {
         if (res.data && res.data.addresses) {
-          this.setData({ addresses: res.data.addresses });
-          // 如果没有选中的地址，默认选中第一个
-          if (res.data.addresses.length > 0 && !this.data.selectedAddressId) {
-            const defaultAddr = res.data.addresses.find(a => a.is_default) || res.data.addresses[0];
+          const addresses = res.data.addresses.map(normalizeAddress);
+          this.setData({ addresses });
+          if (addresses.length > 0 && !this.data.selectedAddressId) {
+            const defaultAddr = addresses.find(a => a.is_default) || addresses[0];
             this.setData({ selectedAddressId: defaultAddr.id });
-            // 更新全局数据
             app.globalData.selectedAddress = defaultAddr;
           }
         }
@@ -45,25 +71,15 @@ Page({
     });
   },
 
-  // 添加地址
   goToAdd() {
     this.setData({
       mode: 'add',
-      form: {
-        id: null,
-        receiver_name: '',
-        receiver_phone: '',
-        address: '',
-        lng: null,
-        lat: null,
-        is_default: false
-      }
+      form: emptyForm()
     });
   },
 
-  // 编辑地址
   goToEdit(e) {
-    const address = e.currentTarget.dataset.address;
+    const address = normalizeAddress(e.currentTarget.dataset.address);
     this.setData({
       mode: 'edit',
       form: {
@@ -71,6 +87,9 @@ Page({
         receiver_name: address.receiver_name,
         receiver_phone: address.receiver_phone,
         address: address.address,
+        full_address: address.full_address || address.address,
+        detail_address: address.detail_address || address.address,
+        name: address.detail_address || '',
         lng: address.lng,
         lat: address.lat,
         is_default: address.is_default
@@ -78,16 +97,14 @@ Page({
     });
   },
 
-  // 选择地址（用于确认订单页）
   selectAddress(e) {
     if (this.data.canSelect) {
-      const address = e.currentTarget.dataset.address;
+      const address = normalizeAddress(e.currentTarget.dataset.address);
       app.globalData.selectedAddress = address;
       wx.navigateBack();
     }
   },
 
-  // 删除地址
   deleteAddress(e) {
     const id = e.currentTarget.dataset.id;
     wx.showModal({
@@ -108,7 +125,6 @@ Page({
     });
   },
 
-  // 设置默认地址
   setDefault(e) {
     const id = e.currentTarget.dataset.id;
     app.request({
@@ -121,7 +137,6 @@ Page({
     });
   },
 
-  // 表单输入
   onInput(e) {
     const field = e.currentTarget.dataset.field;
     this.setData({
@@ -129,27 +144,31 @@ Page({
     });
   },
 
-  // 选择位置（地图）
   chooseLocation() {
     wx.chooseLocation({
       success: (res) => {
+        const addressText = buildAddressText(res);
         this.setData({
-          'form.address': res.address,
+          'form.address': addressText,
+          'form.full_address': addressText,
+          'form.detail_address': res.name || addressText,
+          'form.name': res.name || '',
           'form.lng': res.longitude,
           'form.lat': res.latitude
         });
+      },
+      fail: () => {
+        wx.showToast({ title: '未选择位置', icon: 'none' });
       }
     });
   },
 
-  // 切换默认地址
   toggleDefault() {
     this.setData({
       'form.is_default': !this.data.form.is_default
     });
   },
 
-  // 保存地址
   saveAddress() {
     const form = this.data.form;
     if (!form.receiver_name) {
@@ -164,13 +183,17 @@ Page({
       wx.showToast({ title: '请选择收货地址', icon: 'none' });
       return;
     }
+    if (form.lng === null || form.lat === null) {
+      wx.showToast({ title: '请选择带定位的收货地址', icon: 'none' });
+      return;
+    }
 
     const url = this.data.mode === 'add' ? '/client/addresses' : `/client/addresses/${form.id}`;
     const method = this.data.mode === 'add' ? 'POST' : 'PUT';
 
     app.request({
-      url: url,
-      method: method,
+      url,
+      method,
       data: form,
       success: () => {
         wx.showToast({ title: this.data.mode === 'add' ? '添加成功' : '修改成功', icon: 'success' });
@@ -180,8 +203,7 @@ Page({
     });
   },
 
-  // 返回列表
   goBack() {
     this.setData({ mode: 'list' });
   }
-})
+});

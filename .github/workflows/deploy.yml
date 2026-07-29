@@ -20,12 +20,13 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_HOST: ${{ secrets.DB_HOST }}
+          TENCENT_MAP_KEY: ${{ secrets.TENCENT_MAP_KEY }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: PROJECT_DIR,SERVICE_NAME,DB_USER,DB_PASSWORD,DB_NAME,DB_HOST
+          envs: PROJECT_DIR,SERVICE_NAME,DB_USER,DB_PASSWORD,DB_NAME,DB_HOST,TENCENT_MAP_KEY
           script: |
             set -euo pipefail
 
@@ -40,6 +41,17 @@ jobs:
             . venv/bin/activate
             pip install -r requirements.txt
             cd ..
+
+            if [ -n "${TENCENT_MAP_KEY:-}" ]; then
+              ENV_FILE="$PROJECT_DIR/backend/.env"
+              TEMP_ENV="$(mktemp)"
+              if [ -f "$ENV_FILE" ]; then
+                grep -v '^TENCENT_MAP_KEY=' "$ENV_FILE" > "$TEMP_ENV" || true
+              fi
+              printf 'TENCENT_MAP_KEY=%s\n' "$TENCENT_MAP_KEY" >> "$TEMP_ENV"
+              install -m 600 "$TEMP_ENV" "$ENV_FILE"
+              rm -f "$TEMP_ENV"
+            fi
 
             if [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
               BACKUP_DIR="$PROJECT_DIR/backups/mysql"

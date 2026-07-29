@@ -67,50 +67,51 @@ Page({
 
   // 检查配送范围，找到最近的配送区
   checkDeliveryRange() {
-    if (!this.data.selectedAddress || this.data.deliveryZones.length === 0) {
-      return;
-    }
-
     const addr = this.data.selectedAddress;
-    if (!addr.lng || !addr.lat) {
-      // 如果没有经纬度，默认选择第一个
-      const firstZone = this.data.deliveryZones[0];
-      this.setData({
-        deliveryZone: firstZone,
-        inRange: true
-      });
+    if (!addr) {
+      this.setData({ deliveryZone: null, inRange: false });
       this.calculateFinalPrice();
       return;
     }
 
-    // 计算距离，找到最近的配送区
-    let nearestZone = null;
-    let nearestDistance = Infinity;
-
-    for (const zone of this.data.deliveryZones) {
-      if (!zone.center_lng || !zone.center_lat) continue;
-
-      const distance = this.getDistance(
-        parseFloat(addr.lat), parseFloat(addr.lng),
-        parseFloat(zone.center_lat), parseFloat(zone.center_lng)
-      );
-
-      const radius = zone.radius || 3000; // 默认3公里
-
-      if (distance <= radius && distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestZone = zone;
-      }
+    const lng = parseFloat(addr.lng);
+    const lat = parseFloat(addr.lat);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+      this.setData({ deliveryZone: null, inRange: false });
+      this.calculateFinalPrice();
+      wx.showToast({ title: '请选择带定位的收货地址', icon: 'none' });
+      return;
     }
 
-    this.setData({
-      deliveryZone: nearestZone,
-      inRange: !!nearestZone
+    app.request({
+      url: '/client/delivery/check',
+      method: 'POST',
+      data: { lng, lat },
+      success: (res) => {
+        const data = res.data || {};
+        if (data.available) {
+          this.setData({
+            deliveryZone: {
+              id: data.zone_id,
+              zone_name: data.zone_name,
+              radius: data.radius,
+              delivery_fee: data.delivery_fee,
+              delivery_time: data.delivery_time,
+              distance: data.distance
+            },
+            inRange: true
+          });
+        } else {
+          this.setData({ deliveryZone: null, inRange: false });
+        }
+        this.calculateFinalPrice();
+      },
+      fail: () => {
+        this.setData({ deliveryZone: null, inRange: false });
+        this.calculateFinalPrice();
+      }
     });
-
-    this.calculateFinalPrice();
   },
-
   // 计算两点之间距离（米）
   getDistance(lat1, lng1, lat2, lng2) {
     const radLat1 = lat1 * Math.PI / 180.0;

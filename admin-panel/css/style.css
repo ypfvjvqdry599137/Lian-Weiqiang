@@ -390,6 +390,60 @@ h2 {
 .status-50 { border-left-color: #4CAF50; } /* 已完成 */
 .status-60 { border-left-color: #9E9E9E; } /* 已关闭 */
 
+.map-modal-content {
+    max-width: 860px;
+    width: 92%;
+}
+
+.map-search-row {
+    display: flex;
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.map-search-row input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+#map-container {
+    width: 100%;
+    height: 500px;
+    border: 1px solid #e1e5e8;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #eef5f1;
+}
+
+.map-picker-meta {
+    margin: 12px 0 18px;
+    color: #666;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.map-picker-meta p {
+    overflow-wrap: anywhere;
+}
+
+#map-selected-point {
+    color: #2E7D32;
+    font-weight: 600;
+}
+
+#map-pick-status.error {
+    color: #e53935;
+}
+
+.map-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
 @media (max-width: 768px) {
     body {
         background: #f5f7f8;
@@ -650,6 +704,18 @@ h2 {
 
     #map-container {
         height: 320px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .map-search-row,
+    .map-actions {
+        flex-direction: column;
+    }
+
+    .map-search-row .btn,
+    .map-actions .btn {
+        width: 100%;
     }
 }
 

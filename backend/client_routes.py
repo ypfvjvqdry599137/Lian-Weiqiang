@@ -20,15 +20,29 @@ def get_or_create_test_user():
         db.session.commit()
     return user
 
+
+def stringify_decimal(value):
+    return str(value) if value is not None else None
+
+
+def normalize_address_payload(data):
+    full_address = (data.get('full_address') or data.get('address') or data.get('detail_address') or '').strip()
+    detail_address = (data.get('detail_address') or data.get('name') or full_address).strip()
+    return full_address, detail_address
+
 # ============================================
 # 工具函数：计算两点距离（Haversine公式）
 # ============================================
 def calculate_distance(lat1, lng1, lat2, lng2):
+    lat1 = float(lat1)
+    lng1 = float(lng1)
+    lat2 = float(lat2)
+    lng2 = float(lng2)
     R = 6371000  # 地球半径（米）
-    phi1 = math.radians(float(lat1))
-    phi2 = math.radians(float(lat2))
-    delta_phi = math.radians(float(lat2 - lat1))
-    delta_lambda = math.radians(float(lng2 - lng1))
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lng2 - lng1)
     
     a = math.sin(delta_phi/2) * math.sin(delta_phi/2) + \
         math.cos(phi1) * math.cos(phi2) * \
@@ -80,8 +94,9 @@ def get_addresses():
             'district': addr.district,
             'detail_address': addr.detail_address,
             'full_address': addr.full_address,
-            'lng': str(addr.lng),
-            'lat': str(addr.lat),
+            'address': addr.full_address or addr.detail_address,
+            'lng': stringify_decimal(addr.lng),
+            'lat': stringify_decimal(addr.lat),
             'is_default': addr.is_default
         })
     return jsonify({'addresses': result})
@@ -95,6 +110,12 @@ def add_address():
     # 如果设为默认，先取消其他地址的默认
     if data.get('is_default'):
         UserAddress.query.filter_by(user_id=user.id, is_default=True).update({'is_default': False})
+
+    full_address, detail_address = normalize_address_payload(data)
+    if not full_address:
+        return jsonify({'message': '请选择收货地址'}), 400
+    if data.get('lng') is None or data.get('lat') is None:
+        return jsonify({'message': '请选择带经纬度的地图地址'}), 400
     
     address = UserAddress(
         user_id=user.id,
@@ -103,8 +124,8 @@ def add_address():
         province=data.get('province'),
         city=data.get('city'),
         district=data.get('district'),
-        detail_address=data.get('detail_address'),
-        full_address=data.get('full_address'),
+        detail_address=detail_address,
+        full_address=full_address,
         lng=data.get('lng'),
         lat=data.get('lat'),
         is_default=data.get('is_default', False)
@@ -125,15 +146,21 @@ def update_address(addr_id):
     if data.get('is_default'):
         UserAddress.query.filter_by(user_id=user.id, is_default=True).update({'is_default': False})
     
+    full_address, detail_address = normalize_address_payload(data)
+    next_lng = data.get('lng', address.lng)
+    next_lat = data.get('lat', address.lat)
+    if next_lng is None or next_lat is None:
+        return jsonify({'message': '请选择带经纬度的地图地址'}), 400
+
     address.receiver_name = data.get('receiver_name', address.receiver_name)
     address.receiver_phone = data.get('receiver_phone', address.receiver_phone)
     address.province = data.get('province', address.province)
     address.city = data.get('city', address.city)
     address.district = data.get('district', address.district)
-    address.detail_address = data.get('detail_address', address.detail_address)
-    address.full_address = data.get('full_address', address.full_address)
-    address.lng = data.get('lng', address.lng)
-    address.lat = data.get('lat', address.lat)
+    address.detail_address = detail_address or address.detail_address
+    address.full_address = full_address or address.full_address
+    address.lng = next_lng
+    address.lat = next_lat
     address.is_default = data.get('is_default', address.is_default)
     
     db.session.commit()
@@ -162,8 +189,9 @@ def get_default_address():
             'receiver_name': address.receiver_name,
             'receiver_phone': address.receiver_phone,
             'full_address': address.full_address,
-            'lng': str(address.lng),
-            'lat': str(address.lat)
+            'address': address.full_address or address.detail_address,
+            'lng': stringify_decimal(address.lng),
+            'lat': stringify_decimal(address.lat)
         })
     return jsonify({'address': None})
 
@@ -202,7 +230,9 @@ def check_delivery():
         zone = result['zone']
         return jsonify({
             'available': True,
+            'zone_id': zone.id,
             'zone_name': zone.zone_name,
+            'radius': zone.radius,
             'delivery_fee': str(zone.delivery_fee),
             'delivery_time': zone.delivery_time,
             'distance': int(result['distance'])

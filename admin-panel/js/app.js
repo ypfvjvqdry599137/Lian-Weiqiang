@@ -1,71 +1,218 @@
 // 配置后端API基础URL
-const BASE_URL = 'http://xianpeiju.site';
+const BASE_URL = window.location.origin && window.location.origin !== 'null'
+    ? window.location.origin
+    : 'https://xianpeiju.site';
 
-// ==================== 地图相关变量 ====================
+// ==================== 腾讯地图选点 ====================
 let map = null;
-let marker = null;
+let markerLayer = null;
+let circleLayer = null;
 let selectedLng = null;
 let selectedLat = null;
+let tencentMapSdkPromise = null;
 
-// ==================== 地图相关函数 ====================
-function showMapPicker() {
-    // 检查是否加载了腾讯地图SDK
-    if (typeof TMap === 'undefined') {
-        alert('地图功能暂时不可用：需要先去腾讯地图申请 Key 并在 index.html 中配置！\n\n当前可手动输入经纬度，经纬度可从百度/高德地图查询。');
+function getZoneRadiusValue() {
+    const radius = parseInt(document.getElementById('zone-radius')?.value, 10);
+    return Number.isFinite(radius) && radius > 0 ? radius : 3000;
+}
+
+function updateMapPickStatus(message, isError = false) {
+    const status = document.getElementById('map-pick-status');
+    if (!status) return;
+    status.textContent = message || '';
+    status.classList.toggle('error', !!isError);
+}
+
+async function loadTencentMapSdk() {
+    if (window.TMap) {
+        return true;
+    }
+    if (!tencentMapSdkPromise) {
+        tencentMapSdkPromise = (async () => {
+            const config = await fetchData('/admin/map/config');
+            if (!config || !config.enabled || !config.key) {
+                throw new Error('请先在服务器环境变量 TENCENT_MAP_KEY 配置腾讯地图 Key');
+            }
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.charset = 'utf-8';
+                script.src = `https://map.qq.com/api/gljs?v=1.exp&key=${encodeURIComponent(config.key)}`;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('腾讯地图 SDK 加载失败'));
+                document.head.appendChild(script);
+            });
+            return true;
+        })();
+    }
+    return tencentMapSdkPromise;
+}
+
+function setLayerGeometries(layer, geometries) {
+    if (layer && typeof layer.setGeometries === 'function') {
+        layer.setGeometries(geometries);
+    }
+}
+
+function ensureMarkerLayer(position) {
+    const geometries = [{
+        id: 'zone-center',
+        styleId: 'marker',
+        position,
+        properties: { title: '配送中心点' }
+    }];
+
+    if (!markerLayer) {
+        markerLayer = new TMap.MultiMarker({
+            id: 'zone-center-marker',
+            map,
+            styles: {
+                marker: new TMap.MarkerStyle({
+                    width: 25,
+                    height: 35,
+                    src: 'https://mapapi.qq.com/web/lbs/javascriptGL/demo/img/markerDefault.png'
+                })
+            },
+            geometries
+        });
+    } else {
+        setLayerGeometries(markerLayer, geometries);
+    }
+}
+
+function ensureCircleLayer(position) {
+    if (!window.TMap || !TMap.MultiCircle) {
         return;
     }
-    
+
+    const geometries = [{
+        id: 'zone-radius',
+        styleId: 'radius',
+        center: position,
+        radius: getZoneRadiusValue()
+    }];
+
+    try {
+        if (!circleLayer) {
+            circleLayer = new TMap.MultiCircle({
+                id: 'zone-radius-circle',
+                map,
+                styles: {
+                    radius: {
+                        color: 'rgba(76, 175, 80, 0.16)',
+                        showBorder: true,
+                        borderColor: 'rgba(76, 175, 80, 0.9)',
+                        borderWidth: 2
+                    }
+                },
+                geometries
+            });
+        } else {
+            setLayerGeometries(circleLayer, geometries);
+        }
+    } catch (error) {
+        console.warn('配送半径圈绘制失败:', error);
+    }
+}
+
+function setMapPoint(lat, lng, recenter = true) {
+    selectedLat = Number(lat).toFixed(6);
+    selectedLng = Number(lng).toFixed(6);
+    const position = new TMap.LatLng(parseFloat(selectedLat), parseFloat(selectedLng));
+
+    ensureMarkerLayer(position);
+    ensureCircleLayer(position);
+
+    const selectedText = document.getElementById('map-selected-point');
+    if (selectedText) {
+        selectedText.textContent = `已选择：${selectedLng}, ${selectedLat}，半径 ${getZoneRadiusValue()} 米`;
+    }
+    if (recenter && map) {
+        map.setCenter(position);
+    }
+}
+
+function initTencentMap() {
+    if (map) return;
+
+    const currentLng = parseFloat(document.getElementById('zone-center-lng').value);
+    const currentLat = parseFloat(document.getElementById('zone-center-lat').value);
+    const hasCurrentPoint = Number.isFinite(currentLng) && Number.isFinite(currentLat);
+    const center = hasCurrentPoint
+        ? new TMap.LatLng(currentLat, currentLng)
+        : new TMap.LatLng(39.9042, 116.4074);
+
+    map = new TMap.Map(document.getElementById('map-container'), {
+        center,
+        zoom: hasCurrentPoint ? 14 : 11,
+        pitch: 0,
+        rotation: 0
+    });
+
+    map.on('click', (evt) => {
+        setMapPoint(evt.latLng.getLat(), evt.latLng.getLng());
+        updateMapPickStatus('已更新配送中心点，确认后会写入表单。');
+    });
+}
+
+async function showMapPicker() {
+    try {
+        await loadTencentMapSdk();
+    } catch (error) {
+        alert(`${error.message}\n\n现在仍可手动填写经纬度；配置好腾讯地图 Key 后可使用地图选点。`);
+        return;
+    }
+
     document.getElementById('map-modal').classList.add('show');
     setTimeout(() => {
-        if (!map) {
-            // 初始化地图，默认定位到北京天安门
-            map = new TMap.Map('map-container', {
-                center: new TMap.LatLng(39.9042, 116.4074),
-                zoom: 12
-            });
-            // 监听地图点击事件
-            map.on('click', (evt) => {
-                const lat = evt.latLng.getLat().toFixed(6);
-                const lng = evt.latLng.getLng().toFixed(6);
-                selectedLat = lat;
-                selectedLng = lng;
-                // 更新或添加标记
-                if (!marker) {
-                    marker = new TMap.Marker({
-                        position: new TMap.LatLng(lat, lng),
-                        map: map
-                    });
-                } else {
-                    marker.setPosition(new TMap.LatLng(lat, lng));
-                }
-                // 移动地图中心到点击位置
-                map.setCenter(new TMap.LatLng(lat, lng));
-            });
+        initTencentMap();
+        if (map && typeof map.resize === 'function') {
+            map.resize();
         }
-        // 如果已有经度纬度，先定位到那里
+
         const currentLng = parseFloat(document.getElementById('zone-center-lng').value);
         const currentLat = parseFloat(document.getElementById('zone-center-lat').value);
-        if (currentLng && currentLat) {
-            selectedLng = currentLng.toFixed(6);
-            selectedLat = currentLat.toFixed(6);
-            if (!marker) {
-                marker = new TMap.Marker({
-                    position: new TMap.LatLng(currentLat, currentLng),
-                    map: map
-                });
-            } else {
-                marker.setPosition(new TMap.LatLng(currentLat, currentLng));
-            }
-            map.setCenter(new TMap.LatLng(currentLat, currentLng));
+        if (Number.isFinite(currentLng) && Number.isFinite(currentLat)) {
+            setMapPoint(currentLat, currentLng);
+            updateMapPickStatus('已加载当前配送中心点，可点击地图重新选择。');
+        } else {
+            updateMapPickStatus('搜索地址或直接点击地图选择配送中心点。');
         }
-    }, 100);
+    }, 120);
+}
+
+async function searchMapAddress() {
+    const input = document.getElementById('map-search-input');
+    const keyword = input ? input.value.trim() : '';
+    if (!keyword) {
+        updateMapPickStatus('请输入要搜索的地址。', true);
+        return;
+    }
+
+    updateMapPickStatus('正在通过腾讯地图解析地址...');
+    const result = await fetchData(`/admin/map/geocode?address=${encodeURIComponent(keyword)}`, 'GET', null, true);
+    if (!result || result.lng == null || result.lat == null) {
+        updateMapPickStatus('没有解析到有效坐标，请换一个更完整的地址。', true);
+        return;
+    }
+
+    setMapPoint(result.lat, result.lng);
+    updateMapPickStatus(`已定位：${result.address || result.title || keyword}`);
+}
+
+function handleMapSearchKeydown(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        searchMapAddress();
+    }
 }
 
 function confirmMapPick() {
-    if (selectedLng && selectedLat) {
-        document.getElementById('zone-center-lng').value = selectedLng;
-        document.getElementById('zone-center-lat').value = selectedLat;
+    if (!selectedLng || !selectedLat) {
+        alert('请先搜索地址或点击地图选择配送中心点');
+        return;
     }
+    document.getElementById('zone-center-lng').value = selectedLng;
+    document.getElementById('zone-center-lat').value = selectedLat;
     closeMapModal();
 }
 
@@ -73,6 +220,11 @@ function closeMapModal() {
     document.getElementById('map-modal').classList.remove('show');
 }
 
+document.addEventListener('input', (event) => {
+    if (event.target && event.target.id === 'zone-radius' && map && selectedLat && selectedLng) {
+        setMapPoint(selectedLat, selectedLng, false);
+    }
+});
 // ==================== 辅助函数 ====================
 
 async function fetchData(url, method = 'GET', data = null, showAlert = false) {

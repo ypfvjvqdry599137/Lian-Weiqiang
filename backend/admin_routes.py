@@ -1,3 +1,8 @@
+import json
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
+
 from flask import Blueprint, request, jsonify, current_app
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
@@ -19,6 +24,91 @@ BUSINESS_TZ = timezone(timedelta(hours=8))
 def get_public_upload_url(relative_path):
     base_url = (current_app.config.get('PUBLIC_BASE_URL') or request.host_url.rstrip('/')).rstrip('/')
     return f"{base_url}/{relative_path.lstrip('/')}"
+
+
+def get_tencent_map_key():
+    return (current_app.config.get('TENCENT_MAP_KEY') or '').strip()
+
+
+def request_tencent_map_api(path, params):
+    key = get_tencent_map_key()
+    if not key:
+        return None, ({'message': '请先在服务器环境变量 TENCENT_MAP_KEY 配置腾讯地图 Key'}, 400)
+
+    query = dict(params)
+    query['key'] = key
+    url = f"https://apis.map.qq.com{path}?{urlencode(query)}"
+    try:
+        with urlopen(url, timeout=8) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+    except (URLError, TimeoutError, ValueError, OSError):
+        return None, ({'message': '腾讯地图服务暂时不可用，请稍后再试'}, 502)
+
+    if payload.get('status') != 0:
+        return None, ({'message': payload.get('message') or '腾讯地图解析失败'}, 400)
+    return payload, None
+
+
+@admin_bp.route('/map/config', methods=['GET'])
+def get_map_config():
+    key = get_tencent_map_key()
+    return jsonify({
+        'enabled': bool(key),
+        'key': key
+    }), 200
+
+
+@admin_bp.route('/map/geocode', methods=['GET'])
+def geocode_map_address():
+    address = (request.args.get('address') or '').strip()
+    region = (request.args.get('region') or '').strip()
+    if not address:
+        return jsonify({'message': '请输入要搜索的地址'}), 400
+
+    params = {'address': address}
+    if region:
+        params['region'] = region
+    payload, error = request_tencent_map_api('/ws/geocoder/v1/', params)
+    if error:
+        body, status = error
+        return jsonify(body), status
+
+    result = payload.get('result') or {}
+    location = result.get('location') or {}
+    return jsonify({
+        'title': result.get('title') or address,
+        'address': result.get('address') or address,
+        'lng': location.get('lng'),
+        'lat': location.get('lat'),
+        'province': (result.get('address_components') or {}).get('province'),
+        'city': (result.get('address_components') or {}).get('city'),
+        'district': (result.get('address_components') or {}).get('district'),
+        'reliability': result.get('reliability'),
+        'similarity': result.get('similarity')
+    }), 200
+
+
+@admin_bp.route('/map/reverse-geocode', methods=['GET'])
+def reverse_geocode_map_location():
+    lat = request.args.get('lat')
+    lng = request.args.get('lng')
+    if not lat or not lng:
+        return jsonify({'message': '缺少坐标参数'}), 400
+
+    payload, error = request_tencent_map_api('/ws/geocoder/v1/', {'location': f'{lat},{lng}'})
+    if error:
+        body, status = error
+        return jsonify(body), status
+
+    result = payload.get('result') or {}
+    component = result.get('address_component') or {}
+    return jsonify({
+        'address': result.get('address'),
+        'formatted_address': (result.get('formatted_addresses') or {}).get('recommend') or result.get('address'),
+        'province': component.get('province'),
+        'city': component.get('city'),
+        'district': component.get('district')
+    }), 200
 
 
 def get_supplier_order_item_total(item):

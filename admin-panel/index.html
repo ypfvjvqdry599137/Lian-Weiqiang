@@ -6,7 +6,7 @@
     <title>鲜配居 - 管理后台</title>
     <link rel="stylesheet" href="/admin-panel/css/style.css">
     <!-- 引入腾讯地图JS SDK (暂时注释，等申请到 Key 后取消注释) -->
-    <!-- <script src="https://map.qq.com/api/gljs?v=1.exp&key=YOUR_TENCENT_MAP_KEY"></script> -->
+    <!-- 腾讯地图 SDK 由 app.js 从服务器配置动态加载 -->
 </head>
 <body>
     <div class="container">
@@ -431,18 +431,24 @@
 
     <!-- 地图选择弹窗 -->
     <div id="map-modal" class="modal">
-        <div class="modal-content" style="max-width: 800px; width: 90%;">
+        <div class="modal-content map-modal-content">
             <span class="close" onclick="closeMapModal()">&times;</span>
             <h2>选择配送中心点</h2>
-            <div id="map-container" style="width: 100%; height: 500px; margin: 20px 0;"></div>
-            <p style="color: #666; margin-bottom: 20px;">点击地图选择配送中心点</p>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn btn-primary" onclick="confirmMapPick()">确认选择</button>
-                <button class="btn" onclick="closeMapModal()">取消</button>
+            <div class="map-search-row">
+                <input type="search" id="map-search-input" placeholder="输入门店、小区或完整地址" onkeydown="handleMapSearchKeydown(event)">
+                <button type="button" class="btn btn-primary" onclick="searchMapAddress()">搜索</button>
+            </div>
+            <div id="map-container"></div>
+            <div class="map-picker-meta">
+                <p id="map-selected-point">点击地图选择配送中心点</p>
+                <p id="map-pick-status">搜索地址或直接点击地图，配送半径会按表单里的半径预览。</p>
+            </div>
+            <div class="map-actions">
+                <button type="button" class="btn btn-primary" onclick="confirmMapPick()">确认选择</button>
+                <button type="button" class="btn" onclick="closeMapModal()">取消</button>
             </div>
         </div>
     </div>
-
     <script src="/admin-panel/js/app.js"></script>
 </body>
 </html>

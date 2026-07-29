@@ -3,7 +3,7 @@ App({
     userInfo: null,
     cartCount: 0,
     selectedAddress: null, // 默认选中的地址
-    baseUrl: 'http://xianpeiju.site' // 您的域名
+    baseUrl: 'https://xianpeiju.site' // 您的域名
   },
 
   onLaunch() {
