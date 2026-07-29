@@ -1,9 +1,12 @@
 from flask import Blueprint, request, jsonify
 from extensions import db
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
+from decimal import Decimal
 from hashlib import sha256
 
 merchant_bp = Blueprint('merchant', __name__, url_prefix='/merchant')
+BUSINESS_TZ = timezone(timedelta(hours=8))
+
 
 
 def get_merchant_key(zone):
@@ -58,6 +61,57 @@ def are_supplier_orders_ready(order):
     if not order.supplier_orders:
         return True
     return all(supplier_order.status == 30 for supplier_order in order.supplier_orders)
+
+
+def money(value):
+    return value if value is not None else Decimal('0')
+
+
+def to_business_datetime(value):
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BUSINESS_TZ)
+
+
+def get_month_range(month_value):
+    now = datetime.now(BUSINESS_TZ)
+    if month_value:
+        try:
+            year, month = [int(part) for part in month_value.split('-', 1)]
+            start_local = datetime(year, month, 1, tzinfo=BUSINESS_TZ)
+        except (ValueError, TypeError):
+            return None
+    else:
+        start_local = datetime(now.year, now.month, 1, tzinfo=BUSINESS_TZ)
+
+    if start_local.month == 12:
+        end_local = datetime(start_local.year + 1, 1, 1, tzinfo=BUSINESS_TZ)
+    else:
+        end_local = datetime(start_local.year, start_local.month + 1, 1, tzinfo=BUSINESS_TZ)
+
+    return start_local, end_local, start_local.strftime('%Y-%m')
+
+
+def get_supplier_order_item_total(item):
+    if item.total_price is not None:
+        return item.total_price
+
+    unit_price = item.unit_price
+    if unit_price is None and item.ingredient:
+        unit_price = item.ingredient.price
+    if unit_price is None:
+        return Decimal('0')
+    return item.quantity * unit_price
+
+
+def get_supplier_order_total(order):
+    if order.status == 40:
+        return Decimal('0')
+    return sum((get_supplier_order_item_total(item) for item in order.items), Decimal('0'))
+
+
+def get_order_supplier_cost(order):
+    return sum((get_supplier_order_total(supplier_order) for supplier_order in order.supplier_orders), Decimal('0'))
 
 
 def serialize_order(order, include_items=True, include_supplier_orders=True):
@@ -170,6 +224,113 @@ def get_delivering():
     ).order_by(OrderMaster.created_at.desc()).all()
 
     return jsonify({'orders': [serialize_order(order) for order in orders]}), 200
+
+
+@merchant_bp.route('/settlement', methods=['GET'])
+def get_merchant_settlement():
+    from models import OrderMaster
+    zone, error = require_merchant_zone()
+    if error:
+        return error
+
+    month_range = get_month_range(request.args.get('month'))
+    if month_range is None:
+        return jsonify({'message': '月份格式错误，请使用 YYYY-MM'}), 400
+
+    start_local, end_local, normalized_month = month_range
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    orders = OrderMaster.query.filter(
+        OrderMaster.zone_id == zone.id,
+        OrderMaster.created_at >= start_utc,
+        OrderMaster.created_at < end_utc
+    ).order_by(OrderMaster.created_at.desc()).all()
+
+    completed_statuses = [40, 50]
+    pending_statuses = [10, 20, 30]
+    summary = {
+        'month': normalized_month,
+        'zone_id': zone.id,
+        'zone_name': zone.zone_name,
+        'order_count': len(orders),
+        'completed_count': 0,
+        'pending_count': 0,
+        'canceled_count': 0,
+        'total_sales': Decimal('0'),
+        'settled_sales': Decimal('0'),
+        'pending_sales': Decimal('0'),
+        'delivery_fee_total': Decimal('0'),
+        'final_amount_total': Decimal('0')
+    }
+    daily_totals = {}
+    orders_output = []
+
+    for order in orders:
+        order_total = money(order.total_amount)
+        delivery_fee = money(order.delivery_fee)
+        final_amount = money(order.final_amount)
+
+        created_at = to_business_datetime(order.created_at) if order.created_at else None
+        day_key = created_at.strftime('%Y-%m-%d') if created_at else '未记录日期'
+        daily = daily_totals.setdefault(day_key, {
+            'date': day_key,
+            'order_count': 0,
+            'completed_count': 0,
+            'pending_count': 0,
+            'canceled_count': 0,
+            'settled_sales': Decimal('0'),
+            'delivery_fee_total': Decimal('0')
+        })
+
+        daily['order_count'] += 1
+        if order.order_status == 60:
+            summary['canceled_count'] += 1
+            daily['canceled_count'] += 1
+        else:
+            summary['total_sales'] += order_total
+
+
+        if order.order_status in completed_statuses:
+            summary['completed_count'] += 1
+            summary['settled_sales'] += order_total
+            summary['delivery_fee_total'] += delivery_fee
+            summary['final_amount_total'] += final_amount
+
+            daily['completed_count'] += 1
+            daily['settled_sales'] += order_total
+            daily['delivery_fee_total'] += delivery_fee
+        elif order.order_status in pending_statuses:
+            summary['pending_count'] += 1
+            summary['pending_sales'] += order_total
+            daily['pending_count'] += 1
+
+        orders_output.append({
+            'order_sn': order.order_sn,
+            'status': order.order_status,
+            'status_text': get_order_status_text(order.order_status),
+            'receiver_name': order.receiver_name,
+            'receiver_phone': order.receiver_phone,
+            'total_amount': str(order_total),
+            'delivery_fee': str(delivery_fee),
+            'final_amount': str(final_amount),
+
+            'created_at': created_at.strftime('%Y-%m-%d %H:%M:%S') if created_at else None
+        })
+
+
+    summary_output = {key: (str(value) if isinstance(value, Decimal) else value) for key, value in summary.items()}
+    daily_output = [
+        {key: (str(value) if isinstance(value, Decimal) else value) for key, value in item.items()}
+        for _, item in sorted(daily_totals.items(), reverse=True)
+    ]
+
+    return jsonify({
+        'month': normalized_month,
+        'summary': summary_output,
+        'daily_totals': daily_output,
+        'orders': orders_output
+    }), 200
 
 
 @merchant_bp.route('/orders', methods=['GET'])

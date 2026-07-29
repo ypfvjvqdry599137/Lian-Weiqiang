@@ -23,6 +23,7 @@
                 <li class="menu-item" data-page="products">商品管理</li>
                 <li class="menu-item" data-page="categories">分类管理</li>
                 <li class="menu-item" data-page="delivery-zones">配送区域</li>
+                <li class="menu-item" data-page="zone-statistics">区域统计</li>
                 <li class="menu-item" data-page="supplier-orders">供应商备货单</li>
                 <li class="menu-item" data-page="orders">订单管理</li>
             </ul>
@@ -79,6 +80,18 @@
                 <div id="delivery-zones-list" class="data-list"></div>
             </div>
 
+            <!-- 区域统计 -->
+            <div id="page-zone-statistics" class="page">
+                <div class="page-header">
+                    <h2>📈 区域统计</h2>
+                    <div class="settlement-controls">
+                        <input type="month" id="zone-statistics-month">
+                        <button class="btn btn-primary" onclick="loadZoneStatistics()">查询</button>
+                    </div>
+                </div>
+                <div id="zone-statistics-summary" class="stats" style="margin-bottom: 20px;"></div>
+                <div id="zone-statistics-list" class="data-list"></div>
+            </div>
             <!-- 供应商管理 -->
             <div id="page-suppliers" class="page">
                 <div class="page-header">

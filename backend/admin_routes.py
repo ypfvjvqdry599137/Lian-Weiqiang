@@ -46,6 +46,39 @@ def is_today(value):
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(BUSINESS_TZ).date() == datetime.now(BUSINESS_TZ).date()
 
+
+def money(value):
+    return value if value is not None else Decimal('0')
+
+
+def to_business_datetime(value):
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BUSINESS_TZ)
+
+
+def get_month_range(month_value):
+    now = datetime.now(BUSINESS_TZ)
+    if month_value:
+        try:
+            year, month = [int(part) for part in month_value.split('-', 1)]
+            start_local = datetime(year, month, 1, tzinfo=BUSINESS_TZ)
+        except (ValueError, TypeError):
+            return None
+    else:
+        start_local = datetime(now.year, now.month, 1, tzinfo=BUSINESS_TZ)
+
+    if start_local.month == 12:
+        end_local = datetime(start_local.year + 1, 1, 1, tzinfo=BUSINESS_TZ)
+    else:
+        end_local = datetime(start_local.year, start_local.month + 1, 1, tzinfo=BUSINESS_TZ)
+
+    return start_local, end_local, start_local.strftime('%Y-%m')
+
+
+def get_order_supplier_cost(order):
+    return sum((get_supplier_order_total(supplier_order) for supplier_order in order.supplier_orders), Decimal('0'))
+
 def get_price_request_status_text(status):
     return {
         10: '待审核',
@@ -724,6 +757,134 @@ def delete_delivery_zone(zone_id):
     db.session.commit()
     return jsonify({"message": "Delivery zone deleted successfully"}), 200
 
+# ==================== 配送区域统计 ====================
+
+@admin_bp.route('/zone-statistics', methods=['GET'])
+def get_zone_statistics():
+    from models import DeliveryZone, OrderMaster
+
+    month_range = get_month_range(request.args.get('month'))
+    if month_range is None:
+        return jsonify({'message': '月份格式错误，请使用 YYYY-MM'}), 400
+
+    zone_id_filter = request.args.get('zone_id')
+    start_local, end_local, normalized_month = month_range
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    end_utc = end_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    zones_query = DeliveryZone.query.order_by(DeliveryZone.id.asc())
+    orders_query = OrderMaster.query.filter(
+        OrderMaster.created_at >= start_utc,
+        OrderMaster.created_at < end_utc
+    )
+    if zone_id_filter and zone_id_filter.isdigit():
+        zone_id = int(zone_id_filter)
+        zones_query = zones_query.filter_by(id=zone_id)
+        orders_query = orders_query.filter_by(zone_id=zone_id)
+
+    zone_rows = {}
+    for zone in zones_query.all():
+        zone_rows[zone.id] = {
+            'zone_id': zone.id,
+            'zone_name': zone.zone_name,
+            'merchant_username': zone.merchant_username,
+            'order_count': 0,
+            'active_order_count': 0,
+            'completed_count': 0,
+            'pending_count': 0,
+            'canceled_count': 0,
+            'total_sales': Decimal('0'),
+            'settled_sales': Decimal('0'),
+            'delivery_fee_total': Decimal('0'),
+            'supplier_cost_total': Decimal('0'),
+            'settled_supplier_cost': Decimal('0'),
+            'estimated_gross_profit': Decimal('0')
+        }
+
+    totals = {
+        'month': normalized_month,
+        'order_count': 0,
+        'active_order_count': 0,
+        'completed_count': 0,
+        'pending_count': 0,
+        'canceled_count': 0,
+        'total_sales': Decimal('0'),
+        'settled_sales': Decimal('0'),
+        'delivery_fee_total': Decimal('0'),
+        'supplier_cost_total': Decimal('0'),
+        'settled_supplier_cost': Decimal('0'),
+        'estimated_gross_profit': Decimal('0')
+    }
+
+    completed_statuses = [40, 50]
+    pending_statuses = [10, 20, 30]
+    for order in orders_query.all():
+        zone_id = order.zone_id or 0
+        if zone_id not in zone_rows:
+            zone_rows[zone_id] = {
+                'zone_id': zone_id,
+                'zone_name': order.zone.zone_name if order.zone else '未分配区域',
+                'merchant_username': order.zone.merchant_username if order.zone else None,
+                'order_count': 0,
+                'active_order_count': 0,
+                'completed_count': 0,
+                'pending_count': 0,
+                'canceled_count': 0,
+                'total_sales': Decimal('0'),
+                'settled_sales': Decimal('0'),
+                'delivery_fee_total': Decimal('0'),
+                'supplier_cost_total': Decimal('0'),
+                'settled_supplier_cost': Decimal('0'),
+                'estimated_gross_profit': Decimal('0')
+            }
+
+        row = zone_rows[zone_id]
+        order_total = money(order.total_amount)
+        delivery_fee = money(order.delivery_fee)
+        supplier_cost = get_order_supplier_cost(order)
+
+        row['order_count'] += 1
+        totals['order_count'] += 1
+        if order.order_status == 60:
+            row['canceled_count'] += 1
+            totals['canceled_count'] += 1
+            continue
+
+        row['active_order_count'] += 1
+        row['total_sales'] += order_total
+        row['supplier_cost_total'] += supplier_cost
+        totals['active_order_count'] += 1
+        totals['total_sales'] += order_total
+        totals['supplier_cost_total'] += supplier_cost
+
+        if order.order_status in completed_statuses:
+            row['completed_count'] += 1
+            row['settled_sales'] += order_total
+            row['delivery_fee_total'] += delivery_fee
+            row['settled_supplier_cost'] += supplier_cost
+            totals['completed_count'] += 1
+            totals['settled_sales'] += order_total
+            totals['delivery_fee_total'] += delivery_fee
+            totals['settled_supplier_cost'] += supplier_cost
+        elif order.order_status in pending_statuses:
+            row['pending_count'] += 1
+            totals['pending_count'] += 1
+
+    for row in zone_rows.values():
+        row['estimated_gross_profit'] = row['settled_sales'] - row['settled_supplier_cost']
+    totals['estimated_gross_profit'] = totals['settled_sales'] - totals['settled_supplier_cost']
+
+    zones_output = [
+        {key: (str(value) if isinstance(value, Decimal) else value) for key, value in row.items()}
+        for row in sorted(zone_rows.values(), key=lambda item: item['zone_id'] or 0)
+    ]
+    totals_output = {key: (str(value) if isinstance(value, Decimal) else value) for key, value in totals.items()}
+
+    return jsonify({
+        'month': normalized_month,
+        'summary': totals_output,
+        'zones': zones_output
+    }), 200
 # ==================== 订单状态管理（总后台） ====================
 
 @admin_bp.route('/orders', methods=['GET'])
@@ -762,6 +923,7 @@ def get_all_orders():
         output.append({
             'order_sn': order.order_sn,
             'zone_id': order.zone_id,
+            'zone_name': order.zone.zone_name if order.zone else None,
             'order_status': order.order_status,
             'status_text': status_text,
             'total_amount': str(order.total_amount),

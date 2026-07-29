@@ -67,6 +67,7 @@
                 <li class="menu-item active" data-page="merchant-overview">工作台</li>
                 <li class="menu-item" data-page="merchant-orders">订单配送</li>
                 <li class="menu-item" data-page="merchant-delivering">配送中</li>
+                <li class="menu-item" data-page="merchant-settlement">月度统计</li>
             </ul>
         </nav>
 
@@ -99,6 +100,24 @@
             <div id="page-merchant-delivering" class="page">
                 <h2>配送中</h2>
                 <div id="merchant-delivering-list" class="data-list"></div>
+            </div>
+            <div id="page-merchant-settlement" class="page">
+                <div class="page-header">
+                    <h2>月度统计</h2>
+                    <div class="settlement-controls">
+                        <input type="month" id="merchant-settlement-month">
+                        <button class="btn btn-primary" onclick="loadMerchantSettlement()">查询</button>
+                    </div>
+                </div>
+                <div id="merchant-settlement-summary" class="stats" style="margin-bottom: 20px;"></div>
+                <div class="settlement-section">
+                    <h3>每日汇总</h3>
+                    <div id="merchant-settlement-daily" class="settlement-daily-grid"></div>
+                </div>
+                <div class="settlement-section">
+                    <h3>订单明细</h3>
+                    <div id="merchant-settlement-orders" class="data-list"></div>
+                </div>
             </div>
         </main>
     </div>
@@ -164,6 +183,19 @@
         function formatDate(dateString) {
             return dateString ? new Date(dateString).toLocaleString() : '';
         }
+        function getCurrentMonthValue() {
+            const now = new Date();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            return `${now.getFullYear()}-${month}`;
+        }
+
+        function getSettlementMonthValue() {
+            const input = document.getElementById('merchant-settlement-month');
+            if (!input.value) {
+                input.value = getCurrentMonthValue();
+            }
+            return input.value;
+        }
 
         document.querySelectorAll('.menu-item').forEach(item => {
             item.addEventListener('click', function() {
@@ -200,6 +232,8 @@
                 await loadMerchantOrders();
             } else if (currentPage === 'merchant-delivering') {
                 await loadMerchantDelivering();
+            } else if (currentPage === 'merchant-settlement') {
+                await loadMerchantSettlement();
             }
         }
 
@@ -320,6 +354,77 @@
             }
         }
 
+        function renderMerchantSettlementSummary(summary) {
+            const summaryEl = document.getElementById('merchant-settlement-summary');
+            if (!summaryEl || !summary) return;
+
+            summaryEl.innerHTML = `
+                <div class="stat-card"><h3>${summary.month} 已送达金额</h3><p class="number">${formatCurrency(summary.settled_sales)}</p></div>
+                <div class="stat-card"><h3>本月配送费</h3><p class="number">${formatCurrency(summary.delivery_fee_total)}</p></div>
+                <div class="stat-card"><h3>待处理金额</h3><p class="number">${formatCurrency(summary.pending_sales)}</p></div>
+                <div class="stat-card"><h3>已送达 / 待处理</h3><p class="number">${summary.completed_count || 0} / ${summary.pending_count || 0}</p></div>
+            `;
+        }
+
+        function renderMerchantSettlementDaily(dailyTotals) {
+            const dailyEl = document.getElementById('merchant-settlement-daily');
+            dailyEl.innerHTML = '';
+            if (!dailyTotals || dailyTotals.length === 0) {
+                dailyEl.innerHTML = '<div class="empty-state">暂无每日统计</div>';
+                return;
+            }
+
+            dailyTotals.forEach(day => {
+                const card = document.createElement('div');
+                card.className = 'settlement-daily-card';
+                card.innerHTML = `
+                    <h4>${day.date}</h4>
+                    <p>订单: ${day.order_count || 0}，已送达: ${day.completed_count || 0}</p>
+                    <p>已送达金额: ${formatCurrency(day.settled_sales)}</p>
+                    <p>配送费: ${formatCurrency(day.delivery_fee_total)}</p>
+                `;
+                dailyEl.appendChild(card);
+            });
+        }
+
+        function renderMerchantSettlementOrders(orders) {
+            const ordersEl = document.getElementById('merchant-settlement-orders');
+            ordersEl.innerHTML = '';
+            if (!orders || orders.length === 0) {
+                ordersEl.innerHTML = '<div class="empty-state">暂无订单明细</div>';
+                return;
+            }
+
+            orders.forEach(order => {
+                const card = document.createElement('div');
+                card.classList.add('data-card', `status-${order.status}`);
+                card.innerHTML = `
+                    <div class="data-card-content">
+                        <h4>订单号: ${order.order_sn} <span style="float:right;color:#666;">${order.status_text}</span></h4>
+                        <p>收货人: ${order.receiver_name || '-'} | 电话: ${order.receiver_phone || '-'}</p>
+                        <p>商品金额: ${formatCurrency(order.total_amount)} | 配送费: ${formatCurrency(order.delivery_fee)} | 实付: ${formatCurrency(order.final_amount)}</p>
+                        <p style="font-size:12px;color:#999;margin-top:8px;">创建时间: ${formatDate(order.created_at)}</p>
+                    </div>
+                `;
+                ordersEl.appendChild(card);
+            });
+        }
+
+        async function loadMerchantSettlement() {
+            const month = getSettlementMonthValue();
+            const data = await fetchData(withAuth('/merchant/settlement', { month }));
+            if (!data) {
+                renderMerchantSettlementSummary(null);
+                renderMerchantSettlementDaily([]);
+                renderMerchantSettlementOrders([]);
+                return;
+            }
+
+            renderMerchantSettlementSummary(data.summary);
+            renderMerchantSettlementDaily(data.daily_totals || []);
+            renderMerchantSettlementOrders(data.orders || []);
+        }
+        document.getElementById('merchant-settlement-month').value = getCurrentMonthValue();
         document.addEventListener('DOMContentLoaded', renderPage);
     </script>
 </body>

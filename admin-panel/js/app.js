@@ -124,6 +124,19 @@ function formatCurrency(value) {
     return `¥${(parseFloat(value) || 0).toFixed(2)}`;
 }
 
+function getCurrentMonthValue() {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${now.getFullYear()}-${month}`;
+}
+
+function getMonthInputValue(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input.value) {
+        input.value = getCurrentMonthValue();
+    }
+    return input.value;
+}
 function formatZoneName(zoneName) {
     return zoneName || '通用区域';
 }
@@ -186,6 +199,9 @@ async function renderPage() {
             break;
         case 'delivery-zones':
             await loadDeliveryZones();
+            break;
+        case 'zone-statistics':
+            await loadZoneStatistics();
             break;
         case 'supplier-orders':
             await loadSupplierOrders();
@@ -640,7 +656,7 @@ async function loadOrders() {
             card.innerHTML = `
                 <div class="data-card-content">
                     <h4>订单号: ${order.order_sn} <span style="float:right;color:#666;">${getOrderStatusText(order.order_status)}</span></h4>
-                    <p>配送区域: ${order.zone_id} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee}</p>
+                    <p>配送区域: ${order.zone_name || order.zone_id || '未分配'} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee}</p>
                     <p>收货人: ${order.receiver_name} | 电话: ${order.receiver_phone}</p>
                     <p>收货地址: ${order.receiver_address}</p>
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
@@ -1161,6 +1177,50 @@ async function deleteProductIngredient(relationId) {
     }
 }
 
+// ==================== 区域统计 (Zone Statistics) ====================
+
+function renderZoneStatisticsSummary(summary) {
+    const summaryEl = document.getElementById('zone-statistics-summary');
+    if (!summaryEl || !summary) return;
+
+    summaryEl.innerHTML = `
+        <div class="stat-card"><h3>${summary.month} 已送达金额</h3><p class="number">${formatCurrency(summary.settled_sales)}</p></div>
+        <div class="stat-card"><h3>配送费合计</h3><p class="number">${formatCurrency(summary.delivery_fee_total)}</p></div>
+        <div class="stat-card"><h3>已送达材料成本</h3><p class="number">${formatCurrency(summary.settled_supplier_cost)}</p></div>
+        <div class="stat-card"><h3>预估毛利</h3><p class="number">${formatCurrency(summary.estimated_gross_profit)}</p></div>
+    `;
+}
+
+function renderZoneStatisticsList(zones) {
+    const list = document.getElementById('zone-statistics-list');
+    list.innerHTML = '';
+    if (!zones || zones.length === 0) {
+        list.innerHTML = '<div class="empty-state">暂无区域统计</div>';
+        return;
+    }
+
+    zones.forEach(zone => {
+        const card = document.createElement('div');
+        card.className = 'data-card';
+        card.innerHTML = `
+            <div class="data-card-content">
+                <h4>${zone.zone_name || '未分配区域'}</h4>
+                <p>订单: ${zone.order_count || 0} | 有效订单: ${zone.active_order_count || 0} | 已送达: ${zone.completed_count || 0} | 待处理: ${zone.pending_count || 0}</p>
+                <p>有效销售额: ${formatCurrency(zone.total_sales)} | 已送达金额: ${formatCurrency(zone.settled_sales)} | 配送费: ${formatCurrency(zone.delivery_fee_total)}</p>
+                <p>材料成本: ${formatCurrency(zone.supplier_cost_total)} | 已送达材料成本: ${formatCurrency(zone.settled_supplier_cost)} | 预估毛利: ${formatCurrency(zone.estimated_gross_profit)}</p>
+                <p>区域账号: ${zone.merchant_username || '未设置'}</p>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+async function loadZoneStatistics() {
+    const month = getMonthInputValue('zone-statistics-month');
+    const data = await fetchData(`/admin/zone-statistics?month=${encodeURIComponent(month)}`);
+    renderZoneStatisticsSummary(data ? data.summary : null);
+    renderZoneStatisticsList(data ? data.zones : []);
+}
 // ==================== 供应商备货单管理 (Supplier Orders) ====================
 
 let currentSupplierOrderStatusFilter = 'all';
@@ -1306,6 +1366,10 @@ function setupIngredientControls() {
     }
 }
 document.addEventListener('DOMContentLoaded', () => {
+    const zoneStatsMonth = document.getElementById('zone-statistics-month');
+    if (zoneStatsMonth) {
+        zoneStatsMonth.value = getCurrentMonthValue();
+    }
     setupIngredientControls();
     renderPage();
 });
