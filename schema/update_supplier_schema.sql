@@ -19,6 +19,19 @@ CREATE TABLE IF NOT EXISTS supplier (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='供应商表';
 
 -- ============================================
+-- 3. 供应商服务配送区域表
+-- ============================================
+CREATE TABLE IF NOT EXISTS supplier_service_zone (
+    supplier_id INT NOT NULL COMMENT '供应商ID',
+    zone_id INT NOT NULL COMMENT '配送区域ID',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (supplier_id, zone_id),
+    FOREIGN KEY (supplier_id) REFERENCES supplier(id) ON DELETE CASCADE,
+    FOREIGN KEY (zone_id) REFERENCES delivery_zone(id) ON DELETE CASCADE,
+    INDEX idx_supplier_service_zone_zone (zone_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='供应商服务配送区域表';
+
+-- ============================================
 -- 7. 原料表
 -- ============================================
 CREATE TABLE IF NOT EXISTS ingredient (
@@ -183,3 +196,9 @@ SET @add_ingredient_zone_index = IF(
 PREPARE stmt FROM @add_ingredient_zone_index;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 根据已有区域原料回填供应商服务区域
+INSERT IGNORE INTO supplier_service_zone (supplier_id, zone_id)
+SELECT DISTINCT supplier_id, zone_id
+FROM ingredient
+WHERE zone_id IS NOT NULL;

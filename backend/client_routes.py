@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 import random
 import string
 from datetime import datetime
@@ -417,6 +417,27 @@ def remove_from_cart(cart_id):
 # ============================================
 # 工具函数：将订单拆分为供应商备货单
 # ============================================
+def supplier_serves_zone(supplier, zone_id):
+    if not zone_id:
+        return True
+    return any(zone.id == int(zone_id) for zone in supplier.service_zones)
+
+
+def get_stock_units(quantity):
+    quantity = Decimal(str(quantity or 0))
+    if quantity <= 0:
+        return 0
+    return int(quantity.to_integral_value(rounding=ROUND_CEILING))
+
+
+def restore_supplier_order_ingredient_stock(order):
+    for supplier_order in order.supplier_orders:
+        if supplier_order.status != 10:
+            continue
+        for item in supplier_order.items:
+            if item.ingredient:
+                item.ingredient.stock = (item.ingredient.stock or 0) + get_stock_units(item.quantity)
+
 def get_recipe_key(ingredient):
     return (
         ingredient.name or '',
@@ -440,6 +461,9 @@ def select_product_ingredient_relations(product, zone_id):
             'global_matches': [],
             'other_zone_matches': []
         })
+        if ingredient.zone_id and not supplier_serves_zone(ingredient.supplier, ingredient.zone_id):
+            group['other_zone_matches'].append(pi)
+            continue
         if zone_id and ingredient.zone_id == zone_id:
             group['zone_matches'].append(pi)
         elif ingredient.zone_id is None:
@@ -498,6 +522,18 @@ def split_order_to_supplier_orders(order_sn):
     if missing_configs:
         unique_missing = '、'.join(sorted(set(missing_configs)))
         raise ValueError(f'当前配送区域缺少原料配置：{unique_missing}，请先在主后台配置该区域原料')
+
+    stock_errors = []
+    for items in supplier_ingredients.values():
+        for item in items.values():
+            required_units = get_stock_units(item['quantity'])
+            item['stock_units'] = required_units
+            available_units = item['ingredient'].stock or 0
+            if required_units > available_units:
+                ingredient = item['ingredient']
+                stock_errors.append(f"{ingredient.name}库存不足，当前{available_units}{ingredient.unit}，需要{required_units}{ingredient.unit}")
+    if stock_errors:
+        raise ValueError('原料库存不足：' + '；'.join(stock_errors))
     
     supplier_order_count = 0
     for supplier_id, items in supplier_ingredients.items():
@@ -512,14 +548,16 @@ def split_order_to_supplier_orders(order_sn):
         supplier_order_count += 1
         
         for item in items.values():
-            unit_price = item['ingredient'].price
+            ingredient = item['ingredient']
+            ingredient.stock = max(0, (ingredient.stock or 0) - item.get('stock_units', 0))
+            unit_price = ingredient.price
             total_price = item['quantity'] * unit_price if unit_price is not None else Decimal('0')
             soi = SupplierOrderItem(
                 supplier_order_id=supplier_order.id,
-                ingredient_id=item['ingredient'].id,
-                ingredient_name=item['ingredient'].name,
+                ingredient_id=ingredient.id,
+                ingredient_name=ingredient.name,
                 quantity=item['quantity'],
-                unit=item['ingredient'].unit,
+                unit=ingredient.unit,
                 unit_price=unit_price,
                 total_price=total_price
             )
@@ -771,6 +809,8 @@ def cancel_order(order_sn):
                 product.stock.total_stock = (product.stock.total_stock or 0) + item.quantity
                 product.sales_count = max(0, (product.sales_count or 0) - item.quantity)
     
+    restore_supplier_order_ingredient_stock(order)
+
     # 取消相关的供应商备货单
     for so in order.supplier_orders:
         if so.status in [10, 20]:  # 只有待备货或备货中的可以取消

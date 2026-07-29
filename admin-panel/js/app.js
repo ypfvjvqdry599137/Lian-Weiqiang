@@ -369,6 +369,18 @@ function formatZoneName(zoneName) {
     return zoneName || '通用区域';
 }
 
+function formatSupplierServiceZones(zoneNames) {
+    return zoneNames && zoneNames.length > 0 ? zoneNames.join('、') : '未配置';
+}
+
+function getSelectedNumberValues(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return [];
+    return Array.from(select.selectedOptions)
+        .map(option => parseInt(option.value, 10))
+        .filter(value => !Number.isNaN(value));
+}
+
 const ORDER_STATUS_OPTIONS = [
     { value: 10, label: '待付款' },
     { value: 20, label: '待配货' },
@@ -997,6 +1009,7 @@ async function loadSuppliers() {
                     <h4>${supplier.name}</h4>
                     <p>联系人: ${supplier.contact_person || '无'} | 电话: ${supplier.phone || '无'}</p>
                     <p>登录账号: ${supplier.username}</p>
+                    <p>服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)}</p>
                     <p>供应商后台: <a href="/admin-panel/supplier_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${supplier.is_active ? '已启用' : '已禁用'}</p>
                     <p style="font-size:12px;color:#999;">创建时间: ${formatDate(supplier.created_at)}</p>
@@ -1011,6 +1024,24 @@ async function loadSuppliers() {
     }
 }
 
+async function loadSupplierServiceZoneOptions(selectedIds = []) {
+    const zonesData = await fetchData('/admin/delivery-zones');
+    const select = document.getElementById('supplier-service-zone-ids');
+    if (!select) return;
+
+    const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
+    select.innerHTML = '';
+    if (zonesData && zonesData.zones) {
+        zonesData.zones.forEach(zone => {
+            const option = document.createElement('option');
+            option.value = zone.id;
+            option.textContent = zone.zone_name;
+            option.selected = selectedSet.has(Number(zone.id));
+            select.appendChild(option);
+        });
+    }
+}
+
 async function showSupplierModal(supplierId = null) {
     const modal = document.getElementById('supplier-modal');
     const title = document.getElementById('supplier-modal-title');
@@ -1019,6 +1050,7 @@ async function showSupplierModal(supplierId = null) {
     document.getElementById('supplier-id').value = '';
     document.getElementById('supplier-active').checked = true;
 
+    let selectedServiceZoneIds = [];
     if (supplierId) {
         title.textContent = '编辑供应商';
         const supplier = await fetchData(`/admin/suppliers/${supplierId}`);
@@ -1029,10 +1061,12 @@ async function showSupplierModal(supplierId = null) {
             document.getElementById('supplier-phone').value = supplier.phone || '';
             document.getElementById('supplier-username').value = supplier.username;
             document.getElementById('supplier-active').checked = supplier.is_active;
+            selectedServiceZoneIds = supplier.service_zone_ids || [];
         }
     } else {
         title.textContent = '添加供应商';
     }
+    await loadSupplierServiceZoneOptions(selectedServiceZoneIds);
     showModal('supplier-modal');
 }
 
@@ -1047,6 +1081,7 @@ document.getElementById('supplier-form').addEventListener('submit', async functi
         phone: document.getElementById('supplier-phone').value || null,
         username: document.getElementById('supplier-username').value,
         is_active: document.getElementById('supplier-active').checked,
+        service_zone_ids: getSelectedNumberValues('supplier-service-zone-ids'),
     };
     const password = document.getElementById('supplier-password').value;
     if (password) {
@@ -1074,6 +1109,7 @@ async function deleteSupplier(supplierId) {
 // ==================== 原料管理 (Ingredients) ====================
 
 let currentIngredients = [];
+let currentSupplierOptions = [];
 
 function getIngredientsListUrl() {
     const params = new URLSearchParams();
@@ -1166,10 +1202,12 @@ async function showIngredientModal(ingredientId = null) {
     document.getElementById('ingredient-unit').value = '斤';
     document.getElementById('ingredient-stock').value = '0';
 
-    // 加载供应商和分类选项
-    await loadSuppliersForSelect();
     await loadCategoriesForSelect();
     await loadDeliveryZonesForIngredientSelect('ingredient-zone-id');
+    const zoneSelect = document.getElementById('ingredient-zone-id');
+    if (zoneSelect) {
+        zoneSelect.onchange = () => renderSuppliersForIngredientSelect();
+    }
 
     if (ingredientId) {
         title.textContent = '编辑原料';
@@ -1178,33 +1216,54 @@ async function showIngredientModal(ingredientId = null) {
             document.getElementById('ingredient-id').value = ingredient.id;
             document.getElementById('ingredient-name').value = ingredient.name;
             document.getElementById('ingredient-unit').value = ingredient.unit;
-            document.getElementById('ingredient-supplier-id').value = ingredient.supplier_id;
             document.getElementById('ingredient-category-id').value = ingredient.category_id || '';
             document.getElementById('ingredient-zone-id').value = ingredient.zone_id || '';
             document.getElementById('ingredient-price').value = ingredient.price || '';
             document.getElementById('ingredient-stock').value = ingredient.stock;
             document.getElementById('ingredient-active').checked = ingredient.is_active;
+            await loadSuppliersForSelect(ingredient.supplier_id);
         }
     } else {
         title.textContent = '添加原料';
+        await loadSuppliersForSelect();
     }
     showModal('ingredient-modal');
 }
 
-async function loadSuppliersForSelect() {
-    const suppliersData = await fetchData('/admin/suppliers');
+function supplierServesIngredientZone(supplier, zoneValue) {
+    if (!zoneValue) return true;
+    const zoneId = Number(zoneValue);
+    return (supplier.service_zone_ids || []).map(Number).includes(zoneId);
+}
+
+function renderSuppliersForIngredientSelect(selectedSupplierId = null) {
     const select = document.getElementById('ingredient-supplier-id');
+    if (!select) return;
+
+    const currentValue = selectedSupplierId || select.value;
+    const zoneValue = document.getElementById('ingredient-zone-id')?.value || '';
+    const availableSuppliers = currentSupplierOptions.filter(supplier => (
+        supplier.is_active && supplierServesIngredientZone(supplier, zoneValue)
+    ));
+
     select.innerHTML = '<option value="">请选择供应商</option>';
-    if (suppliersData && suppliersData.suppliers) {
-        suppliersData.suppliers.forEach(s => {
-            const option = document.createElement('option');
-            option.value = s.id;
-            option.textContent = s.name;
-            select.appendChild(option);
-        });
+    availableSuppliers.forEach(supplier => {
+        const option = document.createElement('option');
+        option.value = supplier.id;
+        option.textContent = `${supplier.name} / 服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)}`;
+        select.appendChild(option);
+    });
+
+    if (currentValue && availableSuppliers.some(supplier => Number(supplier.id) === Number(currentValue))) {
+        select.value = String(currentValue);
     }
 }
 
+async function loadSuppliersForSelect(selectedSupplierId = null) {
+    const suppliersData = await fetchData('/admin/suppliers');
+    currentSupplierOptions = suppliersData && suppliersData.suppliers ? suppliersData.suppliers : [];
+    renderSuppliersForIngredientSelect(selectedSupplierId);
+}
 async function loadDeliveryZonesForIngredientSelect(selectId, includeAll = false) {
     const zonesData = await fetchData('/admin/delivery-zones');
     const select = document.getElementById(selectId);

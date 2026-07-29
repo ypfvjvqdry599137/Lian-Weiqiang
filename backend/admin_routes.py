@@ -323,6 +323,75 @@ def serialize_admin_ingredient(ing):
 
 # ==================== 供应商管理 ====================
 
+def normalize_zone_ids(raw_ids):
+    if raw_ids is None:
+        return []
+    if not isinstance(raw_ids, list):
+        raw_ids = [raw_ids]
+
+    zone_ids = []
+    for raw_id in raw_ids:
+        if raw_id in [None, '', 'global', 'all']:
+            continue
+        try:
+            zone_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise ValueError('服务配送区域格式不正确')
+        if zone_id not in zone_ids:
+            zone_ids.append(zone_id)
+    return zone_ids
+
+
+def serialize_supplier_service_zones(supplier):
+    zones = sorted(supplier.service_zones, key=lambda item: item.id)
+    return {
+        'service_zone_ids': [zone.id for zone in zones],
+        'service_zone_names': [zone.zone_name for zone in zones]
+    }
+
+
+def set_supplier_service_zones(supplier, raw_zone_ids):
+    from models import DeliveryZone, Ingredient
+
+    zone_ids = normalize_zone_ids(raw_zone_ids)
+    next_zone_set = set(zone_ids)
+    current_zone_set = {zone.id for zone in supplier.service_zones}
+    removed_zone_ids = current_zone_set - next_zone_set
+    if removed_zone_ids:
+        active_ingredients = Ingredient.query.filter(
+            Ingredient.supplier_id == supplier.id,
+            Ingredient.is_active == True,
+            Ingredient.zone_id.in_(list(removed_zone_ids))
+        ).limit(5).all()
+        if active_ingredients:
+            names = '、'.join(sorted({item.zone.zone_name if item.zone else str(item.zone_id) for item in active_ingredients}))
+            raise ValueError(f'该供应商在 {names} 还有启用原料，请先转移或停用这些原料后再取消服务区域')
+
+    if not zone_ids:
+        supplier.service_zones = []
+        return
+
+    zones = DeliveryZone.query.filter(DeliveryZone.id.in_(zone_ids)).all()
+    if len(zones) != len(zone_ids):
+        raise ValueError('部分配送区域不存在')
+    supplier.service_zones = sorted(zones, key=lambda item: item.id)
+
+
+def supplier_serves_zone(supplier, zone_id):
+    if not zone_id:
+        return True
+    return any(zone.id == int(zone_id) for zone in supplier.service_zones)
+
+
+def validate_supplier_zone(supplier, zone_id):
+    if not supplier:
+        return '供应商不存在'
+    if not supplier.is_active:
+        return '供应商已禁用'
+    if zone_id and not supplier_serves_zone(supplier, zone_id):
+        return f'{supplier.name} 未配置服务该配送区域，请先在供应商管理中勾选服务区域'
+    return None
+
 @admin_bp.route('/suppliers', methods=['POST'])
 def create_supplier():
     from models import Supplier
@@ -349,6 +418,10 @@ def create_supplier():
         is_active=data.get('is_active', True)
     )
     db.session.add(supplier)
+    try:
+        set_supplier_service_zones(supplier, data.get('service_zone_ids'))
+    except ValueError as exc:
+        return jsonify({"message": str(exc)}), 400
     db.session.commit()
     return jsonify({"message": "Supplier created successfully", "id": supplier.id}), 201
 
@@ -358,6 +431,7 @@ def get_suppliers():
     suppliers = Supplier.query.order_by(Supplier.created_at.desc()).all()
     output = []
     for supplier in suppliers:
+        zone_payload = serialize_supplier_service_zones(supplier)
         output.append({
             'id': supplier.id,
             'name': supplier.name,
@@ -365,7 +439,8 @@ def get_suppliers():
             'phone': supplier.phone,
             'username': supplier.username,
             'is_active': supplier.is_active,
-            'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            **zone_payload
         })
     return jsonify({"suppliers": output}), 200
 
@@ -373,6 +448,7 @@ def get_suppliers():
 def get_supplier(supplier_id):
     from models import Supplier
     supplier = Supplier.query.get_or_404(supplier_id)
+    zone_payload = serialize_supplier_service_zones(supplier)
     return jsonify({
         'id': supplier.id,
         'name': supplier.name,
@@ -380,7 +456,8 @@ def get_supplier(supplier_id):
         'phone': supplier.phone,
         'username': supplier.username,
         'is_active': supplier.is_active,
-        'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+        **zone_payload
     }), 200
 
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['PUT'])
@@ -405,6 +482,12 @@ def update_supplier(supplier_id):
         if existing:
             return jsonify({"message": "Username already exists"}), 409
         supplier.username = data['username']
+
+    if 'service_zone_ids' in data:
+        try:
+            set_supplier_service_zones(supplier, data.get('service_zone_ids'))
+        except ValueError as exc:
+            return jsonify({"message": str(exc)}), 400
         
     db.session.commit()
     return jsonify({"message": "Supplier updated successfully"}), 200
@@ -443,7 +526,7 @@ def delete_supplier(supplier_id):
 
 @admin_bp.route('/ingredients', methods=['POST'])
 def create_ingredient():
-    from models import Ingredient
+    from models import Ingredient, Supplier
     data = request.get_json()
     if not data:
         return jsonify({"message": "Invalid request body"}), 400
@@ -453,6 +536,17 @@ def create_ingredient():
     zone_id = data.get('zone_id') or None
     if not all([name, supplier_id]):
         return jsonify({"message": "Name and supplier are required"}), 400
+
+    try:
+        supplier_id = int(supplier_id)
+        zone_id = int(zone_id) if zone_id is not None else None
+    except (TypeError, ValueError):
+        return jsonify({"message": "供应商或配送区域格式不正确"}), 400
+
+    supplier = Supplier.query.get_or_404(supplier_id)
+    zone_error = validate_supplier_zone(supplier, zone_id)
+    if zone_error:
+        return jsonify({"message": zone_error}), 400
 
     ingredient = Ingredient(
         name=name,
@@ -530,16 +624,29 @@ def get_ingredient(ingredient_id):
     return jsonify(serialize_admin_ingredient(ing)), 200
 @admin_bp.route('/ingredients/<int:ingredient_id>', methods=['PUT'])
 def update_ingredient(ingredient_id):
-    from models import Ingredient
+    from models import Ingredient, Supplier
     ing = Ingredient.query.get_or_404(ingredient_id)
     data = request.get_json()
+
+    next_supplier_id = data.get('supplier_id', ing.supplier_id)
+    next_zone_id = data.get('zone_id', ing.zone_id) if 'zone_id' in data else ing.zone_id
+    next_zone_id = next_zone_id or None
+    try:
+        next_supplier_id = int(next_supplier_id)
+        next_zone_id = int(next_zone_id) if next_zone_id is not None else None
+    except (TypeError, ValueError):
+        return jsonify({"message": "供应商或配送区域格式不正确"}), 400
+
+    supplier = Supplier.query.get_or_404(next_supplier_id)
+    zone_error = validate_supplier_zone(supplier, next_zone_id)
+    if zone_error:
+        return jsonify({"message": zone_error}), 400
 
     ing.name = data.get('name', ing.name)
     ing.unit = data.get('unit', ing.unit)
     ing.category_id = data.get('category_id', ing.category_id)
-    ing.supplier_id = data.get('supplier_id', ing.supplier_id)
-    if 'zone_id' in data:
-        ing.zone_id = data.get('zone_id') or None
+    ing.supplier_id = next_supplier_id
+    ing.zone_id = next_zone_id
     if 'price' in data:
         ing.price = Decimal(str(data['price'])) if data['price'] is not None else None
     ing.stock = data.get('stock', ing.stock)
@@ -653,8 +760,9 @@ def add_product_ingredient(product_id):
         ingredient = Ingredient.query.get_or_404(ingredient_id)
         if not ingredient.is_active:
             return jsonify({"message": "原料已停用"}), 400
-        if ingredient.supplier and not ingredient.supplier.is_active:
-            return jsonify({"message": "供应商已禁用"}), 400
+        zone_error = validate_supplier_zone(ingredient.supplier, ingredient.zone_id)
+        if zone_error:
+            return jsonify({"message": zone_error}), 400
         if zone_id == 'global' and ingredient.zone_id is not None:
             return jsonify({"message": "请选择通用区域原料"}), 400
         if zone_id and str(zone_id).isdigit() and ingredient.zone_id != int(zone_id):
@@ -666,8 +774,10 @@ def add_product_ingredient(product_id):
 
         if supplier_id:
             supplier = Supplier.query.get_or_404(int(supplier_id))
-            if not supplier.is_active:
-                return jsonify({"message": "供应商已禁用"}), 400
+            requested_zone_id = int(zone_id) if zone_id and str(zone_id).isdigit() else None
+            zone_error = validate_supplier_zone(supplier, requested_zone_id)
+            if zone_error:
+                return jsonify({"message": zone_error}), 400
         elif not supplier_name:
             return jsonify({"message": "请选择供应商"}), 400
 
@@ -691,6 +801,9 @@ def add_product_ingredient(product_id):
             return jsonify({"message": "该供应商下存在多个同名原料，请先整理原料数据"}), 409
 
         ingredient = matches[0]
+        zone_error = validate_supplier_zone(ingredient.supplier, ingredient.zone_id)
+        if zone_error:
+            return jsonify({"message": zone_error}), 400
         ingredient_id = ingredient.id
     
     existing = ProductIngredient.query.filter_by(

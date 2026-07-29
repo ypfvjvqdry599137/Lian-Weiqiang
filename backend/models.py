@@ -2,6 +2,13 @@ from datetime import datetime
 
 from extensions import db
 
+supplier_service_zone = db.Table(
+    'supplier_service_zone',
+    db.Column('supplier_id', db.Integer, db.ForeignKey('supplier.id'), primary_key=True, comment='供应商ID'),
+    db.Column('zone_id', db.Integer, db.ForeignKey('delivery_zone.id'), primary_key=True, comment='配送区域ID'),
+    db.Column('created_at', db.DateTime, default=datetime.utcnow, comment='创建时间')
+)
+
 # ============================================
 # 供应商模型
 # ============================================
@@ -15,6 +22,13 @@ class Supplier(db.Model):
     is_active = db.Column(db.Boolean, default=True, comment='是否启用')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    service_zones = db.relationship(
+        'DeliveryZone',
+        secondary=supplier_service_zone,
+        backref=db.backref('serving_suppliers', lazy=True),
+        lazy=True
+    )
 
     def __repr__(self):
         return f'<Supplier {self.name}>'

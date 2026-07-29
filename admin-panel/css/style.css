@@ -412,6 +412,16 @@ h2 {
     width: auto;
 }
 
+.form-help {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+}
+
+#supplier-service-zone-ids {
+    min-height: 120px;
+}
+
 /* 订单状态颜色 */
 .status-10 { border-left-color: #FF9800; } /* 待付款 */
 .status-20 { border-left-color: #2196F3; } /* 待配货 */
