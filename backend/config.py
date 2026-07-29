@@ -28,5 +28,7 @@ class Config:
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or \
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
     PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL')
-    TENCENT_MAP_KEY = os.environ.get('TENCENT_MAP_KEY') or os.environ.get('TENCENT_MAP_WEB_KEY')
+    TENCENT_MAP_KEY = os.environ.get('TENCENT_MAP_KEY')
+    TENCENT_MAP_JS_KEY = os.environ.get('TENCENT_MAP_JS_KEY') or os.environ.get('TENCENT_MAP_WEB_KEY') or TENCENT_MAP_KEY
+    TENCENT_MAP_SERVER_KEY = os.environ.get('TENCENT_MAP_SERVER_KEY') or TENCENT_MAP_KEY
     MAX_CONTENT_LENGTH = int(os.environ.get('MAX_UPLOAD_MB', '8')) * 1024 * 1024

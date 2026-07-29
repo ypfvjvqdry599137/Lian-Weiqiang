@@ -26,14 +26,18 @@ def get_public_upload_url(relative_path):
     return f"{base_url}/{relative_path.lstrip('/')}"
 
 
-def get_tencent_map_key():
-    return (current_app.config.get('TENCENT_MAP_KEY') or '').strip()
+def get_tencent_map_js_key():
+    return (current_app.config.get('TENCENT_MAP_JS_KEY') or '').strip()
+
+
+def get_tencent_map_server_key():
+    return (current_app.config.get('TENCENT_MAP_SERVER_KEY') or '').strip()
 
 
 def request_tencent_map_api(path, params):
-    key = get_tencent_map_key()
+    key = get_tencent_map_server_key()
     if not key:
-        return None, ({'message': '请先在服务器环境变量 TENCENT_MAP_KEY 配置腾讯地图 Key'}, 400)
+        return None, ({'message': '请先在服务器环境变量 TENCENT_MAP_SERVER_KEY 配置腾讯地图 WebService Key'}, 400)
 
     query = dict(params)
     query['key'] = key
@@ -51,10 +55,11 @@ def request_tencent_map_api(path, params):
 
 @admin_bp.route('/map/config', methods=['GET'])
 def get_map_config():
-    key = get_tencent_map_key()
+    key = get_tencent_map_js_key()
     return jsonify({
         'enabled': bool(key),
-        'key': key
+        'key': key,
+        'server_geocoder_enabled': bool(get_tencent_map_server_key())
     }), 200
 
 

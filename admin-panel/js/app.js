@@ -31,7 +31,7 @@ async function loadTencentMapSdk() {
         tencentMapSdkPromise = (async () => {
             const config = await fetchData('/admin/map/config');
             if (!config || !config.enabled || !config.key) {
-                throw new Error('请先在服务器环境变量 TENCENT_MAP_KEY 配置腾讯地图 Key');
+                throw new Error('请先在服务器环境变量 TENCENT_MAP_JS_KEY 配置腾讯地图前端 Key');
             }
             await new Promise((resolve, reject) => {
                 const script = document.createElement('script');
