@@ -86,6 +86,7 @@
                     <h2>📈 区域统计</h2>
                     <div class="settlement-controls">
                         <input type="month" id="zone-statistics-month">
+                        <select id="zone-statistics-zone-filter"><option value="all">全部区域</option></select>
                         <button class="btn btn-primary" onclick="loadZoneStatistics()">查询</button>
                     </div>
                 </div>
@@ -152,6 +153,10 @@
                     <button class="tab" data-status="10">待备货</button>
                     <button class="tab" data-status="20">备货中</button>
                     <button class="tab" data-status="30">已完成</button>
+                </div>
+                <div class="settlement-controls" style="margin-bottom:15px;">
+                    <select id="supplier-order-zone-filter"><option value="all">全部区域</option></select>
+                    <button class="btn btn-primary" onclick="loadSupplierOrders()">筛选</button>
                 </div>
                 <div id="supplier-orders-summary" class="stats" style="margin-bottom: 20px;"></div>
                 <div id="supplier-orders-list" class="data-list"></div>

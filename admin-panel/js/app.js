@@ -526,6 +526,31 @@ async function deleteCategory(categoryId) {
 
 // ==================== 配送区域管理 (Delivery Zones) ====================
 
+async function loadDeliveryZonesForFilter(selectId, options = {}) {
+    const zonesData = await fetchData('/admin/delivery-zones');
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const currentValue = select.value;
+    const includeUnassigned = options.includeUnassigned !== false;
+    select.innerHTML = '<option value="all">全部区域</option>';
+    if (includeUnassigned) {
+        select.innerHTML += '<option value="unassigned">未分配区域</option>';
+    }
+
+    if (zonesData && zonesData.zones) {
+        zonesData.zones.forEach(zone => {
+            const option = document.createElement('option');
+            option.value = zone.id;
+            option.textContent = zone.zone_name;
+            select.appendChild(option);
+        });
+    }
+
+    if (currentValue && Array.from(select.options).some(option => option.value === currentValue)) {
+        select.value = currentValue;
+    }
+}
 async function loadDeliveryZones() {
     const zonesData = await fetchData('/admin/delivery-zones');
     const zonesList = document.getElementById('delivery-zones-list');
@@ -1153,10 +1178,16 @@ async function addProductIngredient() {
         return;
     }
     
-    const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`, 'POST', {
+    const zoneFilter = document.getElementById('pi-zone-filter')?.value || 'all';
+    const payload = {
         ingredient_id: parseInt(ingredientId),
         quantity_needed: parseFloat(quantity)
-    }, true);
+    };
+    if (zoneFilter !== 'all') {
+        payload.zone_id = zoneFilter;
+    }
+
+    const result = await fetchData(`/admin/products/${currentProductIdForIngredients}/ingredients`, 'POST', payload, true);
     
     if (result) {
         alert('原料添加成功！');
@@ -1201,6 +1232,7 @@ function renderZoneStatisticsList(zones) {
 
     zones.forEach(zone => {
         const card = document.createElement('div');
+        const zoneFilterValue = zone.zone_id ? zone.zone_id : 'unassigned';
         card.className = 'data-card';
         card.innerHTML = `
             <div class="data-card-content">
@@ -1210,6 +1242,9 @@ function renderZoneStatisticsList(zones) {
                 <p>材料成本: ${formatCurrency(zone.supplier_cost_total)} | 已送达材料成本: ${formatCurrency(zone.settled_supplier_cost)} | 预估毛利: ${formatCurrency(zone.estimated_gross_profit)}</p>
                 <p>区域账号: ${zone.merchant_username || '未设置'}</p>
             </div>
+            <div class="data-card-actions">
+                <button class="btn btn-sm btn-primary" onclick="openSupplierOrdersForZone('${zoneFilterValue}')">查看备货单</button>
+            </div>
         `;
         list.appendChild(card);
     });
@@ -1217,13 +1252,35 @@ function renderZoneStatisticsList(zones) {
 
 async function loadZoneStatistics() {
     const month = getMonthInputValue('zone-statistics-month');
-    const data = await fetchData(`/admin/zone-statistics?month=${encodeURIComponent(month)}`);
+    const zoneFilter = document.getElementById('zone-statistics-zone-filter')?.value || 'all';
+    const params = new URLSearchParams({ month });
+    if (zoneFilter !== 'all') {
+        params.set('zone_id', zoneFilter);
+    }
+    const data = await fetchData(`/admin/zone-statistics?${params.toString()}`);
     renderZoneStatisticsSummary(data ? data.summary : null);
     renderZoneStatisticsList(data ? data.zones : []);
+}
+
+function openSupplierOrdersForZone(zoneFilterValue) {
+    currentSupplierOrderZoneFilter = String(zoneFilterValue || 'all');
+    const filter = document.getElementById('supplier-order-zone-filter');
+    if (filter) {
+        filter.value = currentSupplierOrderZoneFilter;
+    }
+
+    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+    const menuItem = document.querySelector('.menu-item[data-page="supplier-orders"]');
+    if (menuItem) {
+        menuItem.classList.add('active');
+    }
+    currentPage = 'supplier-orders';
+    renderPage();
 }
 // ==================== 供应商备货单管理 (Supplier Orders) ====================
 
 let currentSupplierOrderStatusFilter = 'all';
+let currentSupplierOrderZoneFilter = 'all';
 
 document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(tab => {
     tab.addEventListener('click', function() {
@@ -1273,11 +1330,17 @@ function renderAdminSupplierOrdersSummary(summary) {
 }
 
 async function loadSupplierOrders() {
-    let url = '/admin/supplier-orders';
+    const zoneFilter = document.getElementById('supplier-order-zone-filter')?.value || currentSupplierOrderZoneFilter || 'all';
+    currentSupplierOrderZoneFilter = zoneFilter;
+    const params = new URLSearchParams();
     if (currentSupplierOrderStatusFilter !== 'all') {
-        url += `?status=${currentSupplierOrderStatusFilter}`;
+        params.set('status', currentSupplierOrderStatusFilter);
     }
-    const ordersData = await fetchData(url);
+    if (zoneFilter !== 'all') {
+        params.set('zone_id', zoneFilter);
+    }
+    const query = params.toString();
+    const ordersData = await fetchData(`/admin/supplier-orders${query ? '?' + query : ''}`);
     const ordersList = document.getElementById('supplier-orders-list');
     ordersList.innerHTML = '';
     renderAdminSupplierOrdersSummary(ordersData ? ordersData.summary : null);
@@ -1329,6 +1392,8 @@ function setupIngredientControls() {
     const ingredientZoneFilter = document.getElementById('ingredient-zone-filter');
     const productIngredientSelect = document.getElementById('pi-ingredient-id');
     const productIngredientZoneFilter = document.getElementById('pi-zone-filter');
+    const zoneStatisticsZoneFilter = document.getElementById('zone-statistics-zone-filter');
+    const supplierOrderZoneFilter = document.getElementById('supplier-order-zone-filter');
     const priceReviewSearch = document.getElementById('price-review-search');
     const priceReviewStatusFilter = document.getElementById('price-review-status-filter');
 
@@ -1352,6 +1417,14 @@ function setupIngredientControls() {
     }
     if (productIngredientZoneFilter) {
         productIngredientZoneFilter.addEventListener('change', loadIngredientsForPiSelect);
+    }
+    if (zoneStatisticsZoneFilter) {
+        loadDeliveryZonesForFilter('zone-statistics-zone-filter', { includeUnassigned: true });
+        zoneStatisticsZoneFilter.addEventListener('change', loadZoneStatistics);
+    }
+    if (supplierOrderZoneFilter) {
+        loadDeliveryZonesForFilter('supplier-order-zone-filter', { includeUnassigned: true });
+        supplierOrderZoneFilter.addEventListener('change', loadSupplierOrders);
     }
     if (priceReviewSearch) {
         priceReviewSearch.addEventListener('keydown', event => {

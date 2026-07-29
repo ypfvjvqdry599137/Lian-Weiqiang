@@ -446,6 +446,10 @@ def add_product_ingredient(product_id):
             return jsonify({"message": "原料已停用"}), 400
         if ingredient.supplier and not ingredient.supplier.is_active:
             return jsonify({"message": "供应商已禁用"}), 400
+        if zone_id == 'global' and ingredient.zone_id is not None:
+            return jsonify({"message": "请选择通用区域原料"}), 400
+        if zone_id and str(zone_id).isdigit() and ingredient.zone_id != int(zone_id):
+            return jsonify({"message": "请选择当前配送区域下的原料"}), 400
         ingredient_id = ingredient.id
     else:
         if not ingredient_name:
@@ -530,20 +534,27 @@ def delete_product_ingredient(product_id, relation_id):
 
 @admin_bp.route('/supplier-orders', methods=['GET'])
 def get_all_supplier_orders():
-    from models import SupplierOrder
+    from models import SupplierOrder, OrderMaster
     supplier_id = request.args.get('supplier_id')
     status_filter = request.args.get('status')
-    
-    query = SupplierOrder.query
-    if supplier_id:
-        query = query.filter_by(supplier_id=int(supplier_id))
-    if status_filter and status_filter.isdigit():
-        query = query.filter_by(status=int(status_filter))
-        
+    zone_id_filter = request.args.get('zone_id')
+
+    def apply_filters(query, include_status=True):
+        if supplier_id:
+            query = query.filter(SupplierOrder.supplier_id == int(supplier_id))
+        if zone_id_filter:
+            query = query.join(OrderMaster, SupplierOrder.order_sn == OrderMaster.order_sn)
+            if zone_id_filter == 'unassigned':
+                query = query.filter(OrderMaster.zone_id.is_(None))
+            elif zone_id_filter.isdigit():
+                query = query.filter(OrderMaster.zone_id == int(zone_id_filter))
+        if include_status and status_filter and status_filter.isdigit():
+            query = query.filter(SupplierOrder.status == int(status_filter))
+        return query
+
+    query = apply_filters(SupplierOrder.query)
     orders = query.order_by(SupplierOrder.created_at.desc()).all()
-    summary_query = SupplierOrder.query
-    if supplier_id:
-        summary_query = summary_query.filter_by(supplier_id=int(supplier_id))
+    summary_query = apply_filters(SupplierOrder.query, include_status=False)
     summary_orders = summary_query.all()
     today_orders = [so for so in summary_orders if so.status != 40 and is_today(so.created_at)]
     supplier_totals = {}
