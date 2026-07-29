@@ -997,6 +997,7 @@ async function loadSuppliers() {
                     <h4>${supplier.name}</h4>
                     <p>联系人: ${supplier.contact_person || '无'} | 电话: ${supplier.phone || '无'}</p>
                     <p>登录账号: ${supplier.username}</p>
+                    <p>供应商后台: <a href="/admin-panel/supplier_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${supplier.is_active ? '已启用' : '已禁用'}</p>
                     <p style="font-size:12px;color:#999;">创建时间: ${formatDate(supplier.created_at)}</p>
                 </div>
@@ -1061,10 +1062,10 @@ document.getElementById('supplier-form').addEventListener('submit', async functi
 });
 
 async function deleteSupplier(supplierId) {
-    if (confirm('确定要删除此供应商吗？')) {
-        const result = await fetchData(`/admin/suppliers/${supplierId}`, 'DELETE');
+    if (confirm('确定要删除此供应商吗？如果已有历史业务数据，系统会改为禁用以保护数据。')) {
+        const result = await fetchData(`/admin/suppliers/${supplierId}`, 'DELETE', null, true);
         if (result) {
-            alert('供应商删除成功！');
+            alert(result.message || '供应商处理成功');
             await loadSuppliers();
         }
     }

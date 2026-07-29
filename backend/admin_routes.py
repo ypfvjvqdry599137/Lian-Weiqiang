@@ -411,11 +411,33 @@ def update_supplier(supplier_id):
 
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['DELETE'])
 def delete_supplier(supplier_id):
-    from models import Supplier
+    from models import Supplier, Ingredient, IngredientPriceChangeRequest, SupplierOrder
     supplier = Supplier.query.get_or_404(supplier_id)
+
+    linked_counts = {
+        'ingredients': Ingredient.query.filter_by(supplier_id=supplier_id).count(),
+        'price_requests': IngredientPriceChangeRequest.query.filter_by(supplier_id=supplier_id).count(),
+        'supplier_orders': SupplierOrder.query.filter_by(supplier_id=supplier_id).count()
+    }
+    has_linked_data = any(count > 0 for count in linked_counts.values())
+
+    if has_linked_data:
+        supplier.is_active = False
+        disabled_ingredients = Ingredient.query.filter_by(supplier_id=supplier_id, is_active=True).update(
+            {'is_active': False},
+            synchronize_session=False
+        )
+        db.session.commit()
+        return jsonify({
+            "message": "该供应商已有历史业务数据，为确保数据安全，已改为禁用；名下启用中的原料也已同步禁用，避免后续订单继续分配。",
+            "action": "deactivated",
+            "disabled_ingredients": disabled_ingredients,
+            "linked_counts": linked_counts
+        }), 200
+
     db.session.delete(supplier)
     db.session.commit()
-    return jsonify({"message": "Supplier deleted successfully"}), 200
+    return jsonify({"message": "供应商已删除", "action": "deleted"}), 200
 
 # ==================== 原料管理 ====================
 
