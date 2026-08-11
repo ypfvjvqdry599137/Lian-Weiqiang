@@ -226,6 +226,22 @@
                     <input type="number" id="product-warning-stock" value="10">
                 </div>
                 <div class="form-group checkbox">
+                    <input type="checkbox" id="product-preorder">
+                    <label>预定商品</label>
+                </div>
+                <div class="form-group">
+                    <label>预定说明</label>
+                    <textarea id="product-preorder-note" placeholder="例如：当天 16:00 前下单，次日配送；不填写则默认展示为预定商品"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>加工选项</label>
+                    <textarea id="product-processing-options" placeholder="每行一个选项，例如：
+切片
+切丝
+切块"></textarea>
+                    <div style="margin-top: 6px; color: #666; font-size: 12px;">留空则按普通商品显示</div>
+                </div>
+                <div class="form-group checkbox">
                     <input type="checkbox" id="product-recommend">
                     <label>推荐商品</label>
                 </div>

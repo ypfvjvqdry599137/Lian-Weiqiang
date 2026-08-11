@@ -1,13 +1,14 @@
 <view class="container">
-  <view class="loading" wx:if="{{loading}}">
-    <text>加载中...</text>
+  <view class="loading-wrap" wx:if="{{loading}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">正在加载...</text>
   </view>
 
   <view wx:elif="{{product}}">
     <view class="hero">
       <image wx:if="{{product.image_url}}" src="{{product.image_url}}" mode="aspectFill" class="hero-img" />
       <view wx:else class="hero-placeholder">
-        <text class="placeholder-icon">🥬</text>
+        <image class="placeholder-icon" src="/images/icons/empty-product.svg" mode="aspectFit" />
         <text class="placeholder-text">暂无商品图片</text>
       </view>
     </view>
@@ -22,15 +23,44 @@
         <text class="unit">/ {{product.unit}}</text>
         <text class="original-price" wx:if="{{product.original_price}}">¥{{product.original_price}}</text>
       </view>
+      <view class="tag-row" wx:if="{{product.is_preorder || hasProcessingOptions}}">
+        <text class="product-tag preorder" wx:if="{{product.is_preorder}}">预定商品</text>
+        <text class="product-tag processing" wx:if="{{hasProcessingOptions}}">可选加工</text>
+      </view>
       <text class="desc">{{product.description || '新鲜直达，品质保障'}}</text>
+    </view>
+
+    <view class="section" wx:if="{{hasProcessingOptions}}">
+      <view class="section-title">加工方式</view>
+      <view class="processing-options">
+        <view
+          class="processing-option {{selectedProcessingOption === option ? 'active' : ''}}"
+          wx:for="{{processingOptions}}"
+          wx:for-item="option"
+          wx:key="*this"
+          bindtap="selectProcessingOption"
+          data-option="{{option}}"
+        >
+          {{option}}
+        </view>
+      </view>
+    </view>
+
+    <view class="section" wx:if="{{product.is_preorder}}">
+      <view class="section-title">预定说明</view>
+      <text class="info-line">{{product.preorder_note || '该商品为预定商品，具体发货时间以商家安排为准'}}</text>
     </view>
 
     <view class="section">
       <view class="section-title">购买数量</view>
       <view class="quantity-control">
-        <button class="quantity-btn" bindtap="decreaseQuantity" disabled="{{quantity <= 1}}">-</button>
+        <button class="quantity-btn" hover-class="qty-hover" bindtap="decreaseQuantity" disabled="{{quantity <= 1}}">
+          <image class="qty-btn-icon" src="/images/icons/minus.svg" mode="aspectFit" />
+        </button>
         <text class="quantity">{{quantity}}</text>
-        <button class="quantity-btn" bindtap="increaseQuantity" disabled="{{product.available_stock <= 0}}">+</button>
+        <button class="quantity-btn" hover-class="qty-hover" bindtap="increaseQuantity" disabled="{{product.available_stock <= 0}}">
+          <image class="qty-btn-icon plus" src="/images/icons/plus-dark.svg" mode="aspectFit" />
+        </button>
       </view>
     </view>
 
@@ -41,12 +71,13 @@
     </view>
   </view>
 
-  <view class="empty" wx:else>
-    <text>商品不存在或已下架</text>
+  <view class="empty-state" wx:else>
+    <image class="empty-state-icon" src="/images/icons/empty-sad.svg" mode="aspectFit" />
+    <text class="empty-state-text">商品不存在或已下架</text>
   </view>
 
   <view class="footer" wx:if="{{product}}">
-    <button class="cart-btn" bindtap="addToCart" disabled="{{product.available_stock <= 0}}">加入购物车</button>
-    <button class="buy-btn" bindtap="buyNow" disabled="{{product.available_stock <= 0}}">立即购买</button>
+    <button class="cart-btn" hover-class="cart-btn-hover" bindtap="addToCart" disabled="{{product.available_stock <= 0}}">加入购物车</button>
+    <button class="buy-btn" hover-class="btn-primary-hover" bindtap="buyNow" disabled="{{product.available_stock <= 0}}">立即购买</button>
   </view>
 </view>

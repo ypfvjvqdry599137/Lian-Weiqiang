@@ -2,6 +2,7 @@ from flask import Flask, send_from_directory
 from flask_cors import CORS
 from config import Config
 from extensions import db
+from product_features import ensure_product_feature_columns
 import os
 
 def create_app(config_class=Config):
@@ -13,6 +14,8 @@ def create_app(config_class=Config):
     # 导入模型
     import models
 
+    with app.app_context():
+        ensure_product_feature_columns()
 
     # 导入并注册蓝图
     from admin_routes import admin_bp

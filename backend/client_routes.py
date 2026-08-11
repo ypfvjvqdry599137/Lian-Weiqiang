@@ -5,6 +5,7 @@ import string
 from datetime import datetime
 import math
 from extensions import db
+from product_features import normalize_text, normalize_processing_options, product_feature_payload
 
 client_bp = Blueprint('client', __name__, url_prefix='/client')
 
@@ -286,6 +287,7 @@ def get_products():
             'image_url': product.image_url,
             'unit': product.unit,
             'sales_count': product.sales_count,
+            **product_feature_payload(product),
             'available_stock': available_stock
         })
     return jsonify({'products': result})
@@ -314,6 +316,7 @@ def get_product_detail(product_id):
         'unit': product.unit,
         'specs': product.specs,
         'sales_count': product.sales_count,
+        **product_feature_payload(product),
         'available_stock': available_stock
     })
 
@@ -346,7 +349,9 @@ def get_cart():
             'price': str(product.price),
             'unit': product.unit,
             'quantity': item.quantity,
-            'item_price': str(item_price)
+            'processing_option': item.processing_option,
+            'item_price': str(item_price),
+            **product_feature_payload(product)
         })
     
     return jsonify({
@@ -363,6 +368,7 @@ def add_to_cart():
     
     product_id = data.get('product_id')
     quantity = data.get('quantity', 1)
+    processing_option = normalize_text(data.get('processing_option'))
     
     if not product_id:
         return jsonify({'message': '请选择商品'}), 400
@@ -370,15 +376,25 @@ def add_to_cart():
     product = Product.query.get_or_404(product_id)
     if not product.is_active:
         return jsonify({'message': '商品已下架'}), 400
-    
+
+    product_options = normalize_processing_options(product.processing_options)
+    if product_options:
+        if not processing_option:
+            processing_option = product_options[0]
+        elif processing_option not in product_options:
+            return jsonify({'message': '请选择正确的加工方式'}), 400
+    else:
+        processing_option = None
+
     user = get_or_create_test_user()
     
     # 检查是否已在购物车
     cart_item = Cart.query.filter_by(user_id=user.id, product_id=product_id).first()
     if cart_item:
         cart_item.quantity += quantity
+        cart_item.processing_option = processing_option
     else:
-        cart_item = Cart(user_id=user.id, product_id=product_id, quantity=quantity)
+        cart_item = Cart(user_id=user.id, product_id=product_id, quantity=quantity, processing_option=processing_option)
         db.session.add(cart_item)
     
     db.session.commit()
@@ -618,7 +634,8 @@ def create_order():
         
         order_items_data.append({
             'product': product,
-            'quantity': item.quantity
+            'quantity': item.quantity,
+            'processing_option': item.processing_option
         })
     
     # 计算最终金额（含配送费）
@@ -658,7 +675,9 @@ def create_order():
             product_image=product.image_url,
             price=product.price,
             quantity=quantity,
-            unit=product.unit
+            unit=product.unit,
+            processing_option=item_data.get('processing_option'),
+            is_preorder=bool(product.is_preorder)
         )
         db.session.add(order_item)
         
@@ -707,7 +726,9 @@ def get_orders():
                 'product_image': item.product_image,
                 'price': str(item.price),
                 'quantity': item.quantity,
-                'unit': item.unit
+                'unit': item.unit,
+                'processing_option': item.processing_option,
+                'is_preorder': bool(item.is_preorder)
             })
         
         status_text = {10: '待付款', 20: '待配货', 30: '配送中', 40: '已送达', 50: '已完成', 60: '已取消'}.get(order.order_status, '未知')
@@ -740,7 +761,9 @@ def get_order_detail(order_sn):
             'product_image': item.product_image,
             'price': str(item.price),
             'quantity': item.quantity,
-            'unit': item.unit
+            'unit': item.unit,
+            'processing_option': item.processing_option,
+            'is_preorder': bool(item.is_preorder)
         })
     
     status_text = {10: '待付款', 20: '待配货', 30: '配送中', 40: '已送达', 50: '已完成', 60: '已取消'}.get(order.order_status, '未知')

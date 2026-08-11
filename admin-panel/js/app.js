@@ -532,19 +532,25 @@ async function loadProducts() {
         productsData.products.forEach(product => {
             const card = document.createElement('div');
             card.classList.add('data-card');
-            card.innerHTML = `
-                <div class="data-card-content">
-                    <h4>${product.name}</h4>
-                    <p>${product.description || '无描述'}</p>
-                    <p class="price">¥${product.price} / ${product.unit}</p>
-                    <p>库存: ${product.available_stock}</p>
-                </div>
-                <div class="data-card-actions">
-                    <button class="btn btn-sm btn-primary" onclick="showProductIngredientsModal(${product.id})">配置原料</button>
-                    <button class="btn btn-sm btn-success" onclick="showProductModal(${product.id})">编辑</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">删除</button>
-                </div>
-            `;
+            card.innerHTML =
+                '<div class="data-card-content">' +
+                    '<h4>' + product.name + '</h4>' +
+                    '<p>' + (product.description || '无描述') + '</p>' +
+                    '<p class="price">¥' + product.price + ' / ' + product.unit + '</p>' +
+                    ((product.is_preorder || product.has_processing_options)
+                        ? '<p>' +
+                            (product.is_preorder ? '预定商品' : '') +
+                            (product.is_preorder && product.has_processing_options ? ' · ' : '') +
+                            (product.has_processing_options ? ('加工 ' + product.processing_options.length + ' 项') : '') +
+                          '</p>'
+                        : '') +
+                    '<p>库存: ' + product.available_stock + '</p>' +
+                '</div>' +
+                '<div class="data-card-actions">' +
+                    '<button class="btn btn-sm btn-primary" onclick="showProductIngredientsModal(' + product.id + ')">配置原料</button>' +
+                    '<button class="btn btn-sm btn-success" onclick="showProductModal(' + product.id + ')">编辑</button>' +
+                    '<button class="btn btn-sm btn-danger" onclick="deleteProduct(' + product.id + ')">删除</button>' +
+                '</div>';
             productsList.appendChild(card);
         });
     }
@@ -563,6 +569,35 @@ function updateProductImagePreview(url) {
     }
 }
 
+function formatProcessingOptionsText(value) {
+    if (!value) {
+        return '';
+    }
+
+    if (Array.isArray(value)) {
+        return value.map(item => String(item || '').trim()).filter(Boolean).join('\n');
+    }
+
+    if (typeof value === 'string') {
+        try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                return parsed.map(item => String(item || '').trim()).filter(Boolean).join('\n');
+            }
+        } catch (error) {
+            return value;
+        }
+    }
+
+    return '';
+}
+
+function parseProcessingOptionsText(value) {
+    return String(value || '')
+        .split(/\r?\n/)
+        .map(item => item.trim())
+        .filter(Boolean);
+}
 function compressProductImageFile(file) {
     return new Promise((resolve, reject) => {
         if (!file || !file.type.startsWith('image/')) {
@@ -651,6 +686,9 @@ async function showProductModal(productId = null) {
     document.getElementById('product-recommend').checked = false;
     document.getElementById('product-active').checked = true;
     document.getElementById('product-warning-stock').value = 10;
+    document.getElementById('product-preorder').checked = false;
+    document.getElementById('product-preorder-note').value = '';
+    document.getElementById('product-processing-options').value = '';
     document.getElementById('product-image-file').value = '';
     document.getElementById('product-image-upload-status').textContent = '';
     updateProductImagePreview('');
@@ -670,6 +708,9 @@ async function showProductModal(productId = null) {
             document.getElementById('product-unit').value = product.unit;
             document.getElementById('product-stock').value = product.total_stock;
             document.getElementById('product-warning-stock').value = product.warning_stock;
+            document.getElementById('product-preorder').checked = !!product.is_preorder;
+            document.getElementById('product-preorder-note').value = product.preorder_note || '';
+            document.getElementById('product-processing-options').value = formatProcessingOptionsText(product.processing_options);
             document.getElementById('product-recommend').checked = product.is_recommend;
             document.getElementById('product-active').checked = product.is_active;
         }
@@ -698,6 +739,9 @@ document.getElementById('product-form').addEventListener('submit', async functio
         unit: document.getElementById('product-unit').value,
         total_stock: parseInt(document.getElementById('product-stock').value),
         warning_stock: parseInt(document.getElementById('product-warning-stock').value),
+        is_preorder: document.getElementById('product-preorder').checked,
+        preorder_note: document.getElementById('product-preorder-note').value.trim(),
+        processing_options: parseProcessingOptionsText(document.getElementById('product-processing-options').value),
         is_recommend: document.getElementById('product-recommend').checked,
         is_active: document.getElementById('product-active').checked,
     };

@@ -2,21 +2,21 @@
   <!-- 地址列表 -->
   <view wx:if="{{mode === 'list'}}" class="address-list">
     <!-- 添加按钮 -->
-    <view class="add-btn" bindtap="goToAdd">
-      <text class="icon">+</text>
+    <view class="add-btn" hover-class="add-btn-hover" bindtap="goToAdd">
+      <image class="add-icon-img" src="/images/icons/plus-dark.svg" mode="aspectFit" />
       <text>新增收货地址</text>
     </view>
 
     <!-- 地址列表 -->
     <view class="address-items">
-      <view 
-        wx:for="{{addresses}}" 
+      <view
+        wx:for="{{addresses}}"
         wx:key="id"
         class="address-item {{selectedAddressId === item.id ? 'selected' : ''}}"
         data-address="{{item}}"
         bindtap="selectAddress"
       >
-        <view class="address-info" data-address="{{item}}" bindtap="selectAddress">
+        <view class="address-info">
           <view class="name-phone">
             <text class="name">{{item.receiver_name}}</text>
             <text class="phone">{{item.receiver_phone}}</text>
@@ -25,11 +25,13 @@
           <view class="address-text">{{item.address}}</view>
         </view>
         <view class="address-actions">
-          <view class="action-btn" data-id="{{item.id}}" bindtap="setDefault">设为默认</view>
-          <view class="action-btn" data-address="{{item}}" bindtap="goToEdit">编辑</view>
-          <view class="action-btn delete" data-id="{{item.id}}" bindtap="deleteAddress">删除</view>
+          <view class="action-btn" catchtap="setDefault" data-id="{{item.id}}">设为默认</view>
+          <view class="action-btn" catchtap="goToEdit" data-address="{{item}}">编辑</view>
+          <view class="action-btn delete" catchtap="deleteAddress" data-id="{{item.id}}">删除</view>
         </view>
-        <view wx:if="{{selectedAddressId === item.id}}" class="selected-icon">✓</view>
+        <view wx:if="{{selectedAddressId === item.id}}" class="selected-icon">
+          <image class="selected-icon-img" src="/images/icons/check.svg" mode="aspectFit" />
+        </view>
       </view>
     </view>
   </view>
@@ -37,7 +39,10 @@
   <!-- 添加/编辑地址 -->
   <view wx:if="{{mode === 'add' || mode === 'edit'}}" class="address-form">
     <view class="form-header">
-      <view class="back-btn" bindtap="goBack">← 返回</view>
+      <view class="back-btn" bindtap="goBack">
+        <image class="back-icon-img" src="/images/icons/arrow-left.svg" mode="aspectFit" />
+        <text>返回</text>
+      </view>
       <text class="form-title">{{mode === 'add' ? '新增地址' : '编辑地址'}}</text>
     </view>
     
@@ -68,21 +73,21 @@
       <view class="form-label">收货地址</view>
       <view class="location-picker" bindtap="chooseLocation">
         <text class="location-text">{{form.address || '点击选择收货地址'}}</text>
-        <text class="location-icon">📍</text>
+        <image class="location-icon-img" src="/images/icons/location-green.svg" mode="aspectFit" />
       </view>
     </view>
     
     <view class="form-group default-switch">
       <view class="form-label">设为默认地址</view>
-      <view 
-        class="switch-btn {{form.is_default ? 'active' : ''}}" 
+      <view
+        class="switch-btn {{form.is_default ? 'active' : ''}}"
         bindtap="toggleDefault"
       >
-        <view wx:if="{{form.is_default}}" class="switch-dot"></view>
+        <view class="switch-dot"></view>
       </view>
     </view>
     
-    <view class="save-btn" bindtap="saveAddress">
+    <view class="save-btn" hover-class="btn-primary-hover" bindtap="saveAddress">
       保存地址
     </view>
   </view>

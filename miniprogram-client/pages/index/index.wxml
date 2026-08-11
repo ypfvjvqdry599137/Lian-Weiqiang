@@ -2,21 +2,31 @@
   <!-- 顶部搜索栏和地址 -->
   <view class="header">
     <view class="address" bindtap="goToSelectAddress">
-      <text class="address-icon">📍</text>
+      <image class="address-icon" src="/images/icons/location.svg" />
       <view class="address-text">
         <text class="address-name" wx:if="{{selectedAddress}}">{{selectedAddress.receiver_name}} {{selectedAddress.receiver_phone}}</text>
         <text class="address-name" wx:else>请选择收货地址</text>
         <text class="address-detail" wx:if="{{selectedAddress}}">{{selectedAddress.address}}</text>
       </view>
-      <text class="arrow">▼</text>
+      <image class="arrow-icon" src="/images/icons/arrow-down-white.svg" />
     </view>
     <view class="search" bindtap="focusSearch">
-      <text class="search-icon">🔍</text>
-      <text class="search-placeholder">搜索新鲜食材</text>
+      <image class="search-icon" src="/images/icons/search.svg" />
+      <input
+        class="search-input"
+        value="{{searchKeyword}}"
+        placeholder="搜索鲜食材"
+        placeholder-class="search-placeholder"
+        confirm-type="search"
+        focus="{{searchFocused}}"
+        bindinput="onSearchInput"
+        bindconfirm="onSearchConfirm"
+        bindblur="onSearchBlur"
+      />
     </view>
   </view>
 
-  <!-- 轮播图Banner -->
+  <!-- 轮播图 banner -->
   <swiper class="banner" indicator-dots autoplay circular interval="3000">
     <swiper-item>
       <view class="banner-item banner-1">
@@ -37,31 +47,35 @@
 
   <!-- 快捷分类导航 -->
   <view class="quick-nav">
-    <view class="nav-item" wx:for="{{quickNavItems}}" wx:key="id" bindtap="goToCategory" data-id="{{item.id}}">
-      <view class="nav-icon" style="background: {{item.bg}}">{{item.icon}}</view>
+    <view class="nav-item" wx:for="{{quickNavItems}}" wx:key="id" hover-class="nav-item-hover" bindtap="goToCategory" data-id="{{item.id}}">
+      <view class="quick-nav-icon" style="background: {{item.bg}}">
+        <image class="quick-nav-icon-img" src="{{item.icon}}" mode="aspectFit" />
+      </view>
       <text class="nav-name">{{item.name}}</text>
     </view>
   </view>
 
   <!-- 限时特惠区域 -->
-  <view class="section">
+  <view class="section" wx:if="{{!searchKeyword && flashProducts.length > 0}}">
     <view class="section-header">
       <view class="section-title">
-        <text class="title-icon">🔥</text>
+        <image class="title-icon" src="/images/icons/fire.svg" />
         <text class="title-text">限时特惠</text>
       </view>
       <text class="more" bindtap="goToCategory">更多 ></text>
     </view>
     <scroll-view class="flash-list" scroll-x show-scrollbar="{{false}}">
-      <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
+      <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="flash-img">
           <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="img" />
-          <view wx:else class="img-placeholder">🥬</view>
+          <view wx:else class="img-placeholder">
+            <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
+          </view>
         </view>
         <view class="flash-info">
           <text class="flash-name">{{item.name}}</text>
           <view class="flash-price">
-            <text class="price">¥{{item.price}}</text>
+            <text class="price">￥{{item.price}}</text>
             <text class="unit">/ {{item.unit}}</text>
           </view>
         </view>
@@ -69,58 +83,75 @@
     </scroll-view>
   </view>
 
-  <!-- 推荐商品 -->
-  <view class="section">
+  <!-- 加载中 / 推荐商品 / 空状态 -->
+  <view class="loading-wrap" wx:if="{{loading && products.length === 0}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">正在加载新鲜食材...</text>
+  </view>
+  <view class="section" wx:elif="{{displayProducts.length > 0}}">
     <view class="section-header">
       <view class="section-title">
-        <text class="title-icon">⭐</text>
-        <text class="title-text">为您推荐</text>
+        <image class="title-icon" src="/images/icons/star.svg" />
+        <text class="title-text">{{searchKeyword ? '搜索结果' : '为您推荐'}}</text>
       </view>
     </view>
     <view class="product-grid">
-      <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
+      <view class="product-card" wx:for="{{displayProducts}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="product-image">
           <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="product-img" />
-          <view wx:else class="product-img product-placeholder">🥬</view>
+          <view wx:else class="product-img product-placeholder">
+            <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
+          </view>
         </view>
         <view class="product-info">
           <text class="product-name">{{item.name}}</text>
           <text class="product-desc">{{item.description || '新鲜直达'}}</text>
           <view class="product-bottom">
             <view class="price-box">
-              <text class="price">¥{{item.price}}</text>
+              <text class="price">￥{{item.price}}</text>
               <text class="unit">/ {{item.unit}}</text>
             </view>
-            <view class="add-btn" catchtap="addToCart" data-id="{{item.id}}">
-              <text class="add-icon">+</text>
+            <view class="add-btn" hover-class="add-btn-hover" catchtap="addToCart" data-id="{{item.id}}" data-has-processing="{{item.has_processing_options}}">
+              <image class="add-btn-icon" src="/images/icons/plus.svg" mode="aspectFit" />
             </view>
           </view>
         </view>
       </view>
     </view>
   </view>
+  <view class="empty-state" wx:else>
+    <image class="empty-state-icon" src="/images/icons/empty-product.svg" mode="aspectFit" />
+    <text class="empty-state-text">{{searchKeyword ? '没有找到相关商品' : '暂无商品，稍后再来看看吧'}}</text>
+  </view>
 
-  <!-- 空状态 -->
-  <view class="empty" wx:if="{{products.length === 0 && !loading}}">
-    <text>暂无商品</text>
+  <!-- 购物车悬浮条 -->
+  <view class="cart-bar" wx:if="{{cartCount > 0}}" hover-class="cart-bar-hover" bindtap="goToCheckout">
+    <view class="cart-bar-cart" catchtap="goToCart" hover-class="cart-bar-cart-hover">
+      <image class="cart-bar-icon" src="/images/icons/cart-white.svg" />
+      <view class="cart-bar-badge">{{cartCount}}</view>
+    </view>
+    <view class="cart-bar-info">
+      <text class="cart-bar-amount">￥{{cartTotalPrice}}</text>
+    </view>
+    <view class="cart-bar-action">去结算</view>
   </view>
 
   <!-- 底部导航栏 -->
   <view class="bottom-nav">
     <view class="bottom-nav-item active" bindtap="goToIndex">
-      <text class="nav-icon">🏠</text>
+      <image class="nav-icon-img" src="/images/icons/home-active.svg" />
       <text class="nav-text">首页</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToCategory">
-      <text class="nav-icon">📦</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToCategory">
+      <image class="nav-icon-img" src="/images/icons/category.svg" />
       <text class="nav-text">分类</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToCart">
-      <text class="nav-icon">🛒</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToCart">
+      <image class="nav-icon-img" src="/images/icons/cart.svg" />
       <text class="nav-text">购物车</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToOrders">
-      <text class="nav-icon">👤</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToOrders">
+      <image class="nav-icon-img" src="/images/icons/user.svg" />
       <text class="nav-text">我的</text>
     </view>
   </view>

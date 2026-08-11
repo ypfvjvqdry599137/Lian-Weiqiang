@@ -211,6 +211,9 @@ class Product(db.Model):
     images = db.Column(db.Text, nullable=True, comment='商品图片列表(JSON格式)')
     unit = db.Column(db.String(20), nullable=False, default='份', comment='商品单位（份、斤、个等）')
     specs = db.Column(db.Text, nullable=True, comment='商品规格（JSON格式，支持多规格）')
+    is_preorder = db.Column(db.Boolean, default=False, comment='是否预定商品')
+    preorder_note = db.Column(db.String(255), nullable=True, comment='预定说明')
+    processing_options = db.Column(db.Text, nullable=True, comment='加工选项（JSON数组）')
     is_active = db.Column(db.Boolean, default=True, comment='是否上架')
     is_recommend = db.Column(db.Boolean, default=False, comment='是否推荐')
     sort_order = db.Column(db.Integer, default=0, comment='排序权重')
@@ -266,6 +269,7 @@ class Cart(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='用户ID')
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False, comment='商品ID')
     quantity = db.Column(db.Integer, nullable=False, default=1, comment='数量')
+    processing_option = db.Column(db.String(100), nullable=True, comment='加工选项')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
 
@@ -317,7 +321,9 @@ class OrderItem(db.Model):
     product_image = db.Column(db.String(500), nullable=True, comment='商品图片')
     price = db.Column(db.Numeric(10, 2), nullable=False, comment='商品价格')
     quantity = db.Column(db.Integer, nullable=False, default=1, comment='数量')
-    unit = db.Column(db.String(20), nullable=False, default='份', comment='单位')
+    unit = db.Column(db.String(20), nullable=False, default='件', comment='单位')
+    processing_option = db.Column(db.String(100), nullable=True, comment='加工选项')
+    is_preorder = db.Column(db.Boolean, default=False, comment='是否预定商品')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
 
     # 关联

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <circle cx="12" cy="12" r="11" fill="#FFF8E1"/>
+  <g transform="translate(12 12)">
+    <!-- 碗身 -->
+    <path d="M -7 -2 L 7 -2 L 6 5 C 6 6 5 7 4 7 L -4 7 C -5 7 -6 6 -6 5 Z" fill="#FFB74D" stroke="#E65100" stroke-width="0.4"/>
+    <!-- 碗口 -->
+    <ellipse cx="0" cy="-2" rx="7" ry="1.5" fill="#FFA726" stroke="#E65100" stroke-width="0.4"/>
+    <!-- 米粒 -->
+    <ellipse cx="-3" cy="-3.5" rx="1" ry="0.4" fill="#FFFFFF" transform="rotate(-30 -3 -3.5)"/>
+    <ellipse cx="0" cy="-4" rx="1" ry="0.4" fill="#FFFFFF"/>
+    <ellipse cx="3" cy="-3.5" rx="1" ry="0.4" fill="#FFFFFF" transform="rotate(30 3 -3.5)"/>
+    <ellipse cx="-1.5" cy="-4.5" rx="0.8" ry="0.3" fill="#FFFFFF"/>
+    <ellipse cx="1.5" cy="-4.5" rx="0.8" ry="0.3" fill="#FFFFFF"/>
+    <!-- 蒸汽 -->
+    <path d="M -3 -6 Q -2 -7 -3 -8 Q -4 -9 -3 -10" stroke="#B0BEC5" stroke-width="0.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 0 -6 Q 1 -7 0 -8 Q -1 -9 0 -10" stroke="#B0BEC5" stroke-width="0.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 3 -6 Q 4 -7 3 -8 Q 2 -9 3 -10" stroke="#B0BEC5" stroke-width="0.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  </g>
+</svg>

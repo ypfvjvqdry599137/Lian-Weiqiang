@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <circle cx="12" cy="12" r="11" fill="#FFF3E0"/>
+  <g transform="translate(12 12)">
+    <!-- 苹果 -->
+    <path d="M 0 -4 C -6 -4 -7 2 -6 5 C -5 8 -2 9 0 8 C 2 9 5 8 6 5 C 7 2 6 -4 0 -4 Z" fill="#EF5350" stroke="#E53935" stroke-width="0.4"/>
+    <!-- 叶子 -->
+    <path d="M 0 -4 Q 2 -6 4 -6 Q 4 -4 0 -4 Z" fill="#66BB6A" stroke="#43A047" stroke-width="0.3"/>
+    <!-- 梗 -->
+    <line x1="0" y1="-4" x2="0" y2="-5.5" stroke="#5D4037" stroke-width="0.6" stroke-linecap="round"/>
+    <!-- 高光 -->
+    <ellipse cx="-2.5" cy="-1" rx="0.8" ry="1.2" fill="#FFFFFF" opacity="0.6"/>
+  </g>
+</svg>

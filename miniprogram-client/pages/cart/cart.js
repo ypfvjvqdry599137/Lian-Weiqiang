@@ -92,7 +92,9 @@ Page({
   },
 
   goShopping() {
-    wx.navigateBack({ delta: 1 });
+    wx.redirectTo({
+      url: '/pages/index/index'
+    });
   },
 
   goCheckout() {

@@ -2,10 +2,11 @@
   <view class="category-wrapper">
     <!-- 左侧分类导航 -->
     <scroll-view class="category-nav" scroll-y="true">
-      <view 
-        class="nav-item {{index === currentCategory ? 'active' : ''}}" 
-        wx:for="{{categories}}" 
+      <view
+        class="nav-item {{index === currentCategory ? 'active' : ''}}"
+        wx:for="{{categories}}"
         wx:key="id"
+        hover-class="cat-nav-hover"
         bindtap="selectCategory"
         data-index="{{index}}"
       >
@@ -15,34 +16,42 @@
 
     <!-- 右侧商品列表 -->
     <scroll-view class="product-wrapper" scroll-y="true">
-      <view class="product-card" wx:for="{{products}}" wx:key="id" bindtap="goToDetail" data-id="{{item.id}}">
+      <view class="product-card" wx:for="{{products}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
         <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="product-img" />
-        <view wx:else class="product-img product-placeholder">🥬</view>
+        <view wx:else class="product-img product-placeholder">
+          <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
+        </view>
         <view class="product-info">
           <view class="product-name">{{item.name}}</view>
           <view class="price">¥{{item.price}}/{{item.unit}}</view>
-          <view class="add-btn" catchtap="addToCart" data-id="{{item.id}}">+</view>
+          <view class="add-btn" hover-class="add-btn-hover" catchtap="addToCart" data-id="{{item.id}}" data-has-processing="{{item.has_processing_options}}">
+            <image class="add-btn-icon" src="/images/icons/plus.svg" mode="aspectFit" />
+          </view>
         </view>
+      </view>
+      <view class="empty-state" wx:if="{{products.length === 0}}">
+        <image class="empty-state-icon" src="/images/icons/empty-box.svg" mode="aspectFit" />
+        <text class="empty-state-text">该分类暂无商品</text>
       </view>
     </scroll-view>
   </view>
 
   <!-- 底部导航栏 -->
   <view class="bottom-nav">
-    <view class="bottom-nav-item" bindtap="goToIndex">
-      <text class="nav-icon">🏠</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToIndex">
+      <image class="nav-icon-img" src="/images/icons/home.svg" />
       <text class="nav-text">首页</text>
     </view>
     <view class="bottom-nav-item active">
-      <text class="nav-icon">📦</text>
+      <image class="nav-icon-img" src="/images/icons/category-active.svg" />
       <text class="nav-text">分类</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToCart">
-      <text class="nav-icon">🛒</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToCart">
+      <image class="nav-icon-img" src="/images/icons/cart.svg" />
       <text class="nav-text">购物车</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToOrders">
-      <text class="nav-icon">👤</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToOrders">
+      <image class="nav-icon-img" src="/images/icons/user.svg" />
       <text class="nav-text">我的</text>
     </view>
   </view>

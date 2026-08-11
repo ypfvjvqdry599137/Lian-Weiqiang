@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 from extensions import db
+from product_features import normalize_text, product_feature_payload, serialize_processing_options
 from status_utils import (
     get_order_status_text,
     get_supplier_order_status_text,
@@ -1531,6 +1532,9 @@ def create_product():
         images=data.get('images'),
         unit=data.get('unit', '份'),
         specs=data.get('specs'),
+        is_preorder=bool(data.get('is_preorder', False)),
+        preorder_note=normalize_text(data.get('preorder_note')),
+        processing_options=serialize_processing_options(data.get('processing_options')),
         is_active=data.get('is_active', True),
         is_recommend=data.get('is_recommend', False),
         sort_order=data.get('sort_order', 0)
@@ -1582,6 +1586,7 @@ def get_products():
             'is_recommend': product.is_recommend,
             'sort_order': product.sort_order,
             'sales_count': product.sales_count,
+            **product_feature_payload(product),
             'total_stock': product.stock.total_stock if product.stock else 0,
             'warning_stock': product.stock.warning_stock if product.stock else 10,
             'available_stock': (product.stock.total_stock - product.stock.lock_stock) if product.stock else 0
@@ -1603,6 +1608,7 @@ def get_product(product_id):
         'images': product.images,
         'unit': product.unit,
         'specs': product.specs,
+        **product_feature_payload(product),
         'is_active': product.is_active,
         'is_recommend': product.is_recommend,
         'sort_order': product.sort_order,
@@ -1630,6 +1636,11 @@ def update_product(product_id):
     product.images = data.get('images', product.images)
     product.unit = data.get('unit', product.unit)
     product.specs = data.get('specs', product.specs)
+    product.is_preorder = data.get('is_preorder', product.is_preorder)
+    if 'preorder_note' in data:
+        product.preorder_note = normalize_text(data.get('preorder_note'))
+    if 'processing_options' in data:
+        product.processing_options = serialize_processing_options(data.get('processing_options'))
     product.is_active = data.get('is_active', product.is_active)
     product.is_recommend = data.get('is_recommend', product.is_recommend)
     product.sort_order = data.get('sort_order', product.sort_order)

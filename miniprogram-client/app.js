@@ -2,6 +2,7 @@ App({
   globalData: {
     userInfo: null,
     cartCount: 0,
+    cartTotalPrice: '0.00',
     selectedAddress: null, // 默认选中的地址
     baseUrl: 'https://xianpeiju.site' // 您的域名
   },
@@ -17,8 +18,8 @@ App({
     }
   },
 
-  updateCartCount() {
-    // 更新购物车数量
+  updateCartCount(callback) {
+    // 更新购物车数量和金额
     this.request({
       url: '/client/cart',
       success: (res) => {
@@ -28,7 +29,13 @@ App({
             count += item.quantity;
           });
           this.globalData.cartCount = count;
-          // 可以在这里设置tabbar的badge
+          this.globalData.cartTotalPrice = res.data.total_price || '0.00';
+          if (callback) {
+            callback({
+              count: this.globalData.cartCount,
+              totalPrice: this.globalData.cartTotalPrice
+            });
+          }
         }
       }
     });

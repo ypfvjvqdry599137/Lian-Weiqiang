@@ -5,7 +5,10 @@ Page({
     productId: null,
     product: null,
     quantity: 1,
-    loading: false
+    loading: false,
+    processingOptions: [],
+    selectedProcessingOption: '',
+    hasProcessingOptions: false
   },
 
   onLoad(options) {
@@ -20,10 +23,19 @@ Page({
   loadProduct(productId) {
     this.setData({ loading: true });
     app.request({
-      url: `/client/products/${productId}`,
+      url: '/client/products/' + productId,
       success: (res) => {
         if (res.data && res.data.id) {
-          this.setData({ product: res.data });
+          const processingOptions = Array.isArray(res.data.processing_options)
+            ? res.data.processing_options
+            : [];
+
+          this.setData({
+            product: res.data,
+            processingOptions: processingOptions,
+            hasProcessingOptions: processingOptions.length > 0,
+            selectedProcessingOption: processingOptions[0] || ''
+          });
           wx.setNavigationBarTitle({ title: res.data.name || '商品详情' });
         } else {
           wx.showToast({ title: '商品加载失败', icon: 'none' });
@@ -34,6 +46,11 @@ Page({
         this.setData({ loading: false });
       }
     });
+  },
+
+  selectProcessingOption(e) {
+    const option = e.currentTarget.dataset.option || '';
+    this.setData({ selectedProcessingOption: option });
   },
 
   decreaseQuantity() {
@@ -50,15 +67,29 @@ Page({
     this.setData({ quantity: this.data.quantity + 1 });
   },
 
+  getProcessingOption() {
+    if (!this.data.hasProcessingOptions) {
+      return '';
+    }
+    return this.data.selectedProcessingOption || this.data.processingOptions[0] || '';
+  },
+
   addToCart() {
     if (!this.data.product) return;
+
+    const processingOption = this.getProcessingOption();
+    if (this.data.hasProcessingOptions && !processingOption) {
+      wx.showToast({ title: '请选择加工方式', icon: 'none' });
+      return;
+    }
 
     app.request({
       url: '/client/cart',
       method: 'POST',
       data: {
         product_id: this.data.product.id,
-        quantity: this.data.quantity
+        quantity: this.data.quantity,
+        processing_option: processingOption
       },
       success: () => {
         wx.showToast({ title: '已加入购物车', icon: 'success' });
@@ -70,12 +101,19 @@ Page({
   buyNow() {
     if (!this.data.product) return;
 
+    const processingOption = this.getProcessingOption();
+    if (this.data.hasProcessingOptions && !processingOption) {
+      wx.showToast({ title: '请选择加工方式', icon: 'none' });
+      return;
+    }
+
     app.request({
       url: '/client/cart',
       method: 'POST',
       data: {
         product_id: this.data.product.id,
-        quantity: this.data.quantity
+        quantity: this.data.quantity,
+        processing_option: processingOption
       },
       success: () => {
         app.updateCartCount();
@@ -89,8 +127,8 @@ Page({
   onShareAppMessage() {
     const product = this.data.product || {};
     return {
-      title: product.name || '鲜配居商品',
-      path: `/pages/product/product?id=${this.data.productId}`
+      title: product.name || '鲜厢居商品',
+      path: '/pages/product/product?id=' + this.data.productId
     };
   }
-})
+});

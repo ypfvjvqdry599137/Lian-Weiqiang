@@ -1,6 +1,9 @@
 <view class="container" wx:if="{{order}}">
   <view class="nav-bar">
-    <view class="nav-item back-btn" bindtap="goBack">返回</view>
+    <view class="nav-item back-btn" bindtap="goBack">
+      <image class="back-icon-img" src="/images/icons/arrow-left.svg" mode="aspectFit" />
+      <text>返回</text>
+    </view>
     <view class="nav-title">订单详情</view>
   </view>
 
@@ -43,10 +46,15 @@
     <view class="card-title">商品清单</view>
     <view class="product-item" wx:for="{{order.items}}" wx:key="product_name">
       <image wx:if="{{item.product_image}}" src="{{item.product_image}}" class="product-img" mode="aspectFill" />
-      <view wx:else class="product-placeholder">鲜</view>
+      <view wx:else class="product-placeholder">
+        <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
+      </view>
       <view class="product-info">
         <view class="product-name">{{item.product_name}}</view>
-        <view class="product-meta">
+        <view class="product-extra" wx:if="{{item.processing_option || item.is_preorder}}">
+          <text wx:if="{{item.processing_option}}" style="display:block;color:#1e88e5;font-size:22rpx;margin-top:6rpx;">加工：{{item.processing_option}}</text>
+          <text wx:if="{{item.is_preorder}}" style="display:block;color:#e67e22;font-size:22rpx;margin-top:4rpx;">预定商品</text>
+        </view>        <view class="product-meta">
           <text class="price">¥{{item.price}}</text>
           <text class="quantity">x {{item.quantity}}{{item.unit}}</text>
         </view>

@@ -53,6 +53,15 @@ Page({
 
   addToCart(e) {
     const productId = e.currentTarget.dataset.id;
+    const hasProcessing = e.currentTarget.dataset.hasProcessing === true || e.currentTarget.dataset.hasProcessing === 'true';
+
+    if (hasProcessing) {
+      wx.navigateTo({
+        url: '/pages/product/product?id=' + productId
+      });
+      return;
+    }
+
     app.request({
       url: '/client/cart',
       method: 'POST',
@@ -66,7 +75,6 @@ Page({
       }
     });
   },
-
   goToDetail(e) {
     const productId = e.currentTarget.dataset.id;
     wx.navigateTo({

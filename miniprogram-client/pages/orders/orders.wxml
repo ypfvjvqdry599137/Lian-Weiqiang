@@ -17,7 +17,8 @@
         <view class="product-mini" wx:for="{{item.items}}" wx:key="product_name" wx:for-item="product">
           <view class="product-name">{{product.product_name}}</view>
           <view class="product-qty">x{{product.quantity}}</view>
-        </view>
+        <text wx:if="{{product.processing_option}}" style="display:block;color:#1e88e5;font-size:22rpx;margin-top:4rpx;">加工：{{product.processing_option}}</text>
+        <text wx:if="{{product.is_preorder}}" style="display:block;color:#e67e22;font-size:22rpx;margin-top:2rpx;">预定商品</text>        </view>
       </view>
 
       <view class="order-footer">
@@ -31,25 +32,27 @@
     </view>
   </view>
 
-  <view class="empty" wx:if="{{orders.length === 0}}">
-    <text>暂无订单</text>
+  <view class="empty-state" wx:if="{{orders.length === 0}}">
+    <image class="empty-state-icon" src="/images/icons/empty-order.svg" mode="aspectFit" />
+    <text class="empty-state-text">暂无订单</text>
+    <button class="empty-state-btn" hover-class="btn-primary-hover" bindtap="goToIndex">去下单</button>
   </view>
 
   <view class="bottom-nav">
-    <view class="bottom-nav-item" bindtap="goToIndex">
-      <text class="nav-icon">🏠</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToIndex">
+      <image class="nav-icon-img" src="/images/icons/home.svg" />
       <text class="nav-text">首页</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToCategory">
-      <text class="nav-icon">📦</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToCategory">
+      <image class="nav-icon-img" src="/images/icons/category.svg" />
       <text class="nav-text">分类</text>
     </view>
-    <view class="bottom-nav-item" bindtap="goToCart">
-      <text class="nav-icon">🛒</text>
+    <view class="bottom-nav-item" hover-class="bottom-nav-hover" bindtap="goToCart">
+      <image class="nav-icon-img" src="/images/icons/cart.svg" />
       <text class="nav-text">购物车</text>
     </view>
     <view class="bottom-nav-item active">
-      <text class="nav-icon">👤</text>
+      <image class="nav-icon-img" src="/images/icons/user-active.svg" />
       <text class="nav-text">我的</text>
     </view>
   </view>

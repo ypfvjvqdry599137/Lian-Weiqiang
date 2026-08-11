@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+  <circle cx="12" cy="12" r="11" fill="#E1F5FE"/>
+  <g transform="translate(12 12)">
+    <!-- 鱼身 -->
+    <path d="M -7 0 C -7 -3 -4 -5 0 -5 C 4 -5 7 -3 7 0 C 7 3 4 5 0 5 C -4 5 -7 3 -7 0 Z" fill="#4FC3F7" stroke="#0288D1" stroke-width="0.4"/>
+    <!-- 尾巴 -->
+    <path d="M -7 0 L -10 -4 L -9 0 L -10 4 Z" fill="#0288D1"/>
+    <!-- 眼睛 -->
+    <circle cx="4" cy="-1.5" r="0.8" fill="#FFFFFF" stroke="#01579B" stroke-width="0.2"/>
+    <circle cx="4.2" cy="-1.5" r="0.4" fill="#01579B"/>
+    <!-- 鳃 -->
+    <path d="M 2 -4 Q 1 0 2 4" stroke="#01579B" stroke-width="0.4" fill="none" stroke-linecap="round"/>
+    <!-- 鳍 -->
+    <path d="M -2 1 Q 0 4 2 1" stroke="#01579B" stroke-width="0.4" fill="none" stroke-linecap="round"/>
+    <path d="M -2 -1 Q 0 -4 2 -1" stroke="#01579B" stroke-width="0.4" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
