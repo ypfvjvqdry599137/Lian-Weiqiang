@@ -209,19 +209,33 @@
   padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
   background: #fff;
   box-shadow: 0 -4rpx 20rpx rgba(0,0,0,0.08);
+  display: flex;
+  gap: 20rpx;
 }
 
-.cancel-order-btn {
+.cancel-order-btn,
+.continue-pay-btn {
+  flex: 1;
   height: 82rpx;
   line-height: 82rpx;
-  border: 1rpx solid #e64340;
   border-radius: 42rpx;
-  background: #fff;
-  color: #e64340;
   font-size: 30rpx;
 }
 
-.cancel-order-btn::after {
+.cancel-order-btn {
+  border: 1rpx solid #e64340;
+  background: #fff;
+  color: #e64340;
+}
+
+.continue-pay-btn {
+  border: none;
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: #fff;
+}
+
+.cancel-order-btn::after,
+.continue-pay-btn::after {
   border: none;
 }
 

@@ -738,6 +738,7 @@ def get_orders():
             'order_status': order.order_status,
             'status_text': status_text,
             'can_cancel': can_user_cancel_order(order),
+            'can_pay': order.order_status == 10,
             'total_amount': str(order.total_amount),
             'delivery_fee': str(order.delivery_fee),
             'final_amount': str(order.final_amount),
@@ -773,6 +774,7 @@ def get_order_detail(order_sn):
         'order_status': order.order_status,
         'status_text': status_text,
         'can_cancel': can_user_cancel_order(order),
+        'can_pay': order.order_status == 10,
         'total_amount': str(order.total_amount),
         'delivery_fee': str(order.delivery_fee),
         'final_amount': str(order.final_amount),
@@ -1013,3 +1015,5 @@ def cancel_order(order_sn):
     order.order_status = 60
     db.session.commit()
     return jsonify({'message': '订单已取消'})
+
+

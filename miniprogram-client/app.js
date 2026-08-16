@@ -82,6 +82,47 @@ App({
     return this._wechatLoginPromise;
   },
 
+  async payWechatOrder(orderSn) {
+    wx.showLoading({ title: '支付中...' });
+
+    try {
+      await this.ensureWechatUser();
+
+      const payment = await new Promise((resolve, reject) => {
+        this.request({
+          url: `/client/orders/${orderSn}/wechat-pay`,
+          method: 'POST',
+          success: (res) => {
+            const data = res.data || {};
+            resolve(data.payment || data);
+          },
+          fail: reject
+        });
+      });
+
+      await new Promise((resolve, reject) => {
+        wx.requestPayment({
+          ...payment,
+          success: resolve,
+          fail: reject
+        });
+      });
+
+      return await new Promise((resolve, reject) => {
+        this.request({
+          url: `/client/orders/${orderSn}/pay`,
+          method: 'POST',
+          success: (res) => {
+            resolve(res.data || res);
+          },
+          fail: reject
+        });
+      });
+    } finally {
+      wx.hideLoading();
+    }
+  },
+
   request(options) {
     const baseUrl = this.globalData.baseUrl;
     wx.request({

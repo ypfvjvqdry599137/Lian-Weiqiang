@@ -31,6 +31,32 @@ Page({
     });
   },
 
+  async continuePay() {
+    const order = this.data.order;
+    if (!order || !order.can_pay) {
+      wx.showToast({ title: '当前订单不能支付', icon: 'none' });
+      return;
+    }
+
+    try {
+      await app.payWechatOrder(order.order_sn);
+      wx.showToast({
+        title: '支付成功',
+        icon: 'success'
+      });
+      setTimeout(() => {
+        this.loadOrderDetail(order.order_sn);
+      }, 300);
+    } catch (error) {
+      const errorMessage = error && error.errMsg ? String(error.errMsg) : '';
+      if (errorMessage.includes('cancel')) {
+        wx.showToast({ title: '已取消支付', icon: 'none' });
+        return;
+      }
+      wx.showToast({ title: '支付失败', icon: 'none' });
+    }
+  },
+
   cancelOrder() {
     const order = this.data.order;
     if (!order || !order.can_cancel) {

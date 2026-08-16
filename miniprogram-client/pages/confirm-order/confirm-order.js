@@ -199,43 +199,9 @@ Page({
   },
 
   async payOrder(orderSn) {
-    wx.showLoading({ title: '支付中...' });
-
     try {
-      if (typeof app.ensureWechatUser === 'function') {
-        await app.ensureWechatUser();
-      }
+      await app.payWechatOrder(orderSn);
 
-      const payment = await new Promise((resolve, reject) => {
-        app.request({
-          url: '/client/orders/' + orderSn + '/wechat-pay',
-          method: 'POST',
-          success: (res) => {
-            const data = res.data || {};
-            resolve(data.payment || data);
-          },
-          fail: reject
-        });
-      });
-
-      await new Promise((resolve, reject) => {
-        wx.requestPayment({
-          ...payment,
-          success: resolve,
-          fail: reject
-        });
-      });
-
-      await new Promise((resolve, reject) => {
-        app.request({
-          url: '/client/orders/' + orderSn + '/pay',
-          method: 'POST',
-          success: resolve,
-          fail: reject
-        });
-      });
-
-      wx.hideLoading();
       wx.showToast({
         title: '支付成功',
         icon: 'success',
@@ -247,7 +213,6 @@ Page({
         });
       }, 2000);
     } catch (error) {
-      wx.hideLoading();
       const errorMessage = error && error.errMsg ? String(error.errMsg) : '';
       if (errorMessage.includes('cancel')) {
         wx.showToast({

@@ -280,6 +280,17 @@ class WeChatPayTestCase(unittest.TestCase):
         self.assertEqual(payload['prepay_id'], 'prepay-test-001')
         self.assertEqual(payload['payment']['package'], 'prepay_id=prepay-test-001')
 
+    def test_order_detail_and_list_include_can_pay_flag(self):
+        list_response = self.client.get('/client/orders')
+        self.assertEqual(list_response.status_code, 200)
+        list_payload = list_response.get_json()
+        self.assertTrue(list_payload['orders'][0]['can_pay'])
+
+        detail_response = self.client.get(f'/client/orders/{self.order.order_sn}')
+        self.assertEqual(detail_response.status_code, 200)
+        detail_payload = detail_response.get_json()
+        self.assertTrue(detail_payload['can_pay'])
+
 
 if __name__ == '__main__':
     unittest.main()

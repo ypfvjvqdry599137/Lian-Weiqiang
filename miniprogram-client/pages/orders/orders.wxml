@@ -26,8 +26,9 @@
         <text class="order-price">合计：¥{{item.final_amount || item.total_amount}}</text>
       </view>
 
-      <view class="order-actions" wx:if="{{item.can_cancel}}">
-        <button class="cancel-btn" catchtap="cancelOrder" data-sn="{{item.order_sn}}">取消订单</button>
+      <view class="order-actions" wx:if="{{item.can_cancel || item.can_pay}}">
+        <button wx:if="{{item.can_pay}}" class="pay-btn" catchtap="continuePay" data-sn="{{item.order_sn}}">继续支付</button>
+        <button wx:if="{{item.can_cancel}}" class="cancel-btn" catchtap="cancelOrder" data-sn="{{item.order_sn}}">取消订单</button>
       </view>
     </view>
   </view>

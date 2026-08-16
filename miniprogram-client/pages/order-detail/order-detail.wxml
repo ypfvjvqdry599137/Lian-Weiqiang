@@ -10,7 +10,8 @@
   <view class="status-section status-bg-{{order.order_status}}">
     <view class="status-text">{{order.status_text}}</view>
     <view class="status-desc">
-      <block wx:if="{{order.can_cancel}}">如需调整订单，可在商家配货前取消</block>
+      <block wx:if="{{order.can_pay}}">订单尚未支付，可继续支付</block>
+      <block wx:elif="{{order.can_cancel}}">如需调整订单，可在商家配货前取消</block>
       <block wx:else>订单状态已更新</block>
     </view>
   </view>
@@ -75,8 +76,9 @@
     </view>
   </view>
 
-  <view class="detail-actions" wx:if="{{order.can_cancel}}">
-    <button class="cancel-order-btn" bindtap="cancelOrder">取消订单</button>
+  <view class="detail-actions" wx:if="{{order.can_pay || order.can_cancel}}">
+    <button wx:if="{{order.can_pay}}" class="continue-pay-btn" bindtap="continuePay">继续支付</button>
+    <button wx:if="{{order.can_cancel}}" class="cancel-order-btn" bindtap="cancelOrder">取消订单</button>
   </view>
 </view>
 
