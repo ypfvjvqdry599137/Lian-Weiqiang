@@ -50,7 +50,9 @@ const wx = {
   removeStorageSync: jest.fn(),
   setNavigationBarTitle: jest.fn(),
   request: jest.fn(),
-  chooseLocation: jest.fn()
+  chooseLocation: jest.fn(),
+  requestPayment: jest.fn(),
+  login: jest.fn()
 };
 
 global.wx = wx;

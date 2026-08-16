@@ -19,7 +19,7 @@ App({
   },
 
   updateCartCount(callback) {
-    // 更新购物车数量和金额
+    // ???????????????
     this.request({
       url: '/client/cart',
       success: (res) => {
@@ -39,6 +39,47 @@ App({
         }
       }
     });
+  },
+
+  ensureWechatUser() {
+    if (this.globalData.userInfo && this.globalData.userInfo.openid) {
+      return Promise.resolve(this.globalData.userInfo);
+    }
+
+    if (this._wechatLoginPromise) {
+      return this._wechatLoginPromise;
+    }
+
+    this._wechatLoginPromise = new Promise((resolve, reject) => {
+      wx.login({
+        success: (loginRes) => {
+          if (!loginRes || !loginRes.code) {
+            reject(new Error('微信登录失败'));
+            return;
+          }
+
+          this.request({
+            url: '/client/wechat/login',
+            method: 'POST',
+            data: {
+              code: loginRes.code
+            },
+            success: (res) => {
+              const user = res.data && res.data.user ? res.data.user : res.data;
+              this.globalData.userInfo = user;
+              wx.setStorageSync('userInfo', user);
+              resolve(user);
+            },
+            fail: reject
+          });
+        },
+        fail: reject
+      });
+    }).finally(() => {
+      this._wechatLoginPromise = null;
+    });
+
+    return this._wechatLoginPromise;
   },
 
   request(options) {

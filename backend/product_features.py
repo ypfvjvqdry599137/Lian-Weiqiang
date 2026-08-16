@@ -21,6 +21,13 @@ PRODUCT_FEATURE_COLUMNS = {
     ],
 }
 
+ORDER_PAYMENT_COLUMNS = {
+    'order_master': [
+        ('transaction_id', 'VARCHAR(100) DEFAULT NULL'),
+        ('paid_at', 'DATETIME DEFAULT NULL'),
+    ],
+}
+
 
 def normalize_text(value):
     if value is None:
@@ -107,7 +114,7 @@ def ensure_product_feature_columns():
         return []
 
     pending_sql = []
-    for table_name, columns in PRODUCT_FEATURE_COLUMNS.items():
+    for table_name, columns in {**PRODUCT_FEATURE_COLUMNS, **ORDER_PAYMENT_COLUMNS}.items():
         try:
             existing_columns = {column['name'] for column in inspector.get_columns(table_name)}
         except Exception:

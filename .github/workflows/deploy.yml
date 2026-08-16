@@ -16,25 +16,24 @@ jobs:
         env:
           PROJECT_DIR: ${{ secrets.PROJECT_DIR }}
           SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          TENCENT_MAP_KEY: ${{ secrets.TENCENT_MAP_KEY }}
-          TENCENT_MAP_JS_KEY: ${{ secrets.TENCENT_MAP_JS_KEY }}
-          TENCENT_MAP_SERVER_KEY: ${{ secrets.TENCENT_MAP_SERVER_KEY }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: PROJECT_DIR,SERVICE_NAME,DB_USER,DB_PASSWORD,DB_NAME,DB_HOST,TENCENT_MAP_KEY,TENCENT_MAP_JS_KEY,TENCENT_MAP_SERVER_KEY
+          envs: PROJECT_DIR,SERVICE_NAME
           script: |
             set -euo pipefail
 
             cd "$PROJECT_DIR"
             git fetch origin main
             git pull --ff-only origin main
+
+            if [ -f "$PROJECT_DIR/.env" ]; then
+              set -a
+              . "$PROJECT_DIR/.env"
+              set +a
+            fi
 
             cd backend
             if [ ! -d venv ]; then
@@ -43,25 +42,6 @@ jobs:
             . venv/bin/activate
             pip install -r requirements.txt
             cd ..
-
-            if [ -n "${TENCENT_MAP_KEY:-}" ] || [ -n "${TENCENT_MAP_JS_KEY:-}" ] || [ -n "${TENCENT_MAP_SERVER_KEY:-}" ]; then
-              ENV_FILE="$PROJECT_DIR/backend/.env"
-              TEMP_ENV="$(mktemp)"
-              if [ -f "$ENV_FILE" ]; then
-                grep -Ev '^(TENCENT_MAP_KEY|TENCENT_MAP_JS_KEY|TENCENT_MAP_SERVER_KEY)=' "$ENV_FILE" > "$TEMP_ENV" || true
-              fi
-              if [ -n "${TENCENT_MAP_KEY:-}" ]; then
-                printf 'TENCENT_MAP_KEY=%s\n' "$TENCENT_MAP_KEY" >> "$TEMP_ENV"
-              fi
-              if [ -n "${TENCENT_MAP_JS_KEY:-}" ]; then
-                printf 'TENCENT_MAP_JS_KEY=%s\n' "$TENCENT_MAP_JS_KEY" >> "$TEMP_ENV"
-              fi
-              if [ -n "${TENCENT_MAP_SERVER_KEY:-}" ]; then
-                printf 'TENCENT_MAP_SERVER_KEY=%s\n' "$TENCENT_MAP_SERVER_KEY" >> "$TEMP_ENV"
-              fi
-              install -m 600 "$TEMP_ENV" "$ENV_FILE"
-              rm -f "$TEMP_ENV"
-            fi
 
             if [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
               BACKUP_DIR="$PROJECT_DIR/backups/mysql"

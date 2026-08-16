@@ -28,6 +28,14 @@ class Config:
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or \
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
     PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL')
+    WECHAT_MINI_PROGRAM_APPID = os.environ.get('WECHAT_MINI_PROGRAM_APPID') or os.environ.get('WECHAT_APPID')
+    WECHAT_MINI_PROGRAM_SECRET = os.environ.get('WECHAT_MINI_PROGRAM_SECRET') or os.environ.get('WECHAT_APP_SECRET')
+    WECHAT_PAY_MCHID = os.environ.get('WECHAT_PAY_MCHID')
+    WECHAT_PAY_API_V3_KEY = os.environ.get('WECHAT_PAY_API_V3_KEY')
+    WECHAT_PAY_SERIAL_NO = os.environ.get('WECHAT_PAY_SERIAL_NO') or os.environ.get('WECHAT_PAY_CERT_SERIAL')
+    WECHAT_PAY_PRIVATE_KEY_PATH = os.environ.get('WECHAT_PAY_PRIVATE_KEY_PATH')
+    WECHAT_PAY_PRIVATE_KEY = os.environ.get('WECHAT_PAY_PRIVATE_KEY')
+    WECHAT_PAY_NOTIFY_URL = os.environ.get('WECHAT_PAY_NOTIFY_URL')
     TENCENT_MAP_KEY = os.environ.get('TENCENT_MAP_KEY')
     TENCENT_MAP_JS_KEY = os.environ.get('TENCENT_MAP_JS_KEY') or os.environ.get('TENCENT_MAP_WEB_KEY') or TENCENT_MAP_KEY
     TENCENT_MAP_SERVER_KEY = os.environ.get('TENCENT_MAP_SERVER_KEY') or TENCENT_MAP_KEY

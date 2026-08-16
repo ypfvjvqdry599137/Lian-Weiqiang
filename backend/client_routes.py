@@ -1,8 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from decimal import Decimal, ROUND_CEILING
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 from extensions import db
 from product_features import normalize_text, normalize_processing_options, product_feature_payload
@@ -784,63 +784,232 @@ def get_order_detail(order_sn):
         'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
     })
 
-@client_bp.route('/orders/<order_sn>/pay', methods=['POST'])
-def pay_order(order_sn):
-    from models import OrderMaster, Product
-    user = get_or_create_test_user()
-    order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
-    
-    if order.order_status != 10:
-        return jsonify({'message': '订单状态异常'}), 400
-    
-    order.order_status = 20  # 改为待配货
-    
-    # 扣减库存：锁定库存 -> 实际扣减
+def build_wechat_order_description(order):
+    names = [item.product_name for item in order.items if item.product_name]
+    if names:
+        return ('鲜配局订单：' + ' / '.join(names[:2]))[:127]
+    return f'鲜配局订单：{order.order_sn}'
+
+
+def mark_order_paid(order, transaction_id=None):
+    from models import Product
+
+    if order.order_status not in [10, 20]:
+        raise ValueError('订单状态异常')
+
+    if transaction_id and order.transaction_id != transaction_id:
+        order.transaction_id = transaction_id
+    if order.paid_at is None:
+        order.paid_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if order.order_status == 20:
+        return False
+
+    order.order_status = 20
+
     for item in order.items:
-        product = Product.query.get(item.product_id)
+        product = db.session.get(Product, item.product_id)
         if product and product.stock:
             product.stock.total_stock -= item.quantity
             product.stock.lock_stock -= item.quantity
             product.sales_count += item.quantity
-    
-    # 自动拆分为供应商备货单
+
+    split_order_to_supplier_orders(order.order_sn)
+    return True
+
+
+def finalize_paid_order(order, transaction_id=None):
     try:
-        split_order_to_supplier_orders(order_sn)
+        changed = mark_order_paid(order, transaction_id)
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'message': str(exc)}), 400
-    
+
     db.session.commit()
-    return jsonify({'message': '支付成功'})
+    return jsonify({
+        'message': '支付成功' if changed else '订单已支付',
+        'order_sn': order.order_sn,
+        'transaction_id': order.transaction_id,
+        'order_status': order.order_status
+    })
+
+
+@client_bp.route('/wechat/login', methods=['POST'])
+def wechat_login():
+    from models import User
+    from wechat_pay_support import exchange_code_for_openid, WeChatPayError
+
+    data = request.get_json() or {}
+    code = data.get('code')
+    if not code:
+        return jsonify({'message': '缺少微信登录 code'}), 400
+
+    try:
+        payload = exchange_code_for_openid(code)
+    except WeChatPayError as exc:
+        return jsonify({'message': str(exc)}), 400
+
+    openid = payload.get('openid')
+    user = User.query.filter_by(openid=openid).first()
+    if not user:
+        user = get_or_create_test_user()
+
+    user.openid = openid
+    db.session.commit()
+
+    return jsonify({
+        'message': '微信登录成功',
+        'user': {
+            'id': user.id,
+            'openid': user.openid,
+            'nickname': user.nickname,
+            'avatar': user.avatar
+        }
+    })
+
+
+@client_bp.route('/orders/<order_sn>/wechat-pay', methods=['POST'])
+def create_wechat_pay(order_sn):
+    from models import OrderMaster
+    from wechat_pay_support import create_jsapi_prepay, WeChatPayError
+
+    user = get_or_create_test_user()
+    order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
+
+    if order.order_status != 10:
+        return jsonify({'message': '只有待付款订单才能拉起微信支付'}), 400
+    if not user.openid:
+        return jsonify({'message': '请先完成微信登录'}), 400
+
+    try:
+        payment = create_jsapi_prepay(
+            order_sn=order.order_sn,
+            description=build_wechat_order_description(order),
+            amount=order.final_amount,
+            openid=user.openid
+        )
+    except WeChatPayError as exc:
+        return jsonify({'message': str(exc)}), 400
+
+    return jsonify({
+        'order_sn': order.order_sn,
+        'prepay_id': payment['prepay_id'],
+        'payment': payment['payment']
+    })
+
+
+@client_bp.route('/orders/<order_sn>/pay', methods=['POST'])
+def pay_order(order_sn):
+    from models import OrderMaster
+    from wechat_pay_support import query_jsapi_order_by_out_trade_no, WeChatPayError
+    import time
+
+    user = get_or_create_test_user()
+    order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
+
+    if order.order_status == 20:
+        return jsonify({
+            'message': '订单已支付',
+            'order_sn': order.order_sn,
+            'transaction_id': order.transaction_id,
+            'order_status': order.order_status
+        })
+
+    if order.order_status != 10:
+        return jsonify({'message': '订单状态异常'}), 400
+
+    trade_state_payload = None
+    try:
+        for attempt in range(3):
+            trade_state_payload = query_jsapi_order_by_out_trade_no(order_sn)
+            trade_state = trade_state_payload.get('trade_state')
+            if trade_state == 'SUCCESS':
+                break
+            if trade_state not in ['NOTPAY', 'USERPAYING']:
+                break
+            if attempt < 2:
+                time.sleep(1)
+    except WeChatPayError as exc:
+        return jsonify({'message': str(exc)}), 400
+
+    if not trade_state_payload or trade_state_payload.get('trade_state') != 'SUCCESS':
+        message = '支付结果未确认'
+        if trade_state_payload:
+            message = trade_state_payload.get('trade_state_desc') or trade_state_payload.get('trade_state') or message
+        return jsonify({'message': message}), 400
+
+    transaction_id = trade_state_payload.get('transaction_id')
+    return finalize_paid_order(order, transaction_id)
+
+
+@client_bp.route('/wechat/pay/notify', methods=['POST'])
+def wechat_pay_notify():
+    from models import OrderMaster
+    from wechat_pay_support import WeChatPayError, parse_wechatpay_notification
+
+    body_text = request.get_data(as_text=True) or ''
+    try:
+        notification, resource = parse_wechatpay_notification(request.headers, body_text)
+    except WeChatPayError as exc:
+        return jsonify({'code': 'FAIL', 'message': str(exc)}), 400
+
+    order_sn = resource.get('out_trade_no') or notification.get('attach') or notification.get('summary')
+    trade_state = resource.get('trade_state')
+
+    if not order_sn:
+        current_app.logger.warning('微信支付回调缺少订单号: %s', body_text)
+        return '', 204
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).first()
+    if not order:
+        current_app.logger.warning('微信支付回调订单不存在: %s', order_sn)
+        return '', 204
+
+    if order.order_status == 60:
+        current_app.logger.warning('收到已取消订单的支付回调: %s', order_sn)
+        return '', 204
+
+    if trade_state and trade_state != 'SUCCESS':
+        current_app.logger.info('微信支付回调状态非 SUCCESS，忽略订单 %s，trade_state=%s', order_sn, trade_state)
+        return '', 204
+
+    try:
+        mark_order_paid(order, resource.get('transaction_id'))
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        current_app.logger.exception('处理微信支付回调失败: %s', order_sn)
+        return jsonify({'code': 'FAIL', 'message': str(exc)}), 400
+
+    return '', 204
+
 
 @client_bp.route('/orders/<order_sn>/cancel', methods=['POST'])
 def cancel_order(order_sn):
     from models import OrderMaster, Product, SupplierOrder
     user = get_or_create_test_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
-    
+
     if order.order_status not in [10, 20]:
         return jsonify({'message': '当前状态无法取消订单'}), 400
     if not can_user_cancel_order(order):
         return jsonify({'message': '订单已开始备货，无法取消'}), 400
-    
-    # 释放锁定的库存
+
     for item in order.items:
-        product = Product.query.get(item.product_id)
+        product = db.session.get(Product, item.product_id)
         if product and product.stock:
             if order.order_status == 10:
                 product.stock.lock_stock = max(0, (product.stock.lock_stock or 0) - item.quantity)
             elif order.order_status == 20:
                 product.stock.total_stock = (product.stock.total_stock or 0) + item.quantity
                 product.sales_count = max(0, (product.sales_count or 0) - item.quantity)
-    
+
     restore_supplier_order_ingredient_stock(order)
 
-    # 取消相关的供应商备货单
     for so in order.supplier_orders:
-        if so.status in [10, 20]:  # 只有待备货或备货中的可以取消
-            so.status = 40  # 已取消
-    
+        if so.status in [10, 20]:
+            so.status = 40
+
     order.order_status = 60
     db.session.commit()
     return jsonify({'message': '订单已取消'})

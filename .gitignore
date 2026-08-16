@@ -53,3 +53,4 @@ miniprogram-client/.DS_Store
 miniprogram-client/images/*.png
 miniprogram-client/images/*.jpg
 miniprogram-client/images/*.jpeg
+backend/.wechatpay/
