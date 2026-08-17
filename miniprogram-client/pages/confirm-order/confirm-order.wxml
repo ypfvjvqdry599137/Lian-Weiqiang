@@ -1,6 +1,11 @@
 <view class="container">
-  <!-- 收货地址 -->
+  <!-- 收货地址卡片 -->
   <view class="address-card" bindtap="goToSelectAddress">
+    <view class="address-left">
+      <view class="address-icon-wrap">
+        <image class="address-icon" src="/images/icons/location.svg" mode="aspectFit" />
+      </view>
+    </view>
     <view class="address-info" wx:if="{{selectedAddress}}">
       <view class="addr-name-phone">
         <text class="addr-name">{{selectedAddress.receiver_name}}</text>
@@ -8,50 +13,70 @@
       </view>
       <view class="addr-detail">{{selectedAddress.address}}</view>
     </view>
-    <view class="address-placeholder" wx:else>
+    <view class="address-info" wx:else>
       <text class="placeholder-text">请选择收货地址</text>
+      <text class="placeholder-sub">送货前请先确认地址</text>
     </view>
-    <image class="arrow-icon" src="/images/icons/arrow-right.svg" />
+    <image class="arrow-icon" src="/images/icons/arrow-right.svg" mode="aspectFit" />
   </view>
 
   <!-- 配送信息 -->
-  <view class="section" wx:if="{{selectedAddress}}">
-    <view class="delivery-info">
+  <view class="delivery-card" wx:if="{{selectedAddress}}">
+    <view class="delivery-row">
       <view class="delivery-item">
-        <text class="label">配送区域</text>
-        <text class="value" wx:if="{{deliveryZone}}">{{deliveryZone.zone_name}}</text>
-        <text class="value" wx:else>正在计算...</text>
+        <image class="delivery-icon" src="/images/icons/truck.svg" mode="aspectFit" />
+        <view class="delivery-text">
+          <text class="delivery-label">配送区域</text>
+          <text class="delivery-value" wx:if="{{deliveryZone}}">{{deliveryZone.zone_name}}</text>
+          <text class="delivery-value loading" wx:else>计算中</text>
+        </view>
       </view>
       <view class="delivery-item">
-        <text class="label">配送费</text>
-        <text class="value price" wx:if="{{deliveryZone}}">¥{{deliveryZone.delivery_fee}}</text>
-        <text class="value" wx:else>--</text>
+        <image class="delivery-icon" src="/images/icons/clock.svg" mode="aspectFit" />
+        <view class="delivery-text">
+          <text class="delivery-label">预计送达</text>
+          <text class="delivery-value" wx:if="{{deliveryZone}}">{{deliveryZone.delivery_time}}</text>
+          <text class="delivery-value loading" wx:else>--</text>
+        </view>
       </view>
-      <view class="delivery-item">
-        <text class="label">预计送达</text>
-        <text class="value" wx:if="{{deliveryZone}}">{{deliveryZone.delivery_time}}</text>
-        <text class="value" wx:else>--</text>
-      </view>
+    </view>
+    <view class="delivery-fee-row" wx:if="{{deliveryZone}}">
+      <text class="fee-label">配送费</text>
+      <text class="fee-value">¥{{deliveryZone.delivery_fee}}</text>
     </view>
     <!-- 配送范围提示 -->
     <view class="range-tip" wx:if="{{!inRange && selectedAddress && deliveryZone}}">
       <image class="tip-icon" src="/images/icons/warning.svg" mode="aspectFit" />
       <text class="tip-text">当前地址不在配送范围内，请更换地址</text>
     </view>
+    <view class="range-tip" wx:if="{{!inRange && selectedAddress && !deliveryZone}}">
+      <image class="tip-icon" src="/images/icons/warning.svg" mode="aspectFit" />
+      <text class="tip-text">当前地址暂不支持配送</text>
+    </view>
   </view>
 
-  <!-- 商品列表 -->
+  <!-- 商品清单 -->
   <view class="section">
-    <view class="section-title">商品清单</view>
+    <view class="section-header">
+      <image class="section-icon" src="/images/icons/shop.svg" mode="aspectFit" />
+      <text class="section-title">鲜优选 自营</text>
+      <text class="section-count">共 {{products.length}} 件</text>
+    </view>
     <view class="product-item" wx:for="{{products}}" wx:key="product_id">
-      <image src="{{item.product_image || ''}}" class="product-img" />
+      <view class="product-img-wrap">
+        <image src="{{item.product_image || ''}}" class="product-img" mode="aspectFill" />
+      </view>
       <view class="product-detail">
         <view class="product-name">{{item.product_name}}</view>
-        <view class="product-extra" wx:if="{{item.processing_option || item.is_preorder}}">
-          <text wx:if="{{item.processing_option}}" style="display:block;color:#1e88e5;font-size:22rpx;margin-top:6rpx;">加工：{{item.processing_option}}</text>
-          <text wx:if="{{item.is_preorder}}" style="display:block;color:#e67e22;font-size:22rpx;margin-top:4rpx;">预定商品</text>
-        </view>        <view class="product-meta">
-          <text class="price">¥{{item.price}}</text>
+        <view class="product-tags" wx:if="{{item.processing_option || item.is_preorder}}">
+          <text class="tag tag-processing" wx:if="{{item.processing_option}}">加工：{{item.processing_option}}</text>
+          <text class="tag tag-preorder" wx:if="{{item.is_preorder}}">预定商品</text>
+        </view>
+        <view class="product-meta">
+          <view class="price-box">
+            <text class="price-symbol">¥</text>
+            <text class="price">{{item.price}}</text>
+          </view>
           <text class="quantity">× {{item.quantity}}</text>
         </view>
       </view>
@@ -60,25 +85,27 @@
 
   <!-- 备注 -->
   <view class="section">
-    <view class="section-title">备注</view>
-    <textarea class="textarea" placeholder="选填，可以填写特殊要求..." bindinput="onRemarkInput" />
+    <view class="section-header">
+      <image class="section-icon" src="/images/icons/edit.svg" mode="aspectFit" />
+      <text class="section-title">订单备注</text>
+      <text class="section-count">{{remark.length}}/50</text>
+    </view>
+    <textarea class="textarea" placeholder="选填，可以填写特殊要求..." maxlength="50" bindinput="onRemarkInput" />
   </view>
 
-  <!-- 底部 -->
+  <!-- 底部结算栏 -->
   <view class="footer">
-    <view class="total">
-      <view class="total-row">
-        <text>商品合计：</text>
-        <text class="total-price">¥{{totalPrice}}</text>
+    <view class="footer-total">
+      <view class="total-main">
+        <text class="total-label">实付：</text>
+        <text class="total-symbol">¥</text>
+        <text class="total-amount">{{finalPrice}}</text>
       </view>
-      <view class="total-row">
-        <text>配送费：</text>
-        <text class="price" wx:if="{{deliveryZone}}">¥{{deliveryZone.delivery_fee}}</text>
-        <text wx:else>¥0.00</text>
+      <view class="total-sub" wx:if="{{deliveryZone}}">
+        <text>含配送费 ¥{{deliveryZone.delivery_fee}}</text>
       </view>
-      <view class="total-row final">
-        <text>实付：</text>
-        <text class="final-price">¥{{finalPrice}}</text>
+      <view class="total-sub" wx:else>
+        <text>商品合计 ¥{{totalPrice}}</text>
       </view>
     </view>
     <button class="submit-btn" hover-class="btn-primary-hover" bindtap="submitOrder" disabled="{{!selectedAddress || !inRange || !deliveryZone}}">

@@ -358,6 +358,14 @@ def serialize_supplier_service_zones(supplier):
     }
 
 
+def serialize_supplier_supply_categories(supplier):
+    categories = sorted(getattr(supplier, 'supply_categories', []) or [], key=lambda item: item.id)
+    return {
+        'supply_category_ids': [category.id for category in categories],
+        'supply_category_names': [category.name for category in categories]
+    }
+
+
 def set_supplier_service_zones(supplier, raw_zone_ids):
     from models import DeliveryZone, Ingredient
 
@@ -428,6 +436,7 @@ def create_supplier():
     db.session.add(supplier)
     try:
         set_supplier_service_zones(supplier, data.get('service_zone_ids'))
+        set_supplier_supply_categories(supplier, data.get('supply_category_ids'))
     except ValueError as exc:
         return jsonify({"message": str(exc)}), 400
     db.session.commit()
@@ -440,6 +449,7 @@ def get_suppliers():
     output = []
     for supplier in suppliers:
         zone_payload = serialize_supplier_service_zones(supplier)
+        category_payload = serialize_supplier_supply_categories(supplier)
         output.append({
             'id': supplier.id,
             'name': supplier.name,
@@ -448,7 +458,8 @@ def get_suppliers():
             'username': supplier.username,
             'is_active': supplier.is_active,
             'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            **zone_payload
+            **zone_payload,
+            **category_payload
         })
     return jsonify({"suppliers": output}), 200
 
@@ -457,6 +468,7 @@ def get_supplier(supplier_id):
     from models import Supplier
     supplier = Supplier.query.filter_by(id=supplier_id, is_deleted=False).first_or_404()
     zone_payload = serialize_supplier_service_zones(supplier)
+    category_payload = serialize_supplier_supply_categories(supplier)
     return jsonify({
         'id': supplier.id,
         'name': supplier.name,
@@ -465,7 +477,8 @@ def get_supplier(supplier_id):
         'username': supplier.username,
         'is_active': supplier.is_active,
         'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-        **zone_payload
+        **zone_payload,
+        **category_payload
     }), 200
 
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['PUT'])
@@ -495,6 +508,11 @@ def update_supplier(supplier_id):
     if 'service_zone_ids' in data:
         try:
             set_supplier_service_zones(supplier, data.get('service_zone_ids'))
+        except ValueError as exc:
+            return jsonify({"message": str(exc)}), 400
+    if 'supply_category_ids' in data:
+        try:
+            set_supplier_supply_categories(supplier, data.get('supply_category_ids'))
         except ValueError as exc:
             return jsonify({"message": str(exc)}), 400
         
@@ -939,6 +957,9 @@ def get_all_supplier_orders():
             'supplier_name': get_supplier_order_supplier_name(so),
             'zone_id': so.order.zone_id if so.order else None,
             'zone_name': so.order.zone.zone_name if (so.order and so.order.zone) else None,
+            'station_id': so.order.zone.station.id if (so.order and so.order.zone and so.order.zone.station) else None,
+            'station_name': so.order.zone.station.station_name if (so.order and so.order.zone and so.order.zone.station) else None,
+            'station_address': so.order.zone.station.address if (so.order and so.order.zone and so.order.zone.station) else None,
             'status': so.status,
             'status_text': status_text,
             'notes': so.notes,
@@ -1049,7 +1070,10 @@ def get_delivery_zones():
             'delivery_fee': str(zone.delivery_fee),
             'delivery_time': zone.delivery_time,
             'merchant_username': zone.merchant_username,
-            'is_active': zone.is_active
+            'is_active': zone.is_active,
+            'station_id': zone.station.id if zone.station else None,
+            'station_name': zone.station.station_name if zone.station else None,
+            'station_address': zone.station.address if zone.station else None
         })
     return jsonify({"zones": output}), 200
 
@@ -1066,7 +1090,10 @@ def get_delivery_zone(zone_id):
         'delivery_fee': str(zone.delivery_fee),
         'delivery_time': zone.delivery_time,
         'merchant_username': zone.merchant_username,
-        'is_active': zone.is_active
+        'is_active': zone.is_active,
+        'station_id': zone.station.id if zone.station else None,
+        'station_name': zone.station.station_name if zone.station else None,
+        'station_address': zone.station.address if zone.station else None
     }), 200
 
 @admin_bp.route('/delivery-zones/<int:zone_id>', methods=['PUT'])
@@ -1318,6 +1345,10 @@ def get_all_orders():
             'order_sn': order.order_sn,
             'zone_id': order.zone_id,
             'zone_name': order.zone.zone_name if order.zone else None,
+            'station_id': order.zone.station.id if (order.zone and order.zone.station) else None,
+            'station_name': order.zone.station.station_name if (order.zone and order.zone.station) else None,
+            'fulfillment_issue_count': len(order.fulfillment_issues or []),
+            'has_fulfillment_issue': any(issue.status == 10 for issue in (order.fulfillment_issues or [])),
             'order_status': order.order_status,
             'status_text': status_text,
             'total_amount': str(order.total_amount),

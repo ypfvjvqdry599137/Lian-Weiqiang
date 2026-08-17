@@ -478,6 +478,15 @@ async function renderPage() {
         case 'delivery-zones':
             await loadDeliveryZones();
             break;
+        case 'stations':
+            await loadStations();
+            break;
+        case 'zone-supply-rules':
+            await loadZoneSupplyRules();
+            break;
+        case 'fulfillment-issues':
+            await loadFulfillmentIssues();
+            break;
         case 'zone-statistics':
             await loadZoneStatistics();
             break;
@@ -889,12 +898,15 @@ async function loadDeliveryZones() {
                     <p>配送半径: ${zone.radius}米 | 配送费: ¥${zone.delivery_fee}</p>
                     <p>预计送达: ${zone.delivery_time}</p>
                     <p>合作商: ${zone.merchant_username || '无'}</p>
+                    <p>站点: ${zone.station_name || '未配置'}${zone.station_address ? ` | ${zone.station_address}` : ''}</p>
                     <p>区域后台: <a href="/admin-panel/merchant_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${zone.is_active ? '启用' : '禁用'}</p>
                 </div>
                 <div class="data-card-actions">
-                    <button class="btn btn-sm btn-success" onclick="showDeliveryZoneModal(${zone.id})">编辑</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteDeliveryZone(${zone.id})">删除</button>
+                    <button class="btn btn-sm btn-success" onclick="showDeliveryZoneModal(${zone.id})">编辑区域</button>
+                    <button class="btn btn-sm btn-primary" onclick="${zone.station_id ? `showStationModal(${zone.station_id}, ${zone.id})` : `showStationModal(null, ${zone.id})`}">${zone.station_id ? '编辑站点' : '配置站点'}</button>
+                    <button class="btn btn-sm btn-success" onclick="openZoneSupplyRulesForZone(${zone.id})">查看规则</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteDeliveryZone(${zone.id})">删除区域</button>
                 </div>
             `;
             zonesList.appendChild(card);
@@ -975,9 +987,9 @@ async function deleteDeliveryZone(zoneId) {
 
 let currentOrderStatusFilter = 'all';
 
-document.querySelectorAll('.tabs .tab').forEach(tab => {
+document.querySelectorAll('#page-orders .tabs .tab').forEach(tab => {
     tab.addEventListener('click', function() {
-        document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('#page-orders .tabs .tab').forEach(t => t.classList.remove('active'));
         this.classList.add('active');
         currentOrderStatusFilter = this.dataset.status;
         loadOrders();
@@ -1067,6 +1079,7 @@ async function loadSuppliers() {
                     <p>联系人: ${supplier.contact_person || '无'} | 电话: ${supplier.phone || '无'}</p>
                     <p>登录账号: ${supplier.username}</p>
                     <p>服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)}</p>
+                    <p>供货品类: ${(supplier.supply_category_names && supplier.supply_category_names.length > 0) ? supplier.supply_category_names.join('、') : '未配置'}</p>
                     <p>供应商后台: <a href="/admin-panel/supplier_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${supplier.is_active ? '已启用' : '已禁用'}</p>
                     <p style="font-size:12px;color:#999;">创建时间: ${formatDate(supplier.created_at)}</p>
@@ -1108,6 +1121,7 @@ async function showSupplierModal(supplierId = null) {
     document.getElementById('supplier-active').checked = true;
 
     let selectedServiceZoneIds = [];
+    let selectedSupplyCategoryIds = [];
     if (supplierId) {
         title.textContent = '编辑供应商';
         const supplier = await fetchData(`/admin/suppliers/${supplierId}`);
@@ -1119,11 +1133,13 @@ async function showSupplierModal(supplierId = null) {
             document.getElementById('supplier-username').value = supplier.username;
             document.getElementById('supplier-active').checked = supplier.is_active;
             selectedServiceZoneIds = supplier.service_zone_ids || [];
+            selectedSupplyCategoryIds = supplier.supply_category_ids || [];
         }
     } else {
         title.textContent = '添加供应商';
     }
     await loadSupplierServiceZoneOptions(selectedServiceZoneIds);
+    await loadSupplierCategoryOptions(selectedSupplyCategoryIds);
     showModal('supplier-modal');
 }
 
@@ -1139,6 +1155,7 @@ document.getElementById('supplier-form').addEventListener('submit', async functi
         username: document.getElementById('supplier-username').value,
         is_active: document.getElementById('supplier-active').checked,
         service_zone_ids: getSelectedNumberValues('supplier-service-zone-ids'),
+        supply_category_ids: getSelectedNumberValues('supplier-supply-category-ids'),
     };
     const password = document.getElementById('supplier-password').value;
     if (password) {
@@ -1265,6 +1282,10 @@ async function showIngredientModal(ingredientId = null) {
     if (zoneSelect) {
         zoneSelect.onchange = () => renderSuppliersForIngredientSelect();
     }
+    const categorySelect = document.getElementById('ingredient-category-id');
+    if (categorySelect) {
+        categorySelect.onchange = () => renderSuppliersForIngredientSelect();
+    }
 
     if (ingredientId) {
         title.textContent = '编辑原料';
@@ -1299,15 +1320,17 @@ function renderSuppliersForIngredientSelect(selectedSupplierId = null) {
 
     const currentValue = selectedSupplierId || select.value;
     const zoneValue = document.getElementById('ingredient-zone-id')?.value || '';
+    const categoryValue = document.getElementById('ingredient-category-id')?.value || '';
     const availableSuppliers = currentSupplierOptions.filter(supplier => (
-        supplier.is_active && supplierServesIngredientZone(supplier, zoneValue)
+        supplier.is_active && supplierServesZone(supplier, zoneValue) && supplierSupportsCategory(supplier, categoryValue)
     ));
 
     select.innerHTML = '<option value="">请选择供应商</option>';
     availableSuppliers.forEach(supplier => {
         const option = document.createElement('option');
         option.value = supplier.id;
-        option.textContent = `${supplier.name} / 服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)}`;
+        const categoryNames = (supplier.supply_category_names || []).join('、') || '全部品类';
+        option.textContent = `${supplier.name} / 服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)} / 供货品类: ${categoryNames}`;
         select.appendChild(option);
     });
 
@@ -1650,6 +1673,26 @@ async function loadZoneStatistics() {
     renderZoneStatisticsList(data ? data.zones : []);
 }
 
+function showZoneSupplyRuleFromCurrentZone() {
+    const zoneValue = document.getElementById('zone-supply-rule-zone-filter')?.value || '';
+    showZoneSupplyRuleModal(null, zoneValue && zoneValue !== 'all' ? zoneValue : null);
+}
+
+function openZoneSupplyRulesForZone(zoneId) {
+    const filter = document.getElementById('zone-supply-rule-zone-filter');
+    if (filter) {
+        filter.value = String(zoneId || 'all');
+    }
+
+    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+    const menuItem = document.querySelector('.menu-item[data-page="zone-supply-rules"]');
+    if (menuItem) {
+        menuItem.classList.add('active');
+    }
+    currentPage = 'zone-supply-rules';
+    renderPage();
+}
+
 function openSupplierOrdersForZone(zoneFilterValue) {
     currentSupplierOrderZoneFilter = String(zoneFilterValue || 'all');
     const filter = document.getElementById('supplier-order-zone-filter');
@@ -1779,6 +1822,497 @@ async function updateSupplierOrderStatusFromSelect(orderId, selectEl) {
     }
 }
 
+
+function supplierSupportsCategory(supplier, categoryValue) {
+    if (!categoryValue) return true;
+    const categoryId = Number(categoryValue);
+    const categoryIds = (supplier.supply_category_ids || []).map(Number);
+    return categoryIds.length === 0 || categoryIds.includes(categoryId);
+}
+
+function supplierServesZone(supplier, zoneValue) {
+    if (!zoneValue) return true;
+    const zoneId = Number(zoneValue);
+    return (supplier.service_zone_ids || []).map(Number).includes(zoneId);
+}
+
+async function loadSupplierCategoryOptions(selectedIds = []) {
+    const select = document.getElementById('supplier-supply-category-ids');
+    if (!select) return;
+
+    const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
+    const categoriesData = await fetchData('/admin/categories');
+    select.innerHTML = '';
+    if (categoriesData && categoriesData.categories) {
+        categoriesData.categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.id;
+            option.textContent = `${category.icon || ''} ${category.name}`.trim();
+            option.selected = selectedSet.has(Number(category.id));
+            select.appendChild(option);
+        });
+    }
+}
+
+async function loadZoneOptionsForStationModal(selectId, selectedZoneId = null) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const zonesData = await fetchData('/admin/delivery-zones');
+    const zones = zonesData && zonesData.zones ? zonesData.zones : [];
+    const currentValue = selectedZoneId ? String(selectedZoneId) : select.value;
+    select.innerHTML = '<option value="">请选择配送区域</option>';
+
+    zones.forEach(zone => {
+        const zoneId = String(zone.id);
+        if (zone.station_id && zoneId !== String(currentValue)) {
+            return;
+        }
+        const option = document.createElement('option');
+        option.value = zone.id;
+        option.textContent = zone.station_name ? `${zone.zone_name}（已配置站点：${zone.station_name}）` : zone.zone_name;
+        select.appendChild(option);
+    });
+
+    if (currentValue) {
+        select.value = String(currentValue);
+    }
+}
+
+async function loadZoneOptionsForRuleModal(selectId, selectedZoneId = null) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const zonesData = await fetchData('/admin/delivery-zones');
+    const zones = zonesData && zonesData.zones ? zonesData.zones : [];
+    const currentValue = selectedZoneId ? String(selectedZoneId) : select.value;
+    select.innerHTML = '<option value="">请选择配送区域</option>';
+
+    zones.forEach(zone => {
+        if (!zone.station_id) {
+            return;
+        }
+        const option = document.createElement('option');
+        option.value = zone.id;
+        option.textContent = zone.station_name ? `${zone.zone_name}（${zone.station_name}）` : zone.zone_name;
+        select.appendChild(option);
+    });
+
+    if (currentValue) {
+        select.value = String(currentValue);
+    }
+}
+
+async function loadRuleCategoryOptions(selectId, selectedCategoryId = null) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const categoriesData = await fetchData('/admin/categories');
+    const currentValue = selectedCategoryId ? String(selectedCategoryId) : select.value;
+    select.innerHTML = '<option value="">请选择品类</option>';
+
+    if (categoriesData && categoriesData.categories) {
+        categoriesData.categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.id;
+            option.textContent = `${category.icon || ''} ${category.name}`.trim();
+            select.appendChild(option);
+        });
+    }
+
+    if (currentValue) {
+        select.value = String(currentValue);
+    }
+}
+
+async function loadRuleSupplierOptions(selectId, selectedSupplierId = null, zoneId = null, categoryId = null) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const suppliersData = await fetchData('/admin/suppliers');
+    const suppliers = suppliersData && suppliersData.suppliers ? suppliersData.suppliers : [];
+    const currentValue = selectedSupplierId ? String(selectedSupplierId) : select.value;
+    const zoneValue = zoneId || document.getElementById('zone-supply-rule-zone-id')?.value || '';
+    const categoryValue = categoryId || document.getElementById('zone-supply-rule-category-id')?.value || '';
+
+    select.innerHTML = '<option value="">请选择供应商</option>';
+    suppliers
+        .filter(supplier => supplier.is_active)
+        .filter(supplier => supplierServesZone(supplier, zoneValue))
+        .filter(supplier => supplierSupportsCategory(supplier, categoryValue))
+        .forEach(supplier => {
+            const option = document.createElement('option');
+            option.value = supplier.id;
+            const zoneNames = (supplier.service_zone_names || []).join('、') || '通用';
+            const categoryNames = (supplier.supply_category_names || []).join('、') || '全部品类';
+            option.textContent = `${supplier.name} / 区域: ${zoneNames} / 品类: ${categoryNames}`;
+            select.appendChild(option);
+        });
+
+    if (currentValue) {
+        select.value = String(currentValue);
+    }
+}
+
+async function loadRuleStationOptions(selectId, zoneId = null, selectedStationId = null) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const stationsData = await fetchData('/admin/stations');
+    const stations = stationsData && stationsData.stations ? stationsData.stations : [];
+    const currentValue = selectedStationId ? String(selectedStationId) : select.value;
+    const zoneValue = zoneId || document.getElementById('zone-supply-rule-zone-id')?.value || '';
+
+    select.innerHTML = '<option value="">请选择站点</option>';
+    stations
+        .filter(station => !zoneValue || String(station.zone_id) === String(zoneValue))
+        .forEach(station => {
+            const option = document.createElement('option');
+            option.value = station.id;
+            option.textContent = `${station.station_name}${station.zone_name ? ` / ${station.zone_name}` : ''}`;
+            select.appendChild(option);
+        });
+
+    if (currentValue) {
+        select.value = String(currentValue);
+    }
+}
+
+function getFulfillmentIssueStatusText(status) {
+    return ({
+        10: '待处理',
+        20: '已处理',
+        30: '已忽略'
+    })[status] || '未知';
+}
+
+async function loadStations() {
+    const data = await fetchData('/admin/stations');
+    const list = document.getElementById('stations-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const stations = data && data.stations ? data.stations : [];
+    if (stations.length === 0) {
+        list.innerHTML = '<div class="empty-state">暂无站点配置</div>';
+        return;
+    }
+
+    stations.forEach(station => {
+        const card = document.createElement('div');
+        card.classList.add('data-card');
+        card.innerHTML = `
+            <div class="data-card-content">
+                <h4>${station.station_name}</h4>
+                <p>区域: ${station.zone_name || '未绑定区域'}</p>
+                <p>地址: ${station.address || '未填写'}</p>
+                <p>联系人: ${station.contact_person || '无'} | 电话: ${station.phone || '无'}</p>
+                <p>备注: ${station.notes || '无'}</p>
+                <p>状态: ${station.is_active ? '启用' : '禁用'}</p>
+                <p style="font-size:12px;color:#999;">创建时间: ${formatDate(station.created_at)}</p>
+            </div>
+            <div class="data-card-actions">
+                <button class="btn btn-sm btn-success" onclick="showStationModal(${station.id})">编辑站点</button>
+                <button class="btn btn-sm btn-primary" onclick="openZoneSupplyRulesForZone(${station.zone_id})">查看规则</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteStation(${station.id})">删除站点</button>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+async function showStationModal(stationId = null, zoneIdHint = null) {
+    const modal = document.getElementById('station-modal');
+    const title = document.getElementById('station-modal-title');
+    const form = document.getElementById('station-form');
+    if (!modal || !title || !form) return;
+
+    form.reset();
+    document.getElementById('station-id').value = '';
+    document.getElementById('station-active').checked = true;
+
+    let selectedZoneId = zoneIdHint || '';
+    if (stationId) {
+        title.textContent = '编辑站点';
+        const station = await fetchData(`/admin/stations/${stationId}`);
+        if (station) {
+            document.getElementById('station-id').value = station.id;
+            document.getElementById('station-name').value = station.station_name || '';
+            document.getElementById('station-address').value = station.address || '';
+            document.getElementById('station-contact-person').value = station.contact_person || '';
+            document.getElementById('station-phone').value = station.phone || '';
+            document.getElementById('station-notes').value = station.notes || '';
+            document.getElementById('station-active').checked = station.is_active;
+            selectedZoneId = station.zone_id;
+        }
+    } else {
+        title.textContent = '新建站点';
+    }
+
+    await loadZoneOptionsForStationModal('station-zone-id', selectedZoneId);
+    showModal('station-modal');
+}
+
+const stationForm = document.getElementById('station-form');
+if (stationForm) {
+    stationForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const stationId = document.getElementById('station-id').value;
+        const method = stationId ? 'PUT' : 'POST';
+        const url = stationId ? `/admin/stations/${stationId}` : '/admin/stations';
+        const data = {
+            zone_id: parseInt(document.getElementById('station-zone-id').value, 10),
+            station_name: document.getElementById('station-name').value,
+            address: document.getElementById('station-address').value || null,
+            contact_person: document.getElementById('station-contact-person').value || null,
+            phone: document.getElementById('station-phone').value || null,
+            notes: document.getElementById('station-notes').value || null,
+            is_active: document.getElementById('station-active').checked,
+        };
+
+        const result = await fetchData(url, method, data);
+        if (result) {
+            alert(result.message || '站点保存成功！');
+            closeModal('station-modal');
+            await loadStations();
+            await loadDeliveryZones();
+            await loadDashboardStats();
+        }
+    });
+}
+
+async function deleteStation(stationId) {
+    if (!confirm('确定要删除此站点吗？已有供货规则关联时将无法删除。')) {
+        return;
+    }
+    const result = await fetchData(`/admin/stations/${stationId}`, 'DELETE', null, true);
+    if (result) {
+        alert(result.message || '站点删除成功！');
+        await loadStations();
+        await loadDeliveryZones();
+        await loadDashboardStats();
+    }
+}
+
+async function loadZoneSupplyRules() {
+    const list = document.getElementById('zone-supply-rules-list');
+    if (!list) return;
+    const params = new URLSearchParams();
+    const zoneFilter = document.getElementById('zone-supply-rule-zone-filter')?.value || 'all';
+    const statusFilter = document.getElementById('zone-supply-rule-status-filter')?.value || 'all';
+    if (zoneFilter !== 'all') params.set('zone_id', zoneFilter);
+    if (statusFilter !== 'all') params.set('is_active', statusFilter);
+
+    const data = await fetchData(`/admin/zone-supply-rules${params.toString() ? `?${params.toString()}` : ''}`);
+    list.innerHTML = '';
+
+    const rules = data && data.rules ? data.rules : [];
+    if (rules.length === 0) {
+        list.innerHTML = '<div class="empty-state">暂无供货规则，先按区域和品类新建一条试试。</div>';
+        return;
+    }
+
+    rules.forEach(rule => {
+        const card = document.createElement('div');
+        card.classList.add('data-card', `status-${rule.is_active ? 'active' : 'inactive'}`);
+        card.innerHTML = `
+            <div class="data-card-content">
+                <h4>${rule.zone_name || '未知区域'} / ${rule.category_name || '未知品类'}</h4>
+                <p>站点: ${rule.station_name || '无'} | 供应商: ${rule.supplier_name || '无'}</p>
+                <p>优先级: ${rule.priority} | 主供: ${rule.is_primary ? '是' : '否'} | 状态: ${rule.is_active ? '启用' : '停用'}</p>
+                <p>备注: ${rule.notes || '无'}</p>
+                <p style="font-size:12px;color:#999;">创建时间: ${formatDate(rule.created_at)}</p>
+            </div>
+            <div class="data-card-actions">
+                <button class="btn btn-sm btn-success" onclick="showZoneSupplyRuleModal(${rule.id})">编辑</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteZoneSupplyRule(${rule.id})">删除</button>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+async function showZoneSupplyRuleModal(ruleId = null, zoneIdHint = null) {
+    const modal = document.getElementById('zone-supply-rule-modal');
+    const title = document.getElementById('zone-supply-rule-modal-title');
+    const form = document.getElementById('zone-supply-rule-form');
+    if (!modal || !title || !form) return;
+
+    form.reset();
+    document.getElementById('zone-supply-rule-id').value = '';
+    document.getElementById('zone-supply-rule-primary').checked = false;
+    document.getElementById('zone-supply-rule-active').checked = true;
+
+    let ruleData = null;
+    if (ruleId) {
+        title.textContent = '编辑供货规则';
+        ruleData = await fetchData(`/admin/zone-supply-rules/${ruleId}`);
+        if (ruleData) {
+            document.getElementById('zone-supply-rule-id').value = ruleData.id;
+            document.getElementById('zone-supply-rule-priority').value = ruleData.priority ?? 0;
+            document.getElementById('zone-supply-rule-primary').checked = !!ruleData.is_primary;
+            document.getElementById('zone-supply-rule-active').checked = !!ruleData.is_active;
+            document.getElementById('zone-supply-rule-notes').value = ruleData.notes || '';
+            zoneIdHint = ruleData.zone_id;
+        }
+    } else {
+        title.textContent = '新建供货规则';
+    }
+
+    await loadZoneOptionsForRuleModal('zone-supply-rule-zone-id', zoneIdHint || (ruleData ? ruleData.zone_id : null));
+    await loadRuleCategoryOptions('zone-supply-rule-category-id', ruleData ? ruleData.category_id : null);
+    const zoneValue = document.getElementById('zone-supply-rule-zone-id')?.value || zoneIdHint || '';
+    const categoryValue = document.getElementById('zone-supply-rule-category-id')?.value || (ruleData ? ruleData.category_id : null);
+    await loadRuleStationOptions('zone-supply-rule-station-id', zoneValue, ruleData ? ruleData.station_id : null);
+    await loadRuleSupplierOptions('zone-supply-rule-supplier-id', ruleData ? ruleData.supplier_id : null, zoneValue, categoryValue);
+
+    const zoneSelect = document.getElementById('zone-supply-rule-zone-id');
+    if (zoneSelect) {
+        zoneSelect.onchange = async () => {
+            const nextZoneId = zoneSelect.value;
+            await loadRuleStationOptions('zone-supply-rule-station-id', nextZoneId, null);
+            await loadRuleSupplierOptions('zone-supply-rule-supplier-id', null, nextZoneId, document.getElementById('zone-supply-rule-category-id')?.value || '');
+        };
+    }
+    const categorySelect = document.getElementById('zone-supply-rule-category-id');
+    if (categorySelect) {
+        categorySelect.onchange = async () => {
+            await loadRuleSupplierOptions('zone-supply-rule-supplier-id', null, document.getElementById('zone-supply-rule-zone-id')?.value || '', categorySelect.value);
+        };
+    }
+
+    showModal('zone-supply-rule-modal');
+}
+
+const zoneSupplyRuleForm = document.getElementById('zone-supply-rule-form');
+if (zoneSupplyRuleForm) {
+    zoneSupplyRuleForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        const ruleId = document.getElementById('zone-supply-rule-id').value;
+        const method = ruleId ? 'PUT' : 'POST';
+        const url = ruleId ? `/admin/zone-supply-rules/${ruleId}` : '/admin/zone-supply-rules';
+        const data = {
+            zone_id: parseInt(document.getElementById('zone-supply-rule-zone-id').value, 10),
+            station_id: parseInt(document.getElementById('zone-supply-rule-station-id').value, 10),
+            category_id: parseInt(document.getElementById('zone-supply-rule-category-id').value, 10),
+            supplier_id: parseInt(document.getElementById('zone-supply-rule-supplier-id').value, 10),
+            priority: parseInt(document.getElementById('zone-supply-rule-priority').value, 10) || 0,
+            is_primary: document.getElementById('zone-supply-rule-primary').checked,
+            is_active: document.getElementById('zone-supply-rule-active').checked,
+            notes: document.getElementById('zone-supply-rule-notes').value || null,
+        };
+
+        const result = await fetchData(url, method, data);
+        if (result) {
+            alert(result.message || '供货规则保存成功！');
+            closeModal('zone-supply-rule-modal');
+            await loadZoneSupplyRules();
+        }
+    });
+}
+
+async function deleteZoneSupplyRule(ruleId) {
+    if (!confirm('确定要删除此供货规则吗？')) {
+        return;
+    }
+    const result = await fetchData(`/admin/zone-supply-rules/${ruleId}`, 'DELETE', null, true);
+    if (result) {
+        alert(result.message || '供货规则删除成功！');
+        await loadZoneSupplyRules();
+    }
+}
+
+async function loadFulfillmentIssues() {
+    const list = document.getElementById('fulfillment-issues-list');
+    if (!list) return;
+
+    const params = new URLSearchParams();
+    const statusFilter = document.getElementById('fulfillment-issue-status-filter')?.value || 'all';
+    const zoneFilter = document.getElementById('fulfillment-issue-zone-filter')?.value || 'all';
+    const orderSn = document.getElementById('fulfillment-issue-order-sn')?.value.trim() || '';
+    const issueType = document.getElementById('fulfillment-issue-type')?.value.trim() || '';
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    if (zoneFilter !== 'all') params.set('zone_id', zoneFilter);
+    if (orderSn) params.set('order_sn', orderSn);
+    if (issueType) params.set('issue_type', issueType);
+
+    const data = await fetchData(`/admin/fulfillment-issues${params.toString() ? `?${params.toString()}` : ''}`);
+    list.innerHTML = '';
+
+    const issues = data && data.issues ? data.issues : [];
+    if (issues.length === 0) {
+        list.innerHTML = '<div class="empty-state">暂无履约异常，系统正常时这里会保持空。<\/div>';
+        return;
+    }
+
+    issues.forEach(issue => {
+        const card = document.createElement('div');
+        card.classList.add('data-card', `status-${issue.status}`);
+        card.innerHTML = `
+            <div class="data-card-content">
+                <h4>#${issue.id} ${issue.issue_type} <span style="float:right;color:#666;">${getFulfillmentIssueStatusText(issue.status)}</span></h4>
+                <p>订单号: ${issue.order_sn}</p>
+                <p>区域: ${issue.zone_name || '无'} | 站点: ${issue.station_name || '无'}</p>
+                <p>描述: ${issue.message}</p>
+                <p style="font-size:12px;color:#999;">创建时间: ${formatDate(issue.created_at)}${issue.resolved_at ? ` | 处理时间: ${formatDate(issue.resolved_at)}` : ''}</p>
+            </div>
+            <div class="data-card-actions">
+                <button class="btn btn-sm btn-success" onclick="updateFulfillmentIssueStatus(${issue.id}, 20)">设为已处理</button>
+                <button class="btn btn-sm btn-primary" onclick="updateFulfillmentIssueStatus(${issue.id}, 10)">恢复待处理</button>
+                <button class="btn btn-sm btn-danger" onclick="updateFulfillmentIssueStatus(${issue.id}, 30)">设为忽略</button>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+async function updateFulfillmentIssueStatus(issueId, status) {
+    const result = await fetchData(`/admin/fulfillment-issues/${issueId}`, 'PUT', { status }, true);
+    if (result) {
+        alert(result.message || '履约异常已更新');
+        await loadFulfillmentIssues();
+    }
+}
+
+function setupFulfillmentControls() {
+    const zoneRuleZoneFilter = document.getElementById('zone-supply-rule-zone-filter');
+    const zoneRuleStatusFilter = document.getElementById('zone-supply-rule-status-filter');
+    const issueStatusFilter = document.getElementById('fulfillment-issue-status-filter');
+    const issueZoneFilter = document.getElementById('fulfillment-issue-zone-filter');
+    const issueOrderSn = document.getElementById('fulfillment-issue-order-sn');
+    const issueType = document.getElementById('fulfillment-issue-type');
+
+    if (zoneRuleZoneFilter) {
+        loadDeliveryZonesForFilter('zone-supply-rule-zone-filter', { includeUnassigned: false });
+        zoneRuleZoneFilter.addEventListener('change', loadZoneSupplyRules);
+    }
+    if (zoneRuleStatusFilter) {
+        zoneRuleStatusFilter.addEventListener('change', loadZoneSupplyRules);
+    }
+    if (issueStatusFilter) {
+        issueStatusFilter.addEventListener('change', loadFulfillmentIssues);
+    }
+    if (issueZoneFilter) {
+        loadDeliveryZonesForFilter('fulfillment-issue-zone-filter', { includeUnassigned: false });
+        issueZoneFilter.addEventListener('change', loadFulfillmentIssues);
+    }
+    if (issueOrderSn) {
+        issueOrderSn.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                loadFulfillmentIssues();
+            }
+        });
+    }
+    if (issueType) {
+        issueType.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                loadFulfillmentIssues();
+            }
+        });
+    }
+}
 // ==================== 初始化 ====================
 
 function setupIngredientControls() {
@@ -1839,5 +2373,6 @@ document.addEventListener('DOMContentLoaded', () => {
         zoneStatsMonth.value = getCurrentMonthValue();
     }
     setupIngredientControls();
+    setupFulfillmentControls();
     renderPage();
 });

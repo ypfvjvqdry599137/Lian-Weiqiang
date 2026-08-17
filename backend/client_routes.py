@@ -213,7 +213,10 @@ def get_delivery_zones():
             'center_lat': str(zone.center_lat),
             'radius': zone.radius,
             'delivery_fee': str(zone.delivery_fee),
-            'delivery_time': zone.delivery_time
+            'delivery_time': zone.delivery_time,
+            'station_id': zone.station.id if zone.station else None,
+            'station_name': zone.station.station_name if zone.station else None,
+            'station_address': zone.station.address if zone.station else None
         })
     return jsonify({'zones': result})
 
@@ -503,86 +506,9 @@ def select_product_ingredient_relations(product, zone_id):
 # 工具函数：将订单拆分为供应商备货单
 # 同名同单位原料支持按配送区域覆盖：当前区域原料优先，否则使用通用原料。
 def split_order_to_supplier_orders(order_sn):
-    from models import OrderMaster, SupplierOrder, SupplierOrderItem
-    
-    order = OrderMaster.query.filter_by(order_sn=order_sn).first()
-    if not order:
-        return 0
+    from fulfillment import split_order_to_supplier_orders as build_supply_orders
 
-    if SupplierOrder.query.filter_by(order_sn=order_sn).first():
-        return 0
-    
-    supplier_ingredients = {}
-    missing_configs = []
-    
-    for order_item in order.items:
-        product = order_item.product
-        if not product:
-            continue
-
-        selected_relations, missing_names = select_product_ingredient_relations(product, order.zone_id)
-        if missing_names:
-            missing_configs.extend([f'{product.name}-{name}' for name in missing_names])
-        
-        for pi in selected_relations:
-            ingredient = pi.ingredient
-            supplier_id = ingredient.supplier.id
-            ingredient_id = ingredient.id
-            supplier_items = supplier_ingredients.setdefault(supplier_id, {})
-            item = supplier_items.setdefault(ingredient_id, {
-                'ingredient': ingredient,
-                'supplier_name': ingredient.supplier.name,
-                'quantity': Decimal('0')
-            })
-            item['quantity'] += pi.quantity_needed * order_item.quantity
-
-    if missing_configs:
-        unique_missing = '、'.join(sorted(set(missing_configs)))
-        raise ValueError(f'当前配送区域缺少原料配置：{unique_missing}，请先在主后台配置该区域原料')
-
-    stock_errors = []
-    for items in supplier_ingredients.values():
-        for item in items.values():
-            required_units = get_stock_units(item['quantity'])
-            item['stock_units'] = required_units
-            available_units = item['ingredient'].stock or 0
-            if required_units > available_units:
-                ingredient = item['ingredient']
-                stock_errors.append(f"{ingredient.name}库存不足，当前{available_units}{ingredient.unit}，需要{required_units}{ingredient.unit}")
-    if stock_errors:
-        raise ValueError('原料库存不足：' + '；'.join(stock_errors))
-    
-    supplier_order_count = 0
-    for supplier_id, items in supplier_ingredients.items():
-        supplier_order = SupplierOrder(
-            order_sn=order_sn,
-            supplier_id=supplier_id,
-            supplier_name_snapshot=next(iter(items.values()))['supplier_name'],
-            status=10,
-            notes=f'订单 {order_sn} 所需原料'
-        )
-        db.session.add(supplier_order)
-        db.session.flush()
-        supplier_order_count += 1
-        
-        for item in items.values():
-            ingredient = item['ingredient']
-            ingredient.stock = max(0, (ingredient.stock or 0) - item.get('stock_units', 0))
-            unit_price = ingredient.price
-            total_price = item['quantity'] * unit_price if unit_price is not None else Decimal('0')
-            soi = SupplierOrderItem(
-                supplier_order_id=supplier_order.id,
-                ingredient_id=ingredient.id,
-                ingredient_name=ingredient.name,
-                quantity=item['quantity'],
-                unit=ingredient.unit,
-                unit_price=unit_price,
-                total_price=total_price
-            )
-            db.session.add(soi)
-
-    return supplier_order_count
-
+    return build_supply_orders(order_sn)
 def can_user_cancel_order(order):
     if order.order_status not in [10, 20]:
         return False
@@ -691,18 +617,27 @@ def create_order():
 
     db.session.flush()
     try:
-        supplier_order_count = split_order_to_supplier_orders(order_sn)
+        split_result = split_order_to_supplier_orders(order_sn)
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'message': str(exc)}), 400
-    
+
+    if isinstance(split_result, dict):
+        supplier_order_count = split_result.get('supplier_order_count', 0)
+        fulfillment_issues = split_result.get('issues', [])
+    else:
+        supplier_order_count = split_result or 0
+        fulfillment_issues = []
+
     db.session.commit()
-    
+
     return jsonify({
         'message': '订单创建成功',
         'order_sn': order_sn,
         'final_amount': str(final_amount),
-        'supplier_order_count': supplier_order_count
+        'supplier_order_count': supplier_order_count,
+        'fulfillment_issue_count': len(fulfillment_issues),
+        'fulfillment_issues': fulfillment_issues
     }), 201
 
 @client_bp.route('/orders', methods=['GET'])
@@ -710,14 +645,14 @@ def get_orders():
     from models import OrderMaster
     user = get_or_create_test_user()
     status = request.args.get('status')
-    
+
     query = OrderMaster.query.filter_by(user_id=user.id)
     if status:
         query = query.filter_by(order_status=int(status))
-    
+
     orders = query.order_by(OrderMaster.created_at.desc()).all()
     result = []
-    
+
     for order in orders:
         items = []
         for item in order.items:
@@ -730,9 +665,11 @@ def get_orders():
                 'processing_option': item.processing_option,
                 'is_preorder': bool(item.is_preorder)
             })
-        
-        status_text = {10: '待付款', 20: '待配货', 30: '配送中', 40: '已送达', 50: '已完成', 60: '已取消'}.get(order.order_status, '未知')
-        
+
+        status_text = {10: '寰呬粯娆?', 20: '寰呴厤璐?', 30: '閰嶉€佷腑', 40: '宸查€佽揪', 50: '宸插畬鎴?', 60: '宸插彇娑?'}.get(order.order_status, '鏈煡')
+        station = order.zone.station if order.zone and order.zone.station else None
+        issues = list(order.fulfillment_issues or [])
+
         result.append({
             'order_sn': order.order_sn,
             'order_status': order.order_status,
@@ -743,18 +680,27 @@ def get_orders():
             'delivery_fee': str(order.delivery_fee),
             'final_amount': str(order.final_amount),
             'receiver_address': order.receiver_address,
+            'zone_id': order.zone_id,
+            'zone_name': order.zone.zone_name if order.zone else None,
+            'station_id': station.id if station else None,
+            'station_name': station.station_name if station else None,
+            'fulfillment_issue_count': len(issues),
+            'has_fulfillment_issue': any(issue.status == 10 for issue in issues),
             'items': items,
             'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
         })
-    
+
     return jsonify({'orders': result})
+
 
 @client_bp.route('/orders/<order_sn>', methods=['GET'])
 def get_order_detail(order_sn):
     from models import OrderMaster
+    from fulfillment import serialize_fulfillment_issue
+
     user = get_or_create_test_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
-    
+
     items = []
     for item in order.items:
         items.append({
@@ -766,9 +712,11 @@ def get_order_detail(order_sn):
             'processing_option': item.processing_option,
             'is_preorder': bool(item.is_preorder)
         })
-    
-    status_text = {10: '待付款', 20: '待配货', 30: '配送中', 40: '已送达', 50: '已完成', 60: '已取消'}.get(order.order_status, '未知')
-    
+
+    status_text = {10: '寰呬粯娆?', 20: '寰呴厤璐?', 30: '閰嶉€佷腑', 40: '宸查€佽揪', 50: '宸插畬鎴?', 60: '宸插彇娑?'}.get(order.order_status, '鏈煡')
+    station = order.zone.station if order.zone and order.zone.station else None
+    issues = [serialize_fulfillment_issue(issue) for issue in (order.fulfillment_issues or [])]
+
     return jsonify({
         'order_sn': order.order_sn,
         'order_status': order.order_status,
@@ -782,10 +730,17 @@ def get_order_detail(order_sn):
         'receiver_phone': order.receiver_phone,
         'receiver_address': order.receiver_address,
         'remark': order.remark,
+        'zone_id': order.zone_id,
+        'zone_name': order.zone.zone_name if order.zone else None,
+        'station_id': station.id if station else None,
+        'station_name': station.station_name if station else None,
+        'station_address': station.address if station else None,
+        'fulfillment_issue_count': len(issues),
+        'has_fulfillment_issue': any(item['status'] == 10 for item in issues),
+        'fulfillment_issues': issues,
         'items': items,
         'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S')
     })
-
 def build_wechat_order_description(order):
     names = [item.product_name for item in order.items if item.product_name]
     if names:

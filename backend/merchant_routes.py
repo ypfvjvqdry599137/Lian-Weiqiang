@@ -115,6 +115,7 @@ def get_order_supplier_cost(order):
 
 
 def serialize_order(order, include_items=True, include_supplier_orders=True):
+    station = order.zone.station if order.zone and order.zone.station else None
     data = {
         'order_sn': order.order_sn,
         'order_status': order.order_status,
@@ -127,6 +128,9 @@ def serialize_order(order, include_items=True, include_supplier_orders=True):
         'delivery_fee': str(order.delivery_fee),
         'final_amount': str(order.final_amount),
         'supplier_ready': are_supplier_orders_ready(order),
+        'station_id': station.id if station else None,
+        'station_name': station.station_name if station else None,
+        'station_address': station.address if station else None,
         'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else None
     }
 

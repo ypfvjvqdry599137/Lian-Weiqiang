@@ -15,15 +15,18 @@ def create_app(config_class=Config):
     import models
 
     with app.app_context():
+        db.create_all()
         ensure_product_feature_columns()
 
     # 导入并注册蓝图
     from admin_routes import admin_bp
     from client_routes import client_bp
+    from fulfillment_admin_routes import fulfillment_admin_bp
     from merchant_routes import merchant_bp
     from supplier_routes import supplier_bp
     
     app.register_blueprint(admin_bp)
+    app.register_blueprint(fulfillment_admin_bp)
     app.register_blueprint(client_bp)
     app.register_blueprint(merchant_bp)
     app.register_blueprint(supplier_bp)

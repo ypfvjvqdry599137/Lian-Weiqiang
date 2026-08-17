@@ -12,6 +12,14 @@ supplier_service_zone = db.Table(
 # ============================================
 # 供应商模型
 # ============================================
+
+supplier_category = db.Table(
+    'supplier_category',
+    db.Column('supplier_id', db.Integer, db.ForeignKey('supplier.id'), primary_key=True, comment='供应商ID'),
+    db.Column('category_id', db.Integer, db.ForeignKey('category.id'), primary_key=True, comment='品类ID'),
+    db.Column('created_at', db.DateTime, default=datetime.utcnow, comment='创建时间')
+)
+
 class Supplier(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='供应商ID')
     name = db.Column(db.String(200), nullable=False, comment='供应商名称')
@@ -160,6 +168,80 @@ class DeliveryZone(db.Model):
 # ============================================
 # 用户地址模型
 # ============================================
+
+
+# ============================================
+# 区域站点模型
+# ============================================
+class DeliveryStation(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='站点ID')
+    zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=False, unique=True, comment='配送区域ID')
+    station_name = db.Column(db.String(100), nullable=False, comment='站点名称')
+    address = db.Column(db.String(500), nullable=True, comment='站点地址')
+    contact_person = db.Column(db.String(100), nullable=True, comment='站点联系人')
+    phone = db.Column(db.String(20), nullable=True, comment='站点电话')
+    notes = db.Column(db.Text, nullable=True, comment='备注')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    zone = db.relationship('DeliveryZone', backref=db.backref('station', uselist=False, lazy=True))
+
+    def __repr__(self):
+        return f'<DeliveryStation {self.station_name}>'
+
+
+# ============================================
+# 区域供货规则模型
+# ============================================
+class ZoneSupplyRule(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='供货规则ID')
+    zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=False, comment='配送区域ID')
+    station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=False, comment='站点ID')
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False, comment='品类ID')
+    supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
+    priority = db.Column(db.Integer, default=0, comment='优先级，数值越小越优先')
+    is_primary = db.Column(db.Boolean, default=False, comment='是否主供')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    notes = db.Column(db.String(255), nullable=True, comment='备注')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    __table_args__ = (
+        db.UniqueConstraint('zone_id', 'category_id', 'supplier_id', name='uq_zone_category_supplier_rule'),
+    )
+
+    zone = db.relationship('DeliveryZone', backref=db.backref('zone_supply_rules', lazy=True))
+    station = db.relationship('DeliveryStation', backref=db.backref('zone_supply_rules', lazy=True))
+    category = db.relationship('Category', backref=db.backref('zone_supply_rules', lazy=True))
+    supplier = db.relationship('Supplier', backref=db.backref('zone_supply_rules', lazy=True))
+
+    def __repr__(self):
+        return f'<ZoneSupplyRule zone={self.zone_id} category={self.category_id} supplier={self.supplier_id}>'
+
+
+# ============================================
+# 履约异常模型
+# ============================================
+class FulfillmentIssue(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='异常ID')
+    order_sn = db.Column(db.String(32), db.ForeignKey('order_master.order_sn'), nullable=False, comment='订单号')
+    zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=True, comment='配送区域ID')
+    station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=True, comment='站点ID')
+    issue_type = db.Column(db.String(50), nullable=False, comment='异常类型')
+    message = db.Column(db.Text, nullable=False, comment='异常描述')
+    status = db.Column(db.SmallInteger, nullable=False, default=10, comment='状态：10-待处理，20-已处理，30-已忽略')
+    resolved_at = db.Column(db.DateTime, nullable=True, comment='处理时间')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+
+    order = db.relationship('OrderMaster', backref=db.backref('fulfillment_issues', lazy=True))
+    zone = db.relationship('DeliveryZone', backref=db.backref('fulfillment_issues', lazy=True))
+    station = db.relationship('DeliveryStation', backref=db.backref('fulfillment_issues', lazy=True))
+
+    def __repr__(self):
+        return f'<FulfillmentIssue {self.order_sn} {self.issue_type}>'
+
 class UserAddress(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='地址ID')
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='用户ID')

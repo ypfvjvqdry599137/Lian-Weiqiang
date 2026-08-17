@@ -23,6 +23,9 @@
                 <li class="menu-item" data-page="products">商品管理</li>
                 <li class="menu-item" data-page="categories">分类管理</li>
                 <li class="menu-item" data-page="delivery-zones">配送区域</li>
+                <li class="menu-item" data-page="stations">站点与打包中心</li>
+                <li class="menu-item" data-page="zone-supply-rules">区域供货规则</li>
+                <li class="menu-item" data-page="fulfillment-issues">异常处理中心</li>
                 <li class="menu-item" data-page="zone-statistics">区域统计</li>
                 <li class="menu-item" data-page="supplier-orders">供应商备货单</li>
                 <li class="menu-item" data-page="orders">订单管理</li>
@@ -78,6 +81,48 @@
                     <button class="btn btn-primary" onclick="showDeliveryZoneModal()">+ 添加配送区域</button>
                 </div>
                 <div id="delivery-zones-list" class="data-list"></div>
+            </div>
+
+            <!-- 站点管理 -->
+            <div id="page-stations" class="page">
+                <div class="page-header">
+                    <h2>🚚 站点与打包中心</h2>
+                    <button class="btn btn-primary" onclick="showStationModal()">+ 新建站点</button>
+                </div>
+                <p style="margin-bottom:15px;color:#666;">先给配送区域绑定一个站点，订单会先汇总到站点，再统一打包出库。</p>
+                <div id="stations-list" class="data-list"></div>
+            </div>
+
+            <!-- 供货规则 -->
+            <div id="page-zone-supply-rules" class="page">
+                <div class="page-header">
+                    <h2>🔗 区域供货规则</h2>
+                    <button class="btn btn-primary" onclick="showZoneSupplyRuleFromCurrentZone()">+ 新建规则</button>
+                </div>
+                <p style="margin-bottom:12px;color:#666;">先给区域配站点，再把“区域 + 品类 + 供应商”串起来。优先级越小越优先，主供会优先命中。</p>
+                <p style="margin-bottom:12px;color:#666;">缺规则、缺库存、供应商停用或匹配失败的异常都会先落到这里，处理后记得更新状态。</p>
+                <div class="settlement-controls" style="margin-bottom:15px;">
+                    <select id="zone-supply-rule-zone-filter"><option value="all">全部区域</option></select>
+                    <select id="zone-supply-rule-status-filter"><option value="all">全部状态</option><option value="true">启用</option><option value="false">停用</option></select>
+                    <button class="btn btn-primary" onclick="loadZoneSupplyRules()">筛选</button>
+                </div>
+                <div id="zone-supply-rules-list" class="data-list"></div>
+            </div>
+
+            <!-- 履约异常 -->
+            <div id="page-fulfillment-issues" class="page">
+                <div class="page-header">
+                    <h2>⚠️ 异常处理中心</h2>
+                    <button class="btn btn-primary" onclick="loadFulfillmentIssues()">刷新异常</button>
+                </div>
+                <div class="settlement-controls" style="margin-bottom:15px;">
+                    <select id="fulfillment-issue-status-filter"><option value="all">全部状态</option><option value="10">待处理</option><option value="20">已处理</option><option value="30">已忽略</option></select>
+                    <select id="fulfillment-issue-zone-filter"><option value="all">全部区域</option></select>
+                    <input type="search" id="fulfillment-issue-order-sn" placeholder="订单号" style="max-width:180px;">
+                    <input type="search" id="fulfillment-issue-type" placeholder="异常类型，例如缺货、缺规则" style="max-width:220px;">
+                    <button class="btn btn-primary" onclick="loadFulfillmentIssues()">查询</button>
+                </div>
+                <div id="fulfillment-issues-list" class="data-list"></div>
             </div>
 
             <!-- 区域统计 -->
@@ -365,9 +410,102 @@
                     <select id="supplier-service-zone-ids" multiple size="5"></select>
                     <p class="form-help">按住 Ctrl/Command 可多选</p>
                 </div>
+                <div class="form-group">
+                    <label>供货品类</label>
+                    <select id="supplier-supply-category-ids" multiple size="6"></select>
+                    <p class="form-help">用于后续供货规则匹配，不选表示该供应商可承接所有品类</p>
+                </div>
                 <div class="form-group checkbox">
                     <input type="checkbox" id="supplier-active" checked>
                     <label>启用</label>
+                </div>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 站点编辑弹窗 -->
+    <div id="station-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('station-modal')">&times;</span>
+            <h2 id="station-modal-title">新建站点</h2>
+            <form id="station-form">
+                <input type="hidden" id="station-id">
+                <div class="form-group">
+                    <label>配送区域</label>
+                    <select id="station-zone-id" required></select>
+                    <p class="form-help">每个区域只能绑定一个站点；更换区域前请确认新区域未被占用。</p>
+                </div>
+                <div class="form-group">
+                    <label>站点名称</label>
+                    <input type="text" id="station-name" required>
+                </div>
+                <div class="form-group">
+                    <label>站点地址</label>
+                    <input type="text" id="station-address" placeholder="例如：区内集配中心、冷库地址">
+                </div>
+                <div class="form-group">
+                    <label>联系人</label>
+                    <input type="text" id="station-contact-person">
+                </div>
+                <div class="form-group">
+                    <label>联系电话</label>
+                    <input type="text" id="station-phone">
+                </div>
+                <div class="form-group">
+                    <label>备注</label>
+                    <textarea id="station-notes"></textarea>
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="station-active" checked>
+                    <label>启用</label>
+                </div>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 供货规则编辑弹窗 -->
+    <div id="zone-supply-rule-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('zone-supply-rule-modal')">&times;</span>
+            <h2 id="zone-supply-rule-modal-title">新建供货规则</h2>
+            <form id="zone-supply-rule-form">
+                <input type="hidden" id="zone-supply-rule-id">
+                <div class="form-group">
+                    <label>配送区域</label>
+                    <select id="zone-supply-rule-zone-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>站点</label>
+                    <select id="zone-supply-rule-station-id" required></select>
+                    <p class="form-help">会根据配送区域自动筛选可用站点</p>
+                </div>
+                <div class="form-group">
+                    <label>品类</label>
+                    <select id="zone-supply-rule-category-id" required></select>
+                </div>
+                <div class="form-group">
+                    <label>供应商</label>
+                    <select id="zone-supply-rule-supplier-id" required></select>
+                    <p class="form-help">系统会优先显示该品类对应的可用供应商</p>
+                </div>
+                <div class="form-group">
+                    <label>优先级</label>
+                    <input type="number" id="zone-supply-rule-priority" value="0">
+                    <p class="form-help">数字越小越优先，同一品类可配置多个供应商。</p>
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="zone-supply-rule-primary">
+                    <label>主供</label>
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="zone-supply-rule-active" checked>
+                    <label>启用</label>
+                </div>
+                <div class="form-group">
+                    <label>备注</label>
+                    <textarea id="zone-supply-rule-notes"></textarea>
                 </div>
                 <button type="submit" class="btn btn-primary">保存</button>
             </form>
