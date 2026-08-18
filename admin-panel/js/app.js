@@ -1889,12 +1889,11 @@ async function loadZoneOptionsForRuleModal(selectId, selectedZoneId = null) {
     select.innerHTML = '<option value="">请选择配送区域</option>';
 
     zones.forEach(zone => {
-        if (!zone.station_id) {
-            return;
-        }
         const option = document.createElement('option');
         option.value = zone.id;
-        option.textContent = zone.station_name ? `${zone.zone_name}（${zone.station_name}）` : zone.zone_name;
+        option.textContent = zone.station_name
+            ? `${zone.zone_name}（${zone.station_name}）`
+            : `${zone.zone_name}（未配置站点）`;
         select.appendChild(option);
     });
 
@@ -1964,14 +1963,23 @@ async function loadRuleStationOptions(selectId, zoneId = null, selectedStationId
     const zoneValue = zoneId || document.getElementById('zone-supply-rule-zone-id')?.value || '';
 
     select.innerHTML = '<option value="">请选择站点</option>';
-    stations
-        .filter(station => !zoneValue || String(station.zone_id) === String(zoneValue))
-        .forEach(station => {
-            const option = document.createElement('option');
-            option.value = station.id;
-            option.textContent = `${station.station_name}${station.zone_name ? ` / ${station.zone_name}` : ''}`;
-            select.appendChild(option);
-        });
+    const matchedStations = stations.filter(station => !zoneValue || String(station.zone_id) === String(zoneValue));
+    if (zoneValue && matchedStations.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '该区域暂无站点，请先去站点管理配置';
+        option.disabled = true;
+        option.selected = true;
+        select.appendChild(option);
+        return;
+    }
+
+    matchedStations.forEach(station => {
+        const option = document.createElement('option');
+        option.value = station.id;
+        option.textContent = `${station.station_name}${station.zone_name ? ` / ${station.zone_name}` : ''}`;
+        select.appendChild(option);
+    });
 
     if (currentValue) {
         select.value = String(currentValue);
