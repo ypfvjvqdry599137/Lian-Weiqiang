@@ -24,7 +24,7 @@
                 <li class="menu-item" data-page="categories">分类管理</li>
                 <li class="menu-item" data-page="delivery-zones">配送区域</li>
                 <li class="menu-item" data-page="stations">站点与打包中心</li>
-                <li class="menu-item" data-page="zone-supply-rules">区域供货规则</li>
+                <li class="menu-item" data-page="zone-supply-rules">站点供货规则</li>
                 <li class="menu-item" data-page="fulfillment-issues">异常处理中心</li>
                 <li class="menu-item" data-page="zone-statistics">区域统计</li>
                 <li class="menu-item" data-page="supplier-orders">供应商备货单</li>
@@ -93,13 +93,13 @@
                 <div id="stations-list" class="data-list"></div>
             </div>
 
-            <!-- 供货规则 -->
+            <!-- 站点供货规则 -->
             <div id="page-zone-supply-rules" class="page">
                 <div class="page-header">
-                    <h2>🔗 区域供货规则</h2>
-                    <button class="btn btn-primary" onclick="showZoneSupplyRuleFromCurrentZone()">+ 新建规则</button>
+                    <h2>🔗 站点供货规则</h2>
+                    <button class="btn btn-primary" onclick="showZoneSupplyRuleFromCurrentZone()">+ 新建站点规则</button>
                 </div>
-                <p style="margin-bottom:12px;color:#666;">先给区域配站点，再把“区域 + 品类 + 供应商”串起来。优先级越小越优先，主供会优先命中。</p>
+                <p style="margin-bottom:12px;color:#666;">先给配送区域绑定站点，再把“站点 + 品类 + 供应商”串起来。优先级越小越优先，主供会优先命中。</p>
                 <p style="margin-bottom:12px;color:#666;">缺规则、缺库存、供应商停用或匹配失败的异常都会先落到这里，处理后记得更新状态。</p>
                 <div class="settlement-controls" style="margin-bottom:15px;">
                     <select id="zone-supply-rule-zone-filter"><option value="all">全部区域</option></select>
@@ -413,7 +413,7 @@
                 <div class="form-group">
                     <label>供货品类</label>
                     <select id="supplier-supply-category-ids" multiple size="6"></select>
-                    <p class="form-help">用于后续供货规则匹配，不选表示该供应商可承接所有品类</p>
+                    <p class="form-help">用于后续站点供货规则匹配，不选表示该供应商可承接所有品类</p>
                 </div>
                 <div class="form-group checkbox">
                     <input type="checkbox" id="supplier-active" checked>
@@ -465,11 +465,11 @@
         </div>
     </div>
 
-    <!-- 供货规则编辑弹窗 -->
+    <!-- 站点供货规则编辑弹窗 -->
     <div id="zone-supply-rule-modal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeModal('zone-supply-rule-modal')">&times;</span>
-            <h2 id="zone-supply-rule-modal-title">新建供货规则</h2>
+            <h2 id="zone-supply-rule-modal-title">新建站点供货规则</h2>
             <form id="zone-supply-rule-form">
                 <input type="hidden" id="zone-supply-rule-id">
                 <div class="form-group">

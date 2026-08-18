@@ -905,7 +905,7 @@ async function loadDeliveryZones() {
                 <div class="data-card-actions">
                     <button class="btn btn-sm btn-success" onclick="showDeliveryZoneModal(${zone.id})">编辑区域</button>
                     <button class="btn btn-sm btn-primary" onclick="${zone.station_id ? `showStationModal(${zone.station_id}, ${zone.id})` : `showStationModal(null, ${zone.id})`}">${zone.station_id ? '编辑站点' : '配置站点'}</button>
-                    <button class="btn btn-sm btn-success" onclick="openZoneSupplyRulesForZone(${zone.id})">查看规则</button>
+                    <button class="btn btn-sm btn-success" onclick="openZoneSupplyRulesForZone(${zone.id})">查看站点规则</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteDeliveryZone(${zone.id})">删除区域</button>
                 </div>
             `;
@@ -2015,7 +2015,7 @@ async function loadStations() {
             </div>
             <div class="data-card-actions">
                 <button class="btn btn-sm btn-success" onclick="showStationModal(${station.id})">编辑站点</button>
-                <button class="btn btn-sm btn-primary" onclick="openZoneSupplyRulesForZone(${station.zone_id})">查看规则</button>
+                <button class="btn btn-sm btn-primary" onclick="openZoneSupplyRulesForZone(${station.zone_id})">查看站点规则</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteStation(${station.id})">删除站点</button>
             </div>
         `;
@@ -2084,7 +2084,7 @@ if (stationForm) {
 }
 
 async function deleteStation(stationId) {
-    if (!confirm('确定要删除此站点吗？已有供货规则关联时将无法删除。')) {
+    if (!confirm('确定要删除此站点吗？已有站点供货规则关联时将无法删除。')) {
         return;
     }
     const result = await fetchData(`/admin/stations/${stationId}`, 'DELETE', null, true);
@@ -2110,7 +2110,7 @@ async function loadZoneSupplyRules() {
 
     const rules = data && data.rules ? data.rules : [];
     if (rules.length === 0) {
-        list.innerHTML = '<div class="empty-state">暂无供货规则，先按区域和品类新建一条试试。</div>';
+        list.innerHTML = '<div class="empty-state">暂无站点供货规则，先按站点和品类新建一条试试。</div>';
         return;
     }
 
@@ -2147,7 +2147,7 @@ async function showZoneSupplyRuleModal(ruleId = null, zoneIdHint = null) {
 
     let ruleData = null;
     if (ruleId) {
-        title.textContent = '编辑供货规则';
+        title.textContent = '编辑站点供货规则';
         ruleData = await fetchData(`/admin/zone-supply-rules/${ruleId}`);
         if (ruleData) {
             document.getElementById('zone-supply-rule-id').value = ruleData.id;
@@ -2158,7 +2158,7 @@ async function showZoneSupplyRuleModal(ruleId = null, zoneIdHint = null) {
             zoneIdHint = ruleData.zone_id;
         }
     } else {
-        title.textContent = '新建供货规则';
+        title.textContent = '新建站点供货规则';
     }
 
     await loadZoneOptionsForRuleModal('zone-supply-rule-zone-id', zoneIdHint || (ruleData ? ruleData.zone_id : null));
@@ -2206,7 +2206,7 @@ if (zoneSupplyRuleForm) {
 
         const result = await fetchData(url, method, data);
         if (result) {
-            alert(result.message || '供货规则保存成功！');
+            alert(result.message || '站点供货规则保存成功！');
             closeModal('zone-supply-rule-modal');
             await loadZoneSupplyRules();
         }
@@ -2214,12 +2214,12 @@ if (zoneSupplyRuleForm) {
 }
 
 async function deleteZoneSupplyRule(ruleId) {
-    if (!confirm('确定要删除此供货规则吗？')) {
+    if (!confirm('确定要删除此站点供货规则吗？')) {
         return;
     }
     const result = await fetchData(`/admin/zone-supply-rules/${ruleId}`, 'DELETE', null, true);
     if (result) {
-        alert(result.message || '供货规则删除成功！');
+        alert(result.message || '站点供货规则删除成功！');
         await loadZoneSupplyRules();
     }
 }

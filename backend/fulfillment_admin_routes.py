@@ -113,7 +113,7 @@ def delete_station(station_id):
     station = DeliveryStation.query.get_or_404(station_id)
     linked_rules = ZoneSupplyRule.query.filter_by(station_id=station.id).count()
     if linked_rules:
-        return jsonify({'message': '该站点仍有关联供货规则，请先删除或迁移规则'}), 400
+        return jsonify({'message': '该站点仍有关联站点供货规则，请先删除或迁移规则'}), 400
 
     db.session.delete(station)
     db.session.commit()
@@ -206,7 +206,7 @@ def create_zone_supply_rule():
         ZoneSupplyRule.query.filter_by(zone_id=zone.id, category_id=category.id, is_primary=True).update({'is_primary': False})
     db.session.add(rule)
     db.session.commit()
-    return jsonify({'message': '供货规则创建成功', 'id': rule.id}), 201
+    return jsonify({'message': '站点供货规则创建成功', 'id': rule.id}), 201
 
 
 @fulfillment_admin_bp.route('/zone-supply-rules/<int:rule_id>', methods=['GET'])
@@ -280,7 +280,7 @@ def update_zone_supply_rule(rule_id):
         ).update({'is_primary': False})
 
     db.session.commit()
-    return jsonify({'message': '供货规则更新成功'}), 200
+    return jsonify({'message': '站点供货规则更新成功'}), 200
 
 
 @fulfillment_admin_bp.route('/zone-supply-rules/<int:rule_id>', methods=['DELETE'])
@@ -290,7 +290,7 @@ def delete_zone_supply_rule(rule_id):
     rule = ZoneSupplyRule.query.get_or_404(rule_id)
     db.session.delete(rule)
     db.session.commit()
-    return jsonify({'message': '供货规则已删除'}), 200
+    return jsonify({'message': '站点供货规则已删除'}), 200
 
 
 @fulfillment_admin_bp.route('/fulfillment-issues', methods=['GET'])

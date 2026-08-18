@@ -192,10 +192,10 @@ class DeliveryStation(db.Model):
 
 
 # ============================================
-# 区域供货规则模型
+# 站点供货规则模型
 # ============================================
 class ZoneSupplyRule(db.Model):
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='供货规则ID')
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='站点供货规则ID')
     zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=False, comment='配送区域ID')
     station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=False, comment='站点ID')
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False, comment='品类ID')
