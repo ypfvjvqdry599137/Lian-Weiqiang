@@ -1308,12 +1308,6 @@ async function showIngredientModal(ingredientId = null) {
     showModal('ingredient-modal');
 }
 
-function supplierServesIngredientZone(supplier, zoneValue) {
-    if (!zoneValue) return true;
-    const zoneId = Number(zoneValue);
-    return (supplier.service_zone_ids || []).map(Number).includes(zoneId);
-}
-
 function renderSuppliersForIngredientSelect(selectedSupplierId = null) {
     const select = document.getElementById('ingredient-supplier-id');
     if (!select) return;

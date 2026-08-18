@@ -8,49 +8,12 @@ from fulfillment import (
     serialize_zone_supply_rule,
     serialize_fulfillment_issue,
 )
+from supplier_helpers import (
+    serialize_supplier_supply_categories,
+    set_supplier_supply_categories,
+)
 
 fulfillment_admin_bp = Blueprint('fulfillment_admin', __name__, url_prefix='/admin')
-
-
-def normalize_id_list(raw_ids):
-    if raw_ids is None:
-        return []
-    if not isinstance(raw_ids, list):
-        raw_ids = [raw_ids]
-
-    result = []
-    for raw_id in raw_ids:
-        if raw_id in [None, '', 'global', 'all']:
-            continue
-        try:
-            value = int(raw_id)
-        except (TypeError, ValueError):
-            raise ValueError('ID 格式不正确')
-        if value not in result:
-            result.append(value)
-    return result
-
-
-def serialize_supplier_supply_categories(supplier):
-    categories = sorted(supplier.supply_categories, key=lambda item: item.id)
-    return {
-        'supply_category_ids': [category.id for category in categories],
-        'supply_category_names': [category.name for category in categories],
-    }
-
-
-def set_supplier_supply_categories(supplier, raw_category_ids):
-    from models import Category
-
-    category_ids = normalize_id_list(raw_category_ids)
-    if not category_ids:
-        supplier.supply_categories = []
-        return
-
-    categories = Category.query.filter(Category.id.in_(category_ids)).all()
-    if len(categories) != len(category_ids):
-        raise ValueError('部分供货品类不存在')
-    supplier.supply_categories = sorted(categories, key=lambda item: item.id)
 
 
 @fulfillment_admin_bp.route('/stations', methods=['GET'])

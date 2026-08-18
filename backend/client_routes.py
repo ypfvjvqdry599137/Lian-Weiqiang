@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import math
 from extensions import db
 from product_features import normalize_text, normalize_processing_options, product_feature_payload
+from supplier_helpers import supplier_serves_zone
 
 client_bp = Blueprint('client', __name__, url_prefix='/client')
 
@@ -436,12 +437,6 @@ def remove_from_cart(cart_id):
 # ============================================
 # 工具函数：将订单拆分为供应商备货单
 # ============================================
-def supplier_serves_zone(supplier, zone_id):
-    if not zone_id:
-        return True
-    return any(zone.id == int(zone_id) for zone in supplier.service_zones)
-
-
 def get_stock_units(quantity):
     quantity = Decimal(str(quantity or 0))
     if quantity <= 0:
