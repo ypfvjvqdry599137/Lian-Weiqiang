@@ -898,14 +898,14 @@ async function loadDeliveryZones() {
                     <p>配送半径: ${zone.radius}米 | 配送费: ¥${zone.delivery_fee}</p>
                     <p>预计送达: ${zone.delivery_time}</p>
                     <p>合作商: ${zone.merchant_username || '无'}</p>
-                    <p>站点: ${zone.station_name || '未配置'}${zone.station_address ? ` | ${zone.station_address}` : ''}</p>
+                    <p>配送站: ${zone.station_name || '未配置'}${zone.station_address ? ` | ${zone.station_address}` : ''}</p>
                     <p>区域后台: <a href="/admin-panel/merchant_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${zone.is_active ? '启用' : '禁用'}</p>
                 </div>
                 <div class="data-card-actions">
                     <button class="btn btn-sm btn-success" onclick="showDeliveryZoneModal(${zone.id})">编辑区域</button>
-                    <button class="btn btn-sm btn-primary" onclick="${zone.station_id ? `showStationModal(${zone.station_id}, ${zone.id})` : `showStationModal(null, ${zone.id})`}">${zone.station_id ? '编辑站点' : '配置站点'}</button>
-                    <button class="btn btn-sm btn-success" onclick="openZoneSupplyRulesForZone(${zone.id})">查看站点规则</button>
+                    <button class="btn btn-sm btn-primary" onclick="${zone.station_id ? `showStationModal(${zone.station_id}, ${zone.id})` : `showStationModal(null, ${zone.id})`}">${zone.station_id ? '编辑配送站' : '配置配送站'}</button>
+                    <button class="btn btn-sm btn-success" onclick="openZoneSupplyRulesForZone(${zone.id})">查看配送站规则</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteDeliveryZone(${zone.id})">删除区域</button>
                 </div>
             `;
@@ -1864,7 +1864,7 @@ async function loadZoneOptionsForStationModal(selectId, selectedZoneId = null) {
         }
         const option = document.createElement('option');
         option.value = zone.id;
-        option.textContent = zone.station_name ? `${zone.zone_name}（已配置站点：${zone.station_name}）` : zone.zone_name;
+        option.textContent = zone.station_name ? `${zone.zone_name}（已配置配送站：${zone.station_name}）` : zone.zone_name;
         select.appendChild(option);
     });
 
@@ -1887,7 +1887,7 @@ async function loadZoneOptionsForRuleModal(selectId, selectedZoneId = null) {
         option.value = zone.id;
         option.textContent = zone.station_name
             ? `${zone.zone_name}（${zone.station_name}）`
-            : `${zone.zone_name}（未配置站点）`;
+            : `${zone.zone_name}（未配置配送站）`;
         select.appendChild(option);
     });
 
@@ -1956,12 +1956,12 @@ async function loadRuleStationOptions(selectId, zoneId = null, selectedStationId
     const currentValue = selectedStationId ? String(selectedStationId) : select.value;
     const zoneValue = zoneId || document.getElementById('zone-supply-rule-zone-id')?.value || '';
 
-    select.innerHTML = '<option value="">请选择站点</option>';
+    select.innerHTML = '<option value="">请选择配送站</option>';
     const matchedStations = stations.filter(station => !zoneValue || String(station.zone_id) === String(zoneValue));
     if (zoneValue && matchedStations.length === 0) {
         const option = document.createElement('option');
         option.value = '';
-        option.textContent = '该区域暂无站点，请先去站点管理配置';
+        option.textContent = '该区域暂无配送站，请先去配送站管理配置';
         option.disabled = true;
         option.selected = true;
         select.appendChild(option);
@@ -1996,7 +1996,7 @@ async function loadStations() {
 
     const stations = data && data.stations ? data.stations : [];
     if (stations.length === 0) {
-        list.innerHTML = '<div class="empty-state">暂无站点配置</div>';
+        list.innerHTML = '<div class="empty-state">暂无配送站配置</div>';
         return;
     }
 
@@ -2014,9 +2014,9 @@ async function loadStations() {
                 <p style="font-size:12px;color:#999;">创建时间: ${formatDate(station.created_at)}</p>
             </div>
             <div class="data-card-actions">
-                <button class="btn btn-sm btn-success" onclick="showStationModal(${station.id})">编辑站点</button>
-                <button class="btn btn-sm btn-primary" onclick="openZoneSupplyRulesForZone(${station.zone_id})">查看站点规则</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteStation(${station.id})">删除站点</button>
+                <button class="btn btn-sm btn-success" onclick="showStationModal(${station.id})">编辑配送站</button>
+                <button class="btn btn-sm btn-primary" onclick="openZoneSupplyRulesForZone(${station.zone_id})">查看配送站规则</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteStation(${station.id})">删除配送站</button>
             </div>
         `;
         list.appendChild(card);
@@ -2035,7 +2035,7 @@ async function showStationModal(stationId = null, zoneIdHint = null) {
 
     let selectedZoneId = zoneIdHint || '';
     if (stationId) {
-        title.textContent = '编辑站点';
+        title.textContent = '编辑配送站';
         const station = await fetchData(`/admin/stations/${stationId}`);
         if (station) {
             document.getElementById('station-id').value = station.id;
@@ -2048,7 +2048,7 @@ async function showStationModal(stationId = null, zoneIdHint = null) {
             selectedZoneId = station.zone_id;
         }
     } else {
-        title.textContent = '新建站点';
+        title.textContent = '新建配送站';
     }
 
     await loadZoneOptionsForStationModal('station-zone-id', selectedZoneId);
@@ -2074,7 +2074,7 @@ if (stationForm) {
 
         const result = await fetchData(url, method, data);
         if (result) {
-            alert(result.message || '站点保存成功！');
+            alert(result.message || '配送站保存成功！');
             closeModal('station-modal');
             await loadStations();
             await loadDeliveryZones();
@@ -2084,12 +2084,12 @@ if (stationForm) {
 }
 
 async function deleteStation(stationId) {
-    if (!confirm('确定要删除此站点吗？已有站点供货规则关联时将无法删除。')) {
+    if (!confirm('确定要删除此配送站吗？已有配送站供货规则关联时将无法删除。')) {
         return;
     }
     const result = await fetchData(`/admin/stations/${stationId}`, 'DELETE', null, true);
     if (result) {
-        alert(result.message || '站点删除成功！');
+        alert(result.message || '配送站删除成功！');
         await loadStations();
         await loadDeliveryZones();
         await loadDashboardStats();
@@ -2110,7 +2110,7 @@ async function loadZoneSupplyRules() {
 
     const rules = data && data.rules ? data.rules : [];
     if (rules.length === 0) {
-        list.innerHTML = '<div class="empty-state">暂无站点供货规则，先按站点和品类新建一条试试。</div>';
+        list.innerHTML = '<div class="empty-state">暂无配送站供货规则，先按配送站和品类新建一条试试。</div>';
         return;
     }
 
@@ -2120,7 +2120,7 @@ async function loadZoneSupplyRules() {
         card.innerHTML = `
             <div class="data-card-content">
                 <h4>${rule.zone_name || '未知区域'} / ${rule.category_name || '未知品类'}</h4>
-                <p>站点: ${rule.station_name || '无'} | 供应商: ${rule.supplier_name || '无'}</p>
+                <p>配送站: ${rule.station_name || '无'} | 供应商: ${rule.supplier_name || '无'}</p>
                 <p>优先级: ${rule.priority} | 主供: ${rule.is_primary ? '是' : '否'} | 状态: ${rule.is_active ? '启用' : '停用'}</p>
                 <p>备注: ${rule.notes || '无'}</p>
                 <p style="font-size:12px;color:#999;">创建时间: ${formatDate(rule.created_at)}</p>
@@ -2147,7 +2147,7 @@ async function showZoneSupplyRuleModal(ruleId = null, zoneIdHint = null) {
 
     let ruleData = null;
     if (ruleId) {
-        title.textContent = '编辑站点供货规则';
+        title.textContent = '编辑配送站供货规则';
         ruleData = await fetchData(`/admin/zone-supply-rules/${ruleId}`);
         if (ruleData) {
             document.getElementById('zone-supply-rule-id').value = ruleData.id;
@@ -2158,7 +2158,7 @@ async function showZoneSupplyRuleModal(ruleId = null, zoneIdHint = null) {
             zoneIdHint = ruleData.zone_id;
         }
     } else {
-        title.textContent = '新建站点供货规则';
+        title.textContent = '新建配送站供货规则';
     }
 
     await loadZoneOptionsForRuleModal('zone-supply-rule-zone-id', zoneIdHint || (ruleData ? ruleData.zone_id : null));
@@ -2206,7 +2206,7 @@ if (zoneSupplyRuleForm) {
 
         const result = await fetchData(url, method, data);
         if (result) {
-            alert(result.message || '站点供货规则保存成功！');
+            alert(result.message || '配送站供货规则保存成功！');
             closeModal('zone-supply-rule-modal');
             await loadZoneSupplyRules();
         }
@@ -2214,12 +2214,12 @@ if (zoneSupplyRuleForm) {
 }
 
 async function deleteZoneSupplyRule(ruleId) {
-    if (!confirm('确定要删除此站点供货规则吗？')) {
+    if (!confirm('确定要删除此配送站供货规则吗？')) {
         return;
     }
     const result = await fetchData(`/admin/zone-supply-rules/${ruleId}`, 'DELETE', null, true);
     if (result) {
-        alert(result.message || '站点供货规则删除成功！');
+        alert(result.message || '配送站供货规则删除成功！');
         await loadZoneSupplyRules();
     }
 }
@@ -2254,7 +2254,7 @@ async function loadFulfillmentIssues() {
             <div class="data-card-content">
                 <h4>#${issue.id} ${issue.issue_type} <span style="float:right;color:#666;">${getFulfillmentIssueStatusText(issue.status)}</span></h4>
                 <p>订单号: ${issue.order_sn}</p>
-                <p>区域: ${issue.zone_name || '无'} | 站点: ${issue.station_name || '无'}</p>
+                <p>区域: ${issue.zone_name || '无'} | 配送站: ${issue.station_name || '无'}</p>
                 <p>描述: ${issue.message}</p>
                 <p style="font-size:12px;color:#999;">创建时间: ${formatDate(issue.created_at)}${issue.resolved_at ? ` | 处理时间: ${formatDate(issue.resolved_at)}` : ''}</p>
             </div>

@@ -171,15 +171,15 @@ class DeliveryZone(db.Model):
 
 
 # ============================================
-# 区域站点模型
+# 区域配送站模型
 # ============================================
 class DeliveryStation(db.Model):
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='站点ID')
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='配送站ID')
     zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=False, unique=True, comment='配送区域ID')
-    station_name = db.Column(db.String(100), nullable=False, comment='站点名称')
-    address = db.Column(db.String(500), nullable=True, comment='站点地址')
-    contact_person = db.Column(db.String(100), nullable=True, comment='站点联系人')
-    phone = db.Column(db.String(20), nullable=True, comment='站点电话')
+    station_name = db.Column(db.String(100), nullable=False, comment='配送站名称')
+    address = db.Column(db.String(500), nullable=True, comment='配送站地址')
+    contact_person = db.Column(db.String(100), nullable=True, comment='配送站联系人')
+    phone = db.Column(db.String(20), nullable=True, comment='配送站电话')
     notes = db.Column(db.Text, nullable=True, comment='备注')
     is_active = db.Column(db.Boolean, default=True, comment='是否启用')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
@@ -192,12 +192,12 @@ class DeliveryStation(db.Model):
 
 
 # ============================================
-# 站点供货规则模型
+# 配送站供货规则模型
 # ============================================
 class ZoneSupplyRule(db.Model):
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='站点供货规则ID')
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='配送站供货规则ID')
     zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=False, comment='配送区域ID')
-    station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=False, comment='站点ID')
+    station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=False, comment='配送站ID')
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False, comment='品类ID')
     supplier_id = db.Column(db.Integer, db.ForeignKey('supplier.id'), nullable=False, comment='供应商ID')
     priority = db.Column(db.Integer, default=0, comment='优先级，数值越小越优先')
@@ -227,7 +227,7 @@ class FulfillmentIssue(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='异常ID')
     order_sn = db.Column(db.String(32), db.ForeignKey('order_master.order_sn'), nullable=False, comment='订单号')
     zone_id = db.Column(db.Integer, db.ForeignKey('delivery_zone.id'), nullable=True, comment='配送区域ID')
-    station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=True, comment='站点ID')
+    station_id = db.Column(db.Integer, db.ForeignKey('delivery_station.id'), nullable=True, comment='配送站ID')
     issue_type = db.Column(db.String(50), nullable=False, comment='异常类型')
     message = db.Column(db.Text, nullable=False, comment='异常描述')
     status = db.Column(db.SmallInteger, nullable=False, default=10, comment='状态：10-待处理，20-已处理，30-已忽略')

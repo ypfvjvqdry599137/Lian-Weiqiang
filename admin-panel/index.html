@@ -23,8 +23,8 @@
                 <li class="menu-item" data-page="products">商品管理</li>
                 <li class="menu-item" data-page="categories">分类管理</li>
                 <li class="menu-item" data-page="delivery-zones">配送区域</li>
-                <li class="menu-item" data-page="stations">站点与打包中心</li>
-                <li class="menu-item" data-page="zone-supply-rules">站点供货规则</li>
+                <li class="menu-item" data-page="stations">配送站管理</li>
+                <li class="menu-item" data-page="zone-supply-rules">配送站供货规则</li>
                 <li class="menu-item" data-page="fulfillment-issues">异常处理中心</li>
                 <li class="menu-item" data-page="zone-statistics">区域统计</li>
                 <li class="menu-item" data-page="supplier-orders">供应商备货单</li>
@@ -83,23 +83,23 @@
                 <div id="delivery-zones-list" class="data-list"></div>
             </div>
 
-            <!-- 站点管理 -->
+            <!-- 配送站管理 -->
             <div id="page-stations" class="page">
                 <div class="page-header">
-                    <h2>🚚 站点与打包中心</h2>
-                    <button class="btn btn-primary" onclick="showStationModal()">+ 新建站点</button>
+                    <h2>🚚 配送站管理</h2>
+                    <button class="btn btn-primary" onclick="showStationModal()">+ 新建配送站</button>
                 </div>
-                <p style="margin-bottom:15px;color:#666;">先给配送区域绑定一个站点，订单会先汇总到站点，再统一打包出库。</p>
+                <p style="margin-bottom:15px;color:#666;">先给配送区域绑定一个配送站，订单会先汇总到配送站，再统一打包出库。</p>
                 <div id="stations-list" class="data-list"></div>
             </div>
 
-            <!-- 站点供货规则 -->
+            <!-- 配送站供货规则 -->
             <div id="page-zone-supply-rules" class="page">
                 <div class="page-header">
-                    <h2>🔗 站点供货规则</h2>
-                    <button class="btn btn-primary" onclick="showZoneSupplyRuleFromCurrentZone()">+ 新建站点规则</button>
+                    <h2>🔗 配送站供货规则</h2>
+                    <button class="btn btn-primary" onclick="showZoneSupplyRuleFromCurrentZone()">+ 新建配送站规则</button>
                 </div>
-                <p style="margin-bottom:12px;color:#666;">先给配送区域绑定站点，再把“站点 + 品类 + 供应商”串起来。优先级越小越优先，主供会优先命中。</p>
+                <p style="margin-bottom:12px;color:#666;">先给配送区域绑定配送站，再把“配送站 + 品类 + 供应商”串起来。优先级越小越优先，主供会优先命中。</p>
                 <p style="margin-bottom:12px;color:#666;">缺规则、缺库存、供应商停用或匹配失败的异常都会先落到这里，处理后记得更新状态。</p>
                 <div class="settlement-controls" style="margin-bottom:15px;">
                     <select id="zone-supply-rule-zone-filter"><option value="all">全部区域</option></select>
@@ -413,7 +413,7 @@
                 <div class="form-group">
                     <label>供货品类</label>
                     <select id="supplier-supply-category-ids" multiple size="6"></select>
-                    <p class="form-help">用于后续站点供货规则匹配，不选表示该供应商可承接所有品类</p>
+                    <p class="form-help">用于后续配送站供货规则匹配，不选表示该供应商可承接所有品类</p>
                 </div>
                 <div class="form-group checkbox">
                     <input type="checkbox" id="supplier-active" checked>
@@ -424,24 +424,24 @@
         </div>
     </div>
 
-    <!-- 站点编辑弹窗 -->
+    <!-- 配送站编辑弹窗 -->
     <div id="station-modal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeModal('station-modal')">&times;</span>
-            <h2 id="station-modal-title">新建站点</h2>
+            <h2 id="station-modal-title">新建配送站</h2>
             <form id="station-form">
                 <input type="hidden" id="station-id">
                 <div class="form-group">
                     <label>配送区域</label>
                     <select id="station-zone-id" required></select>
-                    <p class="form-help">每个区域只能绑定一个站点；更换区域前请确认新区域未被占用。</p>
+                    <p class="form-help">每个区域只能绑定一个配送站；更换区域前请确认新区域未被占用。</p>
                 </div>
                 <div class="form-group">
-                    <label>站点名称</label>
+                    <label>配送站名称</label>
                     <input type="text" id="station-name" required>
                 </div>
                 <div class="form-group">
-                    <label>站点地址</label>
+                    <label>配送站地址</label>
                     <input type="text" id="station-address" placeholder="例如：区内集配中心、冷库地址">
                 </div>
                 <div class="form-group">
@@ -465,22 +465,22 @@
         </div>
     </div>
 
-    <!-- 站点供货规则编辑弹窗 -->
+    <!-- 配送站供货规则编辑弹窗 -->
     <div id="zone-supply-rule-modal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeModal('zone-supply-rule-modal')">&times;</span>
-            <h2 id="zone-supply-rule-modal-title">新建站点供货规则</h2>
+            <h2 id="zone-supply-rule-modal-title">新建配送站供货规则</h2>
             <form id="zone-supply-rule-form">
                 <input type="hidden" id="zone-supply-rule-id">
                 <div class="form-group">
                     <label>配送区域</label>
                     <select id="zone-supply-rule-zone-id" required></select>
-                    <p class="form-help">先选区域，再按该区域自动筛选站点；如果这里显示“未配置站点”，请先去站点管理补齐。</p>
+                    <p class="form-help">先选区域，再按该区域自动筛选配送站；如果这里显示“未配置配送站”，请先去配送站管理补齐。</p>
                 </div>
                 <div class="form-group">
-                    <label>站点</label>
+                    <label>配送站</label>
                     <select id="zone-supply-rule-station-id" required></select>
-                    <p class="form-help">会根据配送区域自动筛选可用站点；如果这里为空，说明该区域还没配置站点。</p>
+                    <p class="form-help">会根据配送区域自动筛选可用配送站；如果这里为空，说明该区域还没配置配送站。</p>
                 </div>
                 <div class="form-group">
                     <label>品类</label>

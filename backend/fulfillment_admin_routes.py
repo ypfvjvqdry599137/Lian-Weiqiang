@@ -34,13 +34,13 @@ def create_station():
     if not zone_id or not str(zone_id).isdigit():
         return jsonify({'message': '请选择配送区域'}), 400
     if not station_name:
-        return jsonify({'message': '请输入站点名称'}), 400
+        return jsonify({'message': '请输入配送站名称'}), 400
 
     zone = DeliveryZone.query.get(int(zone_id))
     if not zone:
         return jsonify({'message': '配送区域不存在'}), 404
     if zone.station:
-        return jsonify({'message': '该区域已经配置站点，请先编辑现有站点'}), 409
+        return jsonify({'message': '该区域已经配置配送站，请先编辑现有配送站'}), 409
 
     station = DeliveryStation(
         zone_id=zone.id,
@@ -53,7 +53,7 @@ def create_station():
     )
     db.session.add(station)
     db.session.commit()
-    return jsonify({'message': '站点创建成功', 'id': station.id}), 201
+    return jsonify({'message': '配送站创建成功', 'id': station.id}), 201
 
 
 @fulfillment_admin_bp.route('/stations/<int:station_id>', methods=['GET'])
@@ -80,7 +80,7 @@ def update_station(station_id):
             return jsonify({'message': '配送区域不存在'}), 404
         other_station = DeliveryStation.query.filter(DeliveryStation.zone_id == zone.id, DeliveryStation.id != station.id).first()
         if other_station:
-            return jsonify({'message': '该配送区域已被其他站点占用'}), 409
+            return jsonify({'message': '该配送区域已被其他配送站占用'}), 409
         station.zone_id = zone.id
 
     if 'station_name' in data:
@@ -97,13 +97,13 @@ def update_station(station_id):
         station.is_active = bool(data.get('is_active'))
 
     if not station.station_name:
-        return jsonify({'message': '站点名称不能为空'}), 400
+        return jsonify({'message': '配送站名称不能为空'}), 400
 
     if not station.is_active:
         ZoneSupplyRule.query.filter_by(station_id=station.id, is_active=True).update({'is_active': False})
 
     db.session.commit()
-    return jsonify({'message': '站点更新成功'}), 200
+    return jsonify({'message': '配送站更新成功'}), 200
 
 
 @fulfillment_admin_bp.route('/stations/<int:station_id>', methods=['DELETE'])
@@ -113,11 +113,11 @@ def delete_station(station_id):
     station = DeliveryStation.query.get_or_404(station_id)
     linked_rules = ZoneSupplyRule.query.filter_by(station_id=station.id).count()
     if linked_rules:
-        return jsonify({'message': '该站点仍有关联站点供货规则，请先删除或迁移规则'}), 400
+        return jsonify({'message': '该配送站仍有关联供货规则，请先删除或迁移规则'}), 400
 
     db.session.delete(station)
     db.session.commit()
-    return jsonify({'message': '站点已删除'}), 200
+    return jsonify({'message': '配送站已删除'}), 200
 
 
 @fulfillment_admin_bp.route('/suppliers/<int:supplier_id>/supply-categories', methods=['GET'])
@@ -179,7 +179,7 @@ def create_zone_supply_rule():
     supplier_id = data.get('supplier_id')
 
     if not all([zone_id, station_id, category_id, supplier_id]):
-        return jsonify({'message': '请完整填写区域、站点、品类和供应商'}), 400
+        return jsonify({'message': '请完整填写区域、配送站、品类和供应商'}), 400
     if not str(zone_id).isdigit() or not str(station_id).isdigit() or not str(category_id).isdigit() or not str(supplier_id).isdigit():
         return jsonify({'message': '参数格式不正确'}), 400
 
@@ -188,9 +188,9 @@ def create_zone_supply_rule():
     category = Category.query.get(int(category_id))
     supplier = Supplier.query.get(int(supplier_id))
     if not zone or not station or not category or not supplier:
-        return jsonify({'message': '区域、站点、品类或供应商不存在'}), 404
+        return jsonify({'message': '区域、配送站、品类或供应商不存在'}), 404
     if station.zone_id != zone.id:
-        return jsonify({'message': '站点必须归属该配送区域'}), 400
+        return jsonify({'message': '配送站必须归属该配送区域'}), 400
 
     rule = ZoneSupplyRule(
         zone_id=zone.id,
@@ -206,7 +206,7 @@ def create_zone_supply_rule():
         ZoneSupplyRule.query.filter_by(zone_id=zone.id, category_id=category.id, is_primary=True).update({'is_primary': False})
     db.session.add(rule)
     db.session.commit()
-    return jsonify({'message': '站点供货规则创建成功', 'id': rule.id}), 201
+    return jsonify({'message': '配送站供货规则创建成功', 'id': rule.id}), 201
 
 
 @fulfillment_admin_bp.route('/zone-supply-rules/<int:rule_id>', methods=['GET'])
@@ -236,12 +236,12 @@ def update_zone_supply_rule(rule_id):
     if 'station_id' in data:
         station_id = data.get('station_id')
         if not str(station_id).isdigit():
-            return jsonify({'message': '站点参数不正确'}), 400
+            return jsonify({'message': '配送站参数不正确'}), 400
         station = DeliveryStation.query.get(int(station_id))
         if not station:
-            return jsonify({'message': '站点不存在'}), 404
+            return jsonify({'message': '配送站不存在'}), 404
         if rule.zone_id and station.zone_id != rule.zone_id:
-            return jsonify({'message': '站点必须归属当前区域'}), 400
+            return jsonify({'message': '配送站必须归属当前区域'}), 400
         rule.station_id = station.id
 
     if 'category_id' in data:
@@ -280,7 +280,7 @@ def update_zone_supply_rule(rule_id):
         ).update({'is_primary': False})
 
     db.session.commit()
-    return jsonify({'message': '站点供货规则更新成功'}), 200
+    return jsonify({'message': '配送站供货规则更新成功'}), 200
 
 
 @fulfillment_admin_bp.route('/zone-supply-rules/<int:rule_id>', methods=['DELETE'])
@@ -290,7 +290,7 @@ def delete_zone_supply_rule(rule_id):
     rule = ZoneSupplyRule.query.get_or_404(rule_id)
     db.session.delete(rule)
     db.session.commit()
-    return jsonify({'message': '站点供货规则已删除'}), 200
+    return jsonify({'message': '配送站供货规则已删除'}), 200
 
 
 @fulfillment_admin_bp.route('/fulfillment-issues', methods=['GET'])
