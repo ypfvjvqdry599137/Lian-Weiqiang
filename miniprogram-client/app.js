@@ -125,15 +125,24 @@ App({
 
   request(options) {
     const baseUrl = this.globalData.baseUrl;
+    const method = options.method || 'GET';
+    const fullUrl = baseUrl + options.url;
+
     wx.request({
-      url: baseUrl + options.url,
-      method: options.method || 'GET',
+      url: fullUrl,
+      method: method,
       data: options.data,
       header: {
         'content-type': 'application/json'
       },
       success: (res) => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
+          console.error('[wx.request status error]', {
+            url: fullUrl,
+            method: method,
+            statusCode: res.statusCode,
+            response: res.data
+          });
           const message = res.data && res.data.message ? res.data.message : '请求失败';
           wx.showToast({
             title: message,
@@ -149,6 +158,12 @@ App({
         }
       },
       fail: (err) => {
+        console.error('[wx.request network fail]', {
+          url: fullUrl,
+          method: method,
+          errMsg: err && err.errMsg ? err.errMsg : '未知网络错误',
+          err: err
+        });
         wx.showToast({
           title: '网络请求失败',
           icon: 'none'
