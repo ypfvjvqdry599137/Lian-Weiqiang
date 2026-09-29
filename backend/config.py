@@ -22,12 +22,13 @@ load_env_file(os.path.join(BASE_DIR, '.env'))
 
 
 class Config:
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'mysql+pymysql://fresh_user:794423@localhost:3306/fresh_produce'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or \
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
     PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL')
+    AUTH_SIGNING_KEY = os.environ.get('AUTH_SIGNING_KEY')
+    ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_HASH')
     WECHAT_MINI_PROGRAM_APPID = os.environ.get('WECHAT_MINI_PROGRAM_APPID') or os.environ.get('WECHAT_APPID')
     WECHAT_MINI_PROGRAM_SECRET = os.environ.get('WECHAT_MINI_PROGRAM_SECRET') or os.environ.get('WECHAT_APP_SECRET')
     WECHAT_PAY_MCHID = os.environ.get('WECHAT_PAY_MCHID')

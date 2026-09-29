@@ -18,6 +18,8 @@ from status_utils import (
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import or_
 from werkzeug.utils import secure_filename
+from werkzeug.security import check_password_hash, generate_password_hash
+from auth import issue_token, require_admin
 
 from supplier_helpers import (
     serialize_supplier_service_zones,
@@ -27,6 +29,22 @@ from supplier_helpers import (
 )
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+
+@admin_bp.before_request
+def authenticate_admin():
+    if request.endpoint == 'admin.admin_login':
+        return None
+    return require_admin()
+
+
+@admin_bp.route('/auth/login', methods=['POST'])
+def admin_login():
+    password_hash = current_app.config.get('ADMIN_PASSWORD_HASH')
+    password = (request.get_json(silent=True) or {}).get('password')
+    if not password_hash or not isinstance(password, str) or not check_password_hash(password_hash, password):
+        return jsonify({'message': '账号或密码错误'}), 401
+    return jsonify({'token': issue_token('admin', 1, password_hash)})
 
 ALLOWED_PRODUCT_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
 PRODUCT_IMAGE_MAX_SIDE = 1200
@@ -347,10 +365,10 @@ def create_supplier():
 
     name = data.get('name')
     username = data.get('username')
-    password = data.get('password', '123456')
+    password = data.get('password')
 
-    if not all([name, username]):
-        return jsonify({"message": "Name and username are required"}), 400
+    if not all([name, username, password]):
+        return jsonify({"message": "Name, username and password are required"}), 400
 
     if Supplier.query.filter_by(username=username, is_deleted=False).first():
         return jsonify({"message": "Username already exists"}), 409
@@ -360,7 +378,7 @@ def create_supplier():
         contact_person=data.get('contact_person'),
         phone=data.get('phone'),
         username=username,
-        password=password,
+        password=generate_password_hash(password, method='pbkdf2:sha256:600000'),
         is_active=data.get('is_active', True)
     )
     db.session.add(supplier)
@@ -423,7 +441,7 @@ def update_supplier(supplier_id):
     supplier.is_active = data.get('is_active', supplier.is_active)
     
     if 'password' in data and data['password']:
-        supplier.password = data['password']
+        supplier.password = generate_password_hash(data['password'], method='pbkdf2:sha256:600000')
     
     if 'username' in data:
         existing = Supplier.query.filter(
@@ -1305,6 +1323,9 @@ def update_order_status(order_sn):
         new_status = None
     if new_status not in [10, 20, 30, 40, 50, 60]:
         return jsonify({"message": "无效的订单状态"}), 400
+    allowed_transitions = {20: 30, 30: 40, 40: 50}
+    if allowed_transitions.get(order.order_status) != new_status:
+        return jsonify({"message": "只能按已支付、配送中、已送达、已完成顺序更新；取消和退款不能直接修改订单状态"}), 400
     
     order.order_status = new_status
     db.session.commit()
@@ -1324,6 +1345,8 @@ def delete_order(order_sn):
     from models import OrderMaster
     """删除订单，并同步清理供应商备货单和区域配送订单数据"""
     order = OrderMaster.query.get_or_404(order_sn)
+    if order.order_status not in (10, 60):
+        return jsonify({"message": "已支付订单不能直接删除，请先走退款和售后流程"}), 400
 
     supplier_order_count = len(order.supplier_orders or [])
     order_item_count = len(order.items or [])

@@ -1,4 +1,7 @@
 from flask import Blueprint, request, jsonify
+from hmac import compare_digest
+from werkzeug.security import check_password_hash, generate_password_hash
+from auth import STAFF_TOKEN_AGE, issue_token, read_token, token_binding
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from extensions import db
@@ -10,6 +13,23 @@ from status_utils import (
 
 supplier_bp = Blueprint('supplier', __name__, url_prefix='/supplier')
 BUSINESS_TZ = timezone(timedelta(hours=8))
+
+
+@supplier_bp.before_request
+def authenticate_supplier():
+    if request.method == 'OPTIONS' or request.endpoint == 'supplier.supplier_login':
+        return None
+
+    from models import Supplier
+    payload = read_token('supplier', STAFF_TOKEN_AGE)
+    if not payload:
+        return jsonify({'message': '请先登录供应商后台'}), 401
+    supplier = db.session.get(Supplier, payload['sub'])
+    if not supplier or not supplier.is_active or supplier.is_deleted or payload['bind'] != token_binding(supplier.password):
+        return jsonify({'message': '登录已失效，请重新登录'}), 401
+    if request.args.get('supplier_id') != str(supplier.id):
+        return jsonify({'message': '无权访问其他供应商数据'}), 403
+    return None
 
 
 def get_supplier_order_item_total(item):
@@ -86,16 +106,26 @@ def supplier_login():
         return jsonify({'message': '请输入账号和密码'}), 400
     
     supplier = Supplier.query.filter_by(username=username, is_deleted=False).first()
-    if not supplier or supplier.password != password: # 生产环境请使用加密密码验证
+    if not supplier:
+        return jsonify({'message': '账号或密码错误'}), 401
+    stored = supplier.password or ''
+    hashed = stored.startswith(('scrypt:', 'pbkdf2:'))
+    valid = check_password_hash(stored, password) if hashed else compare_digest(stored, password)
+    if not valid:
         return jsonify({'message': '账号或密码错误'}), 401
     
     if not supplier.is_active or supplier.is_deleted:
         return jsonify({'message': '供应商账号已被禁用'}), 403
+
+    if not hashed:
+        supplier.password = generate_password_hash(password, method='pbkdf2:sha256:600000')
+        db.session.commit()
     
     return jsonify({
         'message': '登录成功',
         'supplier_id': supplier.id,
-        'supplier_name': supplier.name
+        'supplier_name': supplier.name,
+        'token': issue_token('supplier', supplier.id, supplier.password)
     }), 200
 
 @supplier_bp.route('/profile', methods=['GET'])

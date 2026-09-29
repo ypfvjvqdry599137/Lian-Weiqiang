@@ -2,6 +2,16 @@
 const BASE_URL = window.location.origin && window.location.origin !== 'null'
     ? window.location.origin
     : 'https://xianpeiju.site';
+const ADMIN_TOKEN_KEY = 'freshProduceAdminToken';
+
+function adminToken() {
+    return sessionStorage.getItem(ADMIN_TOKEN_KEY);
+}
+
+function requireAdminLogin() {
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    window.location.replace('/admin-panel/login.html');
+}
 
 // ==================== 腾讯地图选点 ====================
 let map = null;
@@ -309,6 +319,7 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
         method: method,
         headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${adminToken() || ''}`,
         },
     };
     if (data) {
@@ -318,6 +329,10 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
     window.lastFetchError = '';
     try {
         const response = await fetch(fullUrl, options);
+        if (response.status === 401) {
+            requireAdminLogin();
+            return null;
+        }
         console.log('响应状态:', response.status);
         
         if (!response.ok) {
@@ -668,8 +683,13 @@ async function uploadProductImage() {
 
         const response = await fetch(`${BASE_URL}/admin/uploads/product-image`, {
             method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken() || ''}` },
             body: formData
         });
+        if (response.status === 401) {
+            requireAdminLogin();
+            return;
+        }
         const result = await response.json().catch(() => ({}));
 
         if (!response.ok) {
@@ -2370,6 +2390,10 @@ function setupIngredientControls() {
     }
 }
 document.addEventListener('DOMContentLoaded', () => {
+    if (!adminToken()) {
+        requireAdminLogin();
+        return;
+    }
     const zoneStatsMonth = document.getElementById('zone-statistics-month');
     if (zoneStatsMonth) {
         zoneStatsMonth.value = getCurrentMonthValue();

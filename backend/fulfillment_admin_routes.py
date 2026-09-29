@@ -3,6 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 
 from extensions import db
+from auth import require_admin
 from fulfillment import (
     serialize_delivery_station,
     serialize_zone_supply_rule,
@@ -14,6 +15,11 @@ from supplier_helpers import (
 )
 
 fulfillment_admin_bp = Blueprint('fulfillment_admin', __name__, url_prefix='/admin')
+
+
+@fulfillment_admin_bp.before_request
+def authenticate_admin():
+    return require_admin()
 
 
 @fulfillment_admin_bp.route('/stations', methods=['GET'])

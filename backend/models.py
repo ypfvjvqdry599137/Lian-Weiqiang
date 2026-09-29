@@ -343,6 +343,14 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.nickname}>'
 
+
+class ClientIdentity(db.Model):
+    openid = db.Column(db.String(100), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('client_identity', uselist=False))
+
 # ============================================
 # 购物车模型
 # ============================================

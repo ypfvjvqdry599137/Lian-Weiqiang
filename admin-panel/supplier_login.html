@@ -126,9 +126,10 @@
                     result = {};
                 }
 
-                if (response.ok) {
+                if (response.ok && result.token) {
                     localStorage.setItem('supplier_id', result.supplier_id);
                     localStorage.setItem('supplier_name', result.supplier_name);
+                    sessionStorage.setItem('supplier_token', result.token);
                     alert('登录成功！');
                     window.location.href = '/admin-panel/supplier_dashboard.html'; // 登录成功后跳转到供应商后台主页
                 } else {

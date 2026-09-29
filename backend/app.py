@@ -8,6 +8,10 @@ import os
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    if not app.config.get('AUTH_SIGNING_KEY') or len(app.config['AUTH_SIGNING_KEY']) < 32:
+        raise RuntimeError('AUTH_SIGNING_KEY must be configured with at least 32 characters')
+    if not app.config.get('ADMIN_PASSWORD_HASH'):
+        raise RuntimeError('ADMIN_PASSWORD_HASH must be configured')
     CORS(app)
     db.init_app(app)
 

@@ -1,6 +1,7 @@
 App({
   globalData: {
     userInfo: null,
+    authToken: null,
     cartCount: 0,
     cartTotalPrice: '0.00',
     selectedAddress: null, // 默认选中的地址
@@ -13,9 +14,20 @@ App({
 
   checkLogin() {
     const userInfo = wx.getStorageSync('userInfo');
-    if (userInfo) {
+    const authToken = wx.getStorageSync('authToken');
+    if (userInfo && authToken) {
       this.globalData.userInfo = userInfo;
+      this.globalData.authToken = authToken;
+    } else {
+      this.clearAuth();
     }
+  },
+
+  clearAuth() {
+    this.globalData.userInfo = null;
+    this.globalData.authToken = null;
+    wx.removeStorageSync('userInfo');
+    wx.removeStorageSync('authToken');
   },
 
   updateCartCount(callback) {
@@ -42,7 +54,7 @@ App({
   },
 
   ensureWechatUser() {
-    if (this.globalData.userInfo && this.globalData.userInfo.openid) {
+    if (this.globalData.authToken && this.globalData.userInfo) {
       return Promise.resolve(this.globalData.userInfo);
     }
 
@@ -61,13 +73,22 @@ App({
           this.request({
             url: '/client/wechat/login',
             method: 'POST',
+            auth: false,
+            silent: true,
             data: {
               code: loginRes.code
             },
             success: (res) => {
-              const user = res.data && res.data.user ? res.data.user : res.data;
+              const user = res.data && res.data.user;
+              const token = res.data && res.data.token;
+              if (!user || !token) {
+                reject(new Error('微信登录未返回有效会话'));
+                return;
+              }
               this.globalData.userInfo = user;
+              this.globalData.authToken = token;
               wx.setStorageSync('userInfo', user);
+              wx.setStorageSync('authToken', token);
               resolve(user);
             },
             fail: reject
@@ -127,51 +148,73 @@ App({
     const baseUrl = this.globalData.baseUrl;
     const method = options.method || 'GET';
     const fullUrl = baseUrl + options.url;
+    const isPublic = options.auth === false ||
+      /^\/client\/(categories|products(?:\/[^/]+)?|delivery-zones|delivery\/check)(?:\?.*)?$/.test(options.url);
 
-    wx.request({
-      url: fullUrl,
-      method: method,
-      data: options.data,
-      header: {
-        'content-type': 'application/json'
-      },
-      success: (res) => {
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          console.error('[wx.request status error]', {
-            url: fullUrl,
-            method: method,
-            statusCode: res.statusCode,
-            response: res.data
-          });
-          const message = res.data && res.data.message ? res.data.message : '请求失败';
-          wx.showToast({
-            title: message,
-            icon: 'none'
-          });
-          if (options.fail) {
-            options.fail(res);
-          }
-          return;
-        }
-        if (options.success) {
-          options.success(res);
-        }
-      },
-      fail: (err) => {
-        console.error('[wx.request network fail]', {
-          url: fullUrl,
-          method: method,
-          errMsg: err && err.errMsg ? err.errMsg : '未知网络错误',
-          err: err
-        });
-        wx.showToast({
-          title: '网络请求失败',
-          icon: 'none'
-        });
-        if (options.fail) {
-          options.fail(err);
-        }
+    const fail = (error, message) => {
+      if (!options.silent) {
+        wx.showToast({ title: message, icon: 'none' });
       }
-    });
+      if (options.fail) {
+        options.fail(error);
+      }
+    };
+
+    const send = (retried) => {
+      const header = {
+        'content-type': 'application/json',
+        ...(options.header || {})
+      };
+      if (!isPublic) {
+        header.Authorization = `Bearer ${this.globalData.authToken}`;
+      }
+
+      wx.request({
+        url: fullUrl,
+        method,
+        data: options.data,
+        header,
+        success: (res) => {
+          if (res.statusCode === 401 && !isPublic && !retried) {
+            this.clearAuth();
+            this.ensureWechatUser().then(() => send(true)).catch((error) => {
+              fail(error, '微信登录失败，请重试');
+            });
+            return;
+          }
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            console.error('[wx.request status error]', {
+              url: fullUrl,
+              method,
+              statusCode: res.statusCode,
+              response: res.data
+            });
+            fail(res, res.data && res.data.message ? res.data.message : '请求失败');
+            return;
+          }
+          if (options.success) {
+            options.success(res);
+          }
+        },
+        fail: (error) => {
+          console.error('[wx.request network fail]', {
+            url: fullUrl,
+            method,
+            errMsg: error && error.errMsg ? error.errMsg : '未知网络错误'
+          });
+          fail(error, '网络请求失败');
+        }
+      });
+    };
+
+    if (isPublic) {
+      send(false);
+    } else if (this.globalData.authToken && this.globalData.userInfo) {
+      send(false);
+    } else {
+      this.ensureWechatUser().then(() => send(false)).catch((error) => {
+        fail(error, '微信登录失败，请重试');
+      });
+    }
   }
 })

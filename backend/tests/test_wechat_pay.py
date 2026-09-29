@@ -22,8 +22,9 @@ if not hasattr(werkzeug, '__version__'):
     werkzeug.__version__ = '3.0.0'
 
 from client_routes import client_bp  # noqa: E402
+from auth import issue_token  # noqa: E402
 from extensions import db  # noqa: E402
-from models import Category, OrderItem, OrderMaster, Product, ProductStock, User  # noqa: E402
+from models import Category, ClientIdentity, OrderItem, OrderMaster, Product, ProductStock, User  # noqa: E402
 import wechat_pay_support  # noqa: E402
 
 
@@ -82,6 +83,7 @@ class WeChatPayTestCase(unittest.TestCase):
             'TESTING': True,
             'SQLALCHEMY_DATABASE_URI': f'sqlite:///{self.db_path.replace("\\", "/")}',
             'SQLALCHEMY_TRACK_MODIFICATIONS': False,
+            'AUTH_SIGNING_KEY': 'payment-test-signing-key-with-32-characters',
             'WECHAT_MINI_PROGRAM_APPID': 'wx1234567890abcdef',
             'WECHAT_MINI_PROGRAM_SECRET': 'secret-secret-secret',
             'WECHAT_PAY_MCHID': '1900000001',
@@ -100,6 +102,7 @@ class WeChatPayTestCase(unittest.TestCase):
         self.user = User(nickname='测试用户', phone='13800138000', openid='openid-test')
         db.session.add(self.user)
         db.session.flush()
+        db.session.add(ClientIdentity(openid=self.user.openid, user_id=self.user.id))
 
         self.category = Category(name='测试分类', sort_order=1)
         db.session.add(self.category)
@@ -155,6 +158,7 @@ class WeChatPayTestCase(unittest.TestCase):
         )
         db.session.add(self.order_item)
         db.session.commit()
+        self.auth_headers = {'Authorization': f'Bearer {issue_token("client", self.user.id, self.user.openid)}'}
 
     def tearDown(self):
         db.session.remove()
@@ -245,7 +249,7 @@ class WeChatPayTestCase(unittest.TestCase):
                 'trade_state_desc': '支付成功'
             }
         ):
-            response = self.client.post(f'/client/orders/{self.order.order_sn}/pay')
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/pay', headers=self.auth_headers)
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -272,7 +276,7 @@ class WeChatPayTestCase(unittest.TestCase):
         }
 
         with patch.object(wechat_pay_support, 'create_jsapi_prepay', return_value=fake_payment):
-            response = self.client.post(f'/client/orders/{self.order.order_sn}/wechat-pay')
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/wechat-pay', headers=self.auth_headers)
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -281,15 +285,22 @@ class WeChatPayTestCase(unittest.TestCase):
         self.assertEqual(payload['payment']['package'], 'prepay_id=prepay-test-001')
 
     def test_order_detail_and_list_include_can_pay_flag(self):
-        list_response = self.client.get('/client/orders')
+        list_response = self.client.get('/client/orders', headers=self.auth_headers)
         self.assertEqual(list_response.status_code, 200)
         list_payload = list_response.get_json()
         self.assertTrue(list_payload['orders'][0]['can_pay'])
 
-        detail_response = self.client.get(f'/client/orders/{self.order.order_sn}')
+        detail_response = self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.auth_headers)
         self.assertEqual(detail_response.status_code, 200)
         detail_payload = detail_response.get_json()
         self.assertTrue(detail_payload['can_pay'])
+
+    def test_paid_order_cannot_be_cancelled_without_refund(self):
+        self.order.order_status = 20
+        db.session.commit()
+        response = self.client.post(f'/client/orders/{self.order.order_sn}/cancel', headers=self.auth_headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self._reload_order().order_status, 20)
 
 
 if __name__ == '__main__':

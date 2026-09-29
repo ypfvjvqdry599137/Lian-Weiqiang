@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from decimal import Decimal, ROUND_CEILING
 import random
 import string
@@ -7,20 +7,43 @@ import math
 from extensions import db
 from product_features import normalize_text, normalize_processing_options, product_feature_payload
 from supplier_helpers import supplier_serves_zone
+from auth import CLIENT_TOKEN_AGE, issue_token, read_token, token_binding
+from sqlalchemy.exc import IntegrityError
 
 client_bp = Blueprint('client', __name__, url_prefix='/client')
 
-# ============================================
-# 工具函数：获取/创建测试用户
-# ============================================
-def get_or_create_test_user():
-    from models import User
-    user = User.query.first()
-    if not user:
-        user = User(nickname='测试用户', phone='13800138000')
-        db.session.add(user)
-        db.session.commit()
-    return user
+PUBLIC_CLIENT_ENDPOINTS = {
+    'client.wechat_login',
+    'client.wechat_pay_notify',
+    'client.get_delivery_zones',
+    'client.check_delivery',
+    'client.get_categories',
+    'client.get_products',
+    'client.get_product_detail',
+}
+
+
+@client_bp.before_request
+def authenticate_client():
+    if request.method == 'OPTIONS' or request.endpoint in PUBLIC_CLIENT_ENDPOINTS:
+        return None
+
+    from models import ClientIdentity, User
+    payload = read_token('client', CLIENT_TOKEN_AGE)
+    if not payload:
+        return jsonify({'message': '请先微信登录'}), 401
+
+    identity = ClientIdentity.query.filter_by(user_id=payload['sub']).first()
+    user = db.session.get(User, payload['sub'])
+    if not identity or not user or user.openid != identity.openid or token_binding(identity.openid) != payload['bind']:
+        return jsonify({'message': '登录已失效，请重新登录'}), 401
+
+    g.client_user = user
+    return None
+
+
+def current_client_user():
+    return g.client_user
 
 
 def stringify_decimal(value):
@@ -83,7 +106,7 @@ def generate_order_sn():
 @client_bp.route('/addresses', methods=['GET'])
 def get_addresses():
     from models import UserAddress
-    user = get_or_create_test_user()
+    user = current_client_user()
     addresses = UserAddress.query.filter_by(user_id=user.id).order_by(UserAddress.is_default.desc(), UserAddress.created_at.desc()).all()
     result = []
     for addr in addresses:
@@ -107,7 +130,7 @@ def get_addresses():
 def add_address():
     from models import UserAddress
     data = request.get_json()
-    user = get_or_create_test_user()
+    user = current_client_user()
     
     # 如果设为默认，先取消其他地址的默认
     if data.get('is_default'):
@@ -141,7 +164,7 @@ def add_address():
 def update_address(addr_id):
     from models import UserAddress
     data = request.get_json()
-    user = get_or_create_test_user()
+    user = current_client_user()
     address = UserAddress.query.filter_by(id=addr_id, user_id=user.id).first_or_404()
     
     # 如果设为默认，先取消其他地址的默认
@@ -171,7 +194,7 @@ def update_address(addr_id):
 @client_bp.route('/addresses/<int:addr_id>', methods=['DELETE'])
 def delete_address(addr_id):
     from models import UserAddress
-    user = get_or_create_test_user()
+    user = current_client_user()
     address = UserAddress.query.filter_by(id=addr_id, user_id=user.id).first_or_404()
     db.session.delete(address)
     db.session.commit()
@@ -180,7 +203,7 @@ def delete_address(addr_id):
 @client_bp.route('/addresses/default', methods=['GET'])
 def get_default_address():
     from models import UserAddress
-    user = get_or_create_test_user()
+    user = current_client_user()
     address = UserAddress.query.filter_by(user_id=user.id, is_default=True).first()
     if not address:
         address = UserAddress.query.filter_by(user_id=user.id).first()
@@ -331,7 +354,7 @@ def get_product_detail(product_id):
 @client_bp.route('/cart', methods=['GET'])
 def get_cart():
     from models import Cart
-    user = get_or_create_test_user()
+    user = current_client_user()
     cart_items = Cart.query.filter_by(user_id=user.id).all()
     
     result = []
@@ -390,7 +413,7 @@ def add_to_cart():
     else:
         processing_option = None
 
-    user = get_or_create_test_user()
+    user = current_client_user()
     
     # 检查是否已在购物车
     cart_item = Cart.query.filter_by(user_id=user.id, product_id=product_id).first()
@@ -407,7 +430,7 @@ def add_to_cart():
 @client_bp.route('/cart/<int:cart_id>', methods=['PUT'])
 def update_cart_item(cart_id):
     from models import Cart
-    user = get_or_create_test_user()
+    user = current_client_user()
     cart_item = Cart.query.filter_by(id=cart_id, user_id=user.id).first_or_404()
     
     data = request.get_json()
@@ -424,7 +447,7 @@ def update_cart_item(cart_id):
 @client_bp.route('/cart/<int:cart_id>', methods=['DELETE'])
 def remove_from_cart(cart_id):
     from models import Cart
-    user = get_or_create_test_user()
+    user = current_client_user()
     cart_item = Cart.query.filter_by(id=cart_id, user_id=user.id).first_or_404()
     db.session.delete(cart_item)
     db.session.commit()
@@ -505,7 +528,7 @@ def split_order_to_supplier_orders(order_sn):
 
     return build_supply_orders(order_sn)
 def can_user_cancel_order(order):
-    if order.order_status not in [10, 20]:
+    if order.order_status != 10:
         return False
     return all(supplier_order.status == 10 for supplier_order in order.supplier_orders)
 
@@ -517,7 +540,7 @@ def create_order():
     if not data:
         return jsonify({'message': '无效请求'}), 400
     
-    user = get_or_create_test_user()
+    user = current_client_user()
     
     # 获取购物车
     cart_items = Cart.query.filter_by(user_id=user.id).all()
@@ -638,7 +661,7 @@ def create_order():
 @client_bp.route('/orders', methods=['GET'])
 def get_orders():
     from models import OrderMaster
-    user = get_or_create_test_user()
+    user = current_client_user()
     status = request.args.get('status')
 
     query = OrderMaster.query.filter_by(user_id=user.id)
@@ -693,7 +716,7 @@ def get_order_detail(order_sn):
     from models import OrderMaster
     from fulfillment import serialize_fulfillment_issue
 
-    user = get_or_create_test_user()
+    user = current_client_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
 
     items = []
@@ -788,7 +811,7 @@ def finalize_paid_order(order, transaction_id=None):
 
 @client_bp.route('/wechat/login', methods=['POST'])
 def wechat_login():
-    from models import User
+    from models import ClientIdentity, User
     from wechat_pay_support import exchange_code_for_openid, WeChatPayError
 
     data = request.get_json() or {}
@@ -802,15 +825,36 @@ def wechat_login():
         return jsonify({'message': str(exc)}), 400
 
     openid = payload.get('openid')
-    user = User.query.filter_by(openid=openid).first()
-    if not user:
-        user = get_or_create_test_user()
+    if not isinstance(openid, str) or not openid:
+        return jsonify({'message': '微信登录未返回有效用户标识'}), 502
 
-    user.openid = openid
-    db.session.commit()
+    identity = db.session.get(ClientIdentity, openid)
+    if identity:
+        user = db.session.get(User, identity.user_id)
+        if not user or user.openid != openid:
+            return jsonify({'message': '账号状态异常，请联系管理员'}), 500
+    else:
+        legacy_user = User.query.filter_by(openid=openid).first()
+        if legacy_user:
+            legacy_user.openid = None
+        user = User(openid=openid, nickname='微信用户')
+        try:
+            db.session.add(user)
+            db.session.flush()
+            db.session.add(ClientIdentity(openid=openid, user_id=user.id))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            identity = db.session.get(ClientIdentity, openid)
+            if not identity:
+                raise
+            user = db.session.get(User, identity.user_id)
+
+    token = issue_token('client', user.id, user.openid)
 
     return jsonify({
         'message': '微信登录成功',
+        'token': token,
         'user': {
             'id': user.id,
             'openid': user.openid,
@@ -825,7 +869,7 @@ def create_wechat_pay(order_sn):
     from models import OrderMaster
     from wechat_pay_support import create_jsapi_prepay, WeChatPayError
 
-    user = get_or_create_test_user()
+    user = current_client_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
 
     if order.order_status != 10:
@@ -856,7 +900,7 @@ def pay_order(order_sn):
     from wechat_pay_support import query_jsapi_order_by_out_trade_no, WeChatPayError
     import time
 
-    user = get_or_create_test_user()
+    user = current_client_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
 
     if order.order_status == 20:
@@ -939,10 +983,12 @@ def wechat_pay_notify():
 @client_bp.route('/orders/<order_sn>/cancel', methods=['POST'])
 def cancel_order(order_sn):
     from models import OrderMaster, Product, SupplierOrder
-    user = get_or_create_test_user()
+    user = current_client_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
 
-    if order.order_status not in [10, 20]:
+    if order.order_status == 20:
+        return jsonify({'message': '已支付订单请联系人工处理退款'}), 400
+    if order.order_status != 10:
         return jsonify({'message': '当前状态无法取消订单'}), 400
     if not can_user_cancel_order(order):
         return jsonify({'message': '订单已开始备货，无法取消'}), 400
@@ -950,11 +996,7 @@ def cancel_order(order_sn):
     for item in order.items:
         product = db.session.get(Product, item.product_id)
         if product and product.stock:
-            if order.order_status == 10:
-                product.stock.lock_stock = max(0, (product.stock.lock_stock or 0) - item.quantity)
-            elif order.order_status == 20:
-                product.stock.total_stock = (product.stock.total_stock or 0) + item.quantity
-                product.sales_count = max(0, (product.sales_count or 0) - item.quantity)
+            product.stock.lock_stock = max(0, (product.stock.lock_stock or 0) - item.quantity)
 
     restore_supplier_order_ingredient_stock(order)
 

@@ -23,6 +23,8 @@ global.getApp = () => appInstance;
 // App(options) 把生命周期和方法挂到 appInstance
 global.App = (options) => {
   Object.assign(appInstance, options);
+  appInstance.globalData.userInfo = { openid: 'test-openid' };
+  appInstance.globalData.authToken = 'test-client-token';
 };
 
 // Page(options) 把 options 暴露到全局，供测试用例取用

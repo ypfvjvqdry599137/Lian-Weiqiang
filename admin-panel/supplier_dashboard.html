@@ -116,8 +116,9 @@
             : 'http://127.0.0.1:5000';
         let currentSupplierId = localStorage.getItem('supplier_id');
         let currentSupplierName = localStorage.getItem('supplier_name');
+        let supplierToken = sessionStorage.getItem('supplier_token');
 
-        if (!currentSupplierId || !currentSupplierName) {
+        if (!currentSupplierId || !currentSupplierName || !supplierToken) {
             alert('请先登录！');
             window.location.href = '/admin-panel/supplier_login.html';
         }
@@ -127,6 +128,7 @@
         function logout() {
             localStorage.removeItem('supplier_id');
             localStorage.removeItem('supplier_name');
+            sessionStorage.removeItem('supplier_token');
             window.location.href = '/admin-panel/supplier_login.html';
         }
 
@@ -137,6 +139,7 @@
                 method: method,
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supplierToken}`,
                 },
             };
             if (data) {
@@ -145,6 +148,10 @@
 
             try {
                 const response = await fetch(fullUrl, options);
+                if (response.status === 401 || response.status === 403) {
+                    logout();
+                    return null;
+                }
                 if (!response.ok) {
                     let errorMsg = `HTTP error! status: ${response.status}`;
                     try {
