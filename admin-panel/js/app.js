@@ -313,7 +313,6 @@ document.addEventListener('input', (event) => {
 
 async function fetchData(url, method = 'GET', data = null, showAlert = false) {
     const fullUrl = BASE_URL + url;
-    console.log('正在请求:', fullUrl, method, data);
     
     const options = {
         method: method,
@@ -333,7 +332,6 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
             requireAdminLogin();
             return null;
         }
-        console.log('响应状态:', response.status);
         
         if (!response.ok) {
             let errorMsg = `HTTP error! status: ${response.status}`;
@@ -346,7 +344,6 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
         }
         
         const result = await response.json();
-        console.log('请求成功:', result);
         return result;
     } catch (error) {
         console.error('请求失败:', error);
@@ -1032,6 +1029,7 @@ async function loadOrders() {
             const refund = order.refund_summary;
             const refundLabels = {
                 REQUESTED: '待人工退款，配送已暂停',
+                APPLYING: '退款申请待确认，配送已暂停',
                 PROCESSING: '退款处理中',
                 SUCCESS: '退款成功',
                 CLOSED: '退款已关闭',
@@ -1043,10 +1041,10 @@ async function loadOrders() {
             card.innerHTML = `
                 <div class="data-card-content">
                     <h4>订单号: ${order.order_sn} <span style="float:right;color:#666;">${getOrderStatusText(order.order_status)}</span></h4>
-                    <p>配送区域: ${order.zone_name || order.zone_id || '未分配'} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee}</p>
+                    <p>配送区域: ${order.zone_name || order.zone_id || '未分配'} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee} | 实付: ${formatCurrency(order.final_amount)}</p>
                     <p>收货人: ${order.receiver_name} | 电话: ${order.receiver_phone}</p>
                     <p>收货地址: ${order.receiver_address}</p>
-                    ${refund ? `<p>人工退款：${refundLabels[refund.status] || '状态未知'}${refund.out_refund_no ? `，商户退款单号：${refund.out_refund_no}` : ''}</p>` : ''}
+                    ${refund ? `<p>退款：${refundLabels[refund.status] || '状态未知'}${refund.out_refund_no ? `，商户退款单号：${refund.out_refund_no}` : ''}${refund.refund_channel ? `，微信返回渠道：${{ ORIGINAL: '原路', BALANCE: '余额', OTHER_BALANCE: '其他余额账户', OTHER_BANKCARD: '其他银行卡' }[refund.refund_channel] || '待核对'}` : ''}</p>` : ''}
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                         ${itemsHtml}
                     </div>
@@ -1054,13 +1052,71 @@ async function loadOrders() {
                 </div>
                 <div class="data-card-actions">
                     ${renderOrderStatusSelect(order)}
+                    ${order.can_request_refund ? `<button class="btn btn-sm btn-danger" onclick="openWechatRefundModal('${order.order_sn}', '${order.final_amount}', false)">向微信申请整单退款</button>` : ''}
+                    ${order.can_retry_wechat_refund ? `<button class="btn btn-sm btn-danger" onclick="openWechatRefundModal('${order.order_sn}', '${order.final_amount}', true)">沿用原退款单号重试</button>` : ''}
                     ${order.can_request_refund ? `<button class="btn btn-sm" onclick="requestManualRefund('${order.order_sn}')">创建人工退款待办</button>` : ''}
-                    ${order.can_verify_refund ? `<button class="btn btn-sm" onclick="verifyManualRefund('${order.order_sn}', '${refund.out_refund_no || ''}', ${refund.status === 'REQUESTED'})">${refund.status === 'REQUESTED' ? '填写退款单号并核验' : '刷新退款核验'}</button>` : ''}
+                    ${order.can_verify_refund ? (refund.out_refund_no && refund.out_refund_no.startsWith('AR') ? `<button class="btn btn-sm" onclick="refreshWechatRefund('${order.order_sn}', '${refund.out_refund_no}')">查询微信退款结果</button>` : `<button class="btn btn-sm" onclick="verifyManualRefund('${order.order_sn}', '${refund.out_refund_no || ''}', ${refund.status === 'REQUESTED'})">${refund.status === 'REQUESTED' ? '填写退款单号并核验' : '刷新退款核验'}</button>`) : ''}
                     ${order.can_delete ? `<button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.order_sn}')">删除已取消订单</button>` : ''}
                 </div>
             `;
             ordersList.appendChild(card);
         });
+    }
+}
+
+let pendingWechatRefund = null;
+
+function openWechatRefundModal(orderSn, amount, retry) {
+    pendingWechatRefund = { orderSn, amount, retry };
+    document.getElementById('wechat-refund-title').textContent = retry ? '重试原微信退款申请' : '微信原路退款';
+    document.getElementById('wechat-refund-summary').textContent = `订单 ${orderSn}，整单实付 ${formatCurrency(amount)}。${retry ? '只会沿用原商户退款单号，不会生成新的退款单。' : ''}`;
+    document.getElementById('wechat-refund-form').reset();
+    document.getElementById('wechat-refund-reason-group').style.display = retry ? 'none' : '';
+    document.getElementById('wechat-refund-reason').required = !retry;
+    document.getElementById('wechat-refund-modal').classList.add('show');
+}
+
+function closeWechatRefundModal() {
+    document.getElementById('wechat-refund-modal').classList.remove('show');
+    document.getElementById('wechat-refund-form').reset();
+    pendingWechatRefund = null;
+}
+
+async function submitWechatRefund(event) {
+    event.preventDefault();
+    if (!pendingWechatRefund) return;
+    const { orderSn, amount, retry } = pendingWechatRefund;
+    const enteredOrder = document.getElementById('wechat-refund-confirm-order').value.trim();
+    if (enteredOrder !== orderSn) {
+        alert('订单号不一致，未发起退款');
+        return;
+    }
+    const button = document.getElementById('wechat-refund-submit');
+    button.disabled = true;
+    const payload = {
+        confirm_order_sn: enteredOrder,
+        confirm_amount_fen: Math.round(Number(amount) * 100),
+        admin_password: document.getElementById('wechat-refund-password').value,
+    };
+    if (!retry) payload.reason = document.getElementById('wechat-refund-reason').value.trim();
+    try {
+        const result = await fetchData(`/admin/orders/${orderSn}/wechat-refunds`, 'POST', payload, true);
+        if (result) {
+            closeWechatRefundModal();
+            alert(`${result.message}\n商户退款单号：${result.refund.out_refund_no}\n微信状态：${result.refund.status}`);
+        }
+        await loadOrders();
+    } finally {
+        document.getElementById('wechat-refund-password').value = '';
+        button.disabled = false;
+    }
+}
+
+async function refreshWechatRefund(orderSn, refundNo) {
+    const result = await fetchData(`/admin/orders/${orderSn}/manual-refunds`, 'POST', { out_refund_no: refundNo }, true);
+    if (result) {
+        alert(`微信退款状态：${result.refund.status}。只有 SUCCESS 才表示退款成功。`);
+        await loadOrders();
     }
 }
 

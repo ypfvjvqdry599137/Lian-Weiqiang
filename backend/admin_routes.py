@@ -1310,6 +1310,8 @@ def get_all_orders():
             'refund_summary': serialize_manual_refund(refund) if refund else None,
             'can_request_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
                                   and not order.refund_status and not has_refund_hold(order),
+            'can_retry_wechat_refund': refund is not None and refund.status == 'APPLYING'
+                                       and bool(refund.out_refund_no) and refund.out_refund_no.startswith('AR'),
             'can_verify_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
                                  and not order.refund_status and refund is not None and refund.status != 'CLOSED',
             'can_delete': order.order_status == 60 and not order.transaction_id and not order.paid_at
@@ -1371,6 +1373,132 @@ def request_manual_refund(order_sn):
     }), 201
 
 
+@admin_bp.route('/orders/<order_sn>/wechat-refunds', methods=['POST'])
+def request_wechat_refund(order_sn):
+    from models import ManualRefund, OrderMaster
+    from wechat_pay_support import (
+        WeChatPayError, create_wechat_refund, query_jsapi_order_by_out_trade_no,
+        validate_jsapi_trade, validate_manual_refund,
+    )
+
+    data = request.get_json(silent=True) or {}
+    reason = data.get('reason')
+    password = data.get('admin_password')
+    confirmed_fen = data.get('confirm_amount_fen')
+    if not isinstance(password, str) or not check_password_hash(current_app.config['ADMIN_PASSWORD_HASH'], password):
+        return jsonify({'message': '管理员密码校验失败，未发起退款'}), 403
+    if data.get('confirm_order_sn') != order_sn or type(confirmed_fen) is not int:
+        return jsonify({'message': '请重新确认订单号和实付金额'}), 400
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).first_or_404()
+    amount_fen = int(Decimal(str(order.final_amount)) * 100)
+    transaction_id = order.transaction_id
+    payer_openid = order.user.openid
+    if (order.order_status not in (20, 30, 40, 50) or not order.transaction_id
+            or order.refund_status or amount_fen <= 0 or confirmed_fen != amount_fen):
+        return jsonify({'message': '订单不符合整单退款条件，或确认金额与当前实付金额不一致'}), 409
+
+    pending = next((item for item in order.manual_refunds if item.status != 'CLOSED'), None)
+    retry = pending is not None and pending.status == 'APPLYING' and bool(pending.out_refund_no)
+    if pending and not retry:
+        return jsonify({'message': '已有未关闭的退款记录，请先查询或处理原退款单'}), 409
+    if retry:
+        if reason is not None and reason != pending.operator_note:
+            return jsonify({'message': '重试必须沿用原退款原因和商户退款单号'}), 409
+        reason = pending.operator_note
+    if not isinstance(reason, str) or not reason.strip() or len(reason.encode('utf-8')) > 80:
+        return jsonify({'message': '请填写不超过 80 字节的退款原因'}), 400
+    reason = reason.strip()
+
+    if not retry:
+        try:
+            trade = query_jsapi_order_by_out_trade_no(order_sn)
+            validate_jsapi_trade(trade, order_sn, order.final_amount, payer_openid, require_success=True)
+            if trade['transaction_id'] != transaction_id:
+                raise WeChatPayError('微信交易号与本地订单不一致')
+        except WeChatPayError as exc:
+            current_app.logger.error('退款前支付复核失败: %s: %s', order_sn, exc)
+            return jsonify({'message': '微信付款记录复核失败，未发起退款；请核对交易号、金额和用户身份'}), 502
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).populate_existing().with_for_update().first_or_404()
+    if (order.order_status not in (20, 30, 40, 50) or order.transaction_id != transaction_id
+            or order.user.openid != payer_openid or order.refund_status
+            or int(Decimal(str(order.final_amount)) * 100) != amount_fen):
+        db.session.rollback()
+        return jsonify({'message': '订单在操作期间发生变化，未发起退款'}), 409
+    refunds = ManualRefund.query.filter_by(order_sn=order_sn).with_for_update().all()
+    active = [item for item in refunds if item.status != 'CLOSED']
+    if retry:
+        if (len(active) != 1 or active[0].id != pending.id or active[0].status != 'APPLYING'
+                or active[0].transaction_id != transaction_id or active[0].order_total_fen != amount_fen
+                or active[0].refund_fen != amount_fen
+                or active[0].operator_note != reason or not active[0].out_refund_no.startswith('AR')):
+            db.session.rollback()
+            return jsonify({'message': '原退款申请状态已变化，请先查询原退款单'}), 409
+        refund = active[0]
+    else:
+        if active:
+            db.session.rollback()
+            return jsonify({'message': '已有未关闭的退款记录，请先处理原退款单'}), 409
+        refund = ManualRefund(
+            order_sn=order_sn,
+            out_refund_no='AR' + uuid4().hex,
+            transaction_id=order.transaction_id,
+            order_total_fen=amount_fen,
+            refund_fen=amount_fen,
+            status='APPLYING',
+            operator_note=reason.strip(),
+        )
+        db.session.add(refund)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            return jsonify({'message': '退款单号冲突，未向微信发起退款'}), 409
+
+    refund_id = refund.id
+    refund_no = refund.out_refund_no
+    try:
+        payload = create_wechat_refund(transaction_id, refund_no, amount_fen, reason)
+        status, verified_fen = validate_manual_refund(
+            payload, refund_no, order_sn, order.transaction_id, order.final_amount
+        )
+    except WeChatPayError as exc:
+        current_app.logger.error('微信退款申请未能确认: %s / %s: %s', order_sn, refund_no, exc)
+        return jsonify({
+            'message': '微信退款申请结果未确认，订单已暂停。请查询原退款单；若需重试，系统会沿用相同商户退款单号，切勿另开退款单',
+            'refund': serialize_manual_refund(refund),
+        }), 502
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).populate_existing().with_for_update().first_or_404()
+    refund = ManualRefund.query.filter_by(id=refund_id).with_for_update().first()
+    if (refund is None or refund.status not in ('APPLYING', status) or refund.out_refund_no != refund_no
+            or refund.transaction_id != payload['transaction_id'] or refund.refund_fen != verified_fen
+            or order.transaction_id != payload['transaction_id'] or order.refund_status):
+        db.session.rollback()
+        return jsonify({'message': '微信已受理但本地记录发生变化，请停止操作并人工核查原退款单'}), 409
+    if refund.refund_id and refund.refund_id != payload['refund_id']:
+        db.session.rollback()
+        return jsonify({'message': '微信退款单号与本地记录冲突，请人工核查'}), 409
+
+    refund.refund_id = payload['refund_id']
+    refund.status = status
+    refund.refund_channel = payload.get('channel') or refund.refund_channel
+    refund.success_time = payload.get('success_time') if status == 'SUCCESS' else None
+    refund.checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.session.commit()
+    result_message = {
+        'PROCESSING': '微信已受理，退款仍在处理中；请稍后查询结果',
+        'SUCCESS': '微信返回退款成功；请在商户平台核对到账渠道',
+        'CLOSED': '微信返回退款单已关闭，本次未退款；请核查原因',
+        'ABNORMAL': '微信返回退款异常；请到商户平台人工处理，勿重复发起',
+    }[status]
+    return jsonify({
+        'message': result_message,
+        'refund': serialize_manual_refund(refund),
+    }), 200 if retry else 201
+
+
 @admin_bp.route('/orders/<order_sn>/manual-refunds', methods=['POST'])
 def verify_manual_refund(order_sn):
     from models import ManualRefund, OrderMaster
@@ -1408,9 +1536,12 @@ def verify_manual_refund(order_sn):
     existing = next((item for item in refunds if item.out_refund_no == out_refund_no), None)
     requested = next((item for item in refunds if item.status == 'REQUESTED' and not item.out_refund_no), None)
     if existing:
-        if existing.refund_id != payload['refund_id'] or existing.refund_fen != amount_fen:
+        if (existing.refund_id is not None and existing.refund_id != payload['refund_id']) or existing.refund_fen != amount_fen:
             db.session.rollback()
             return jsonify({'message': '退款单与既有记录不一致，未修改本地记录'}), 409
+        if existing.transaction_id != order.transaction_id or existing.order_total_fen != amount_fen:
+            db.session.rollback()
+            return jsonify({'message': '退款记录的交易号或金额与订单不一致，请人工核查'}), 409
         if existing.status == 'SUCCESS' and status != 'SUCCESS':
             db.session.rollback()
             return jsonify({'message': '微信退款状态与已确认的成功记录冲突，请人工核查'}), 409
@@ -1440,6 +1571,7 @@ def verify_manual_refund(order_sn):
 
     refund.refund_id = payload['refund_id']
     refund.status = status
+    refund.refund_channel = payload.get('channel') or refund.refund_channel
     refund.success_time = payload.get('success_time') if status == 'SUCCESS' else None
     refund.checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
     try:

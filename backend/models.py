@@ -414,6 +414,7 @@ class ManualRefund(db.Model):
     order_total_fen = db.Column(db.Integer, nullable=False)
     refund_fen = db.Column(db.Integer, nullable=False)
     status = db.Column(db.String(16), nullable=False)
+    refund_channel = db.Column(db.String(24))
     operator_note = db.Column(db.String(255))
     success_time = db.Column(db.String(64))
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

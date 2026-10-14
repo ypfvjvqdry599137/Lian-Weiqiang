@@ -176,7 +176,7 @@ def _wechat_api_request(method, path, body=None, verify_response=True):
             error_payload = {}
         message = error_payload.get('message') or error_payload.get('msg') or error_text or str(exc)
         raise WeChatPayApiError(message, error_payload.get('code'), exc.code) from exc
-    except URLError as exc:
+    except (URLError, TimeoutError, OSError) as exc:
         raise WeChatPayError('微信支付请求失败，请检查网络或支付配置') from exc
 
     if not response_text:
@@ -284,6 +284,15 @@ def close_jsapi_order_by_out_trade_no(order_sn):
 def query_manual_refund(out_refund_no):
     request_path = f'/v3/refund/domestic/refunds/{quote(out_refund_no, safe="")}'
     return _wechat_api_request('GET', request_path)
+
+
+def create_wechat_refund(transaction_id, out_refund_no, amount_fen, reason):
+    return _wechat_api_request('POST', '/v3/refund/domestic/refunds', {
+        'transaction_id': transaction_id,
+        'out_refund_no': out_refund_no,
+        'reason': reason,
+        'amount': {'refund': amount_fen, 'total': amount_fen, 'currency': 'CNY'},
+    })
 
 
 def validate_manual_refund(payload, out_refund_no, order_sn, transaction_id, total_amount):

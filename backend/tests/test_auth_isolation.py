@@ -5,7 +5,11 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from flask import Flask
+import werkzeug
 from werkzeug.security import generate_password_hash
+
+if not hasattr(werkzeug, '__version__'):
+    werkzeug.__version__ = '3.0.0'
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -29,6 +33,8 @@ class AuthIsolationTestCase(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             AUTH_SIGNING_KEY='auth-test-signing-key-with-more-than-32-chars',
             ADMIN_PASSWORD_HASH=generate_password_hash('admin-test-password', method='pbkdf2:sha256:1000'),
+            WECHAT_MINI_PROGRAM_APPID='wx-test',
+            WECHAT_PAY_MCHID='mch-test',
         )
         db.init_app(self.app)
         for blueprint in (client_bp, admin_bp, fulfillment_admin_bp, supplier_bp, merchant_bp):
@@ -203,6 +209,139 @@ class AuthIsolationTestCase(unittest.TestCase):
         db.session.commit()
         token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
         return {'Authorization': f'Bearer {token}'}
+
+    def _wechat_refund_data(self):
+        return {
+            'reason': '用户申请退款', 'confirm_order_sn': self.order.order_sn,
+            'confirm_amount_fen': 1600, 'admin_password': 'admin-test-password',
+        }
+
+    def _paid_trade_payload(self):
+        return {
+            'appid': 'wx-test', 'mchid': 'mch-test',
+            'transaction_id': self.order.transaction_id,
+            'out_trade_no': self.order.order_sn,
+            'trade_state': 'SUCCESS',
+            'amount': {'total': 1600, 'currency': 'CNY'},
+            'payer': {'openid': self.order.user.openid},
+        }
+
+    def test_wechat_refund_requires_reauth_and_exact_order_amount(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/wechat-refunds'
+        self.assertEqual(self.client.post(path, json=self._wechat_refund_data()).status_code, 401)
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no') as query:
+            for key, value, expected in (
+                ('admin_password', 'wrong', 403),
+                ('confirm_order_sn', 'OTHER', 400),
+                ('confirm_amount_fen', 1500, 409),
+                ('reason', '退款' * 50, 400),
+            ):
+                data = self._wechat_refund_data()
+                data[key] = value
+                self.assertEqual(self.client.post(path, headers=headers, json=data).status_code, expected)
+            query.assert_not_called()
+        self.assertEqual(ManualRefund.query.count(), 0)
+
+    def test_wechat_refund_acceptance_query_and_no_duplicate(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/wechat-refunds'
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no', return_value=self._paid_trade_payload()), \
+                patch('wechat_pay_support.create_wechat_refund') as create:
+            create.side_effect = lambda _tx, refund_no, _fen, _reason: {
+                **self._manual_refund_payload(refund_no), 'channel': 'ORIGINAL'
+            }
+            response = self.client.post(path, headers=headers, json=self._wechat_refund_data())
+        self.assertEqual(response.status_code, 201)
+        refund = ManualRefund.query.one()
+        self.assertTrue(refund.out_refund_no.startswith('AR'))
+        create.assert_called_once_with('wechat-transaction-id', refund.out_refund_no, 1600, '用户申请退款')
+        self.assertEqual(refund.status, 'PROCESSING')
+        self.assertEqual(refund.refund_channel, 'ORIGINAL')
+        self.assertFalse(self.client.get('/admin/orders', headers=headers).get_json()['orders'][0]['can_request_refund'])
+        self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
+                                         headers=headers, json={'status': 30}).status_code, 409)
+        with patch('wechat_pay_support.create_wechat_refund') as create:
+            self.assertEqual(self.client.post(path, headers=headers, json=self._wechat_refund_data()).status_code, 409)
+            create.assert_not_called()
+        with patch('wechat_pay_support.query_manual_refund',
+                   return_value=self._manual_refund_payload(refund.out_refund_no, status='SUCCESS')):
+            verify = self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                      headers=headers, json={'out_refund_no': refund.out_refund_no})
+        self.assertEqual(verify.status_code, 200)
+        self.assertEqual(ManualRefund.query.one().status, 'SUCCESS')
+        self.assertEqual(ManualRefund.query.count(), 1)
+
+    def test_wechat_refund_timeout_reuses_same_number_or_can_query(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/wechat-refunds'
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no', return_value=self._paid_trade_payload()), \
+                patch('wechat_pay_support.create_wechat_refund', side_effect=WeChatPayError('timeout')) as create:
+            self.assertEqual(self.client.post(path, headers=headers, json=self._wechat_refund_data()).status_code, 502)
+        refund = ManualRefund.query.one()
+        self.assertEqual(refund.status, 'APPLYING')
+        self.assertEqual(create.call_args.args[1], refund.out_refund_no)
+        self.assertTrue(self.client.get('/admin/orders', headers=headers).get_json()['orders'][0]['can_retry_wechat_refund'])
+        retry_data = self._wechat_refund_data()
+        retry_data.pop('reason')
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no') as query, \
+                patch('wechat_pay_support.create_wechat_refund',
+                      return_value=self._manual_refund_payload(refund.out_refund_no)) as create:
+            self.assertEqual(self.client.post(path, headers=headers, json=retry_data).status_code, 200)
+            query.assert_not_called()
+        self.assertEqual(create.call_args.args[1], refund.out_refund_no)
+        self.assertEqual(create.call_args.args[3], '用户申请退款')
+        self.assertEqual(ManualRefund.query.count(), 1)
+        self.assertEqual(ManualRefund.query.one().status, 'PROCESSING')
+
+    def test_wechat_refund_timeout_can_be_resolved_by_query_without_reapplication(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/wechat-refunds'
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no', return_value=self._paid_trade_payload()), \
+                patch('wechat_pay_support.create_wechat_refund', side_effect=WeChatPayError('timeout')):
+            self.assertEqual(self.client.post(path, headers=headers, json=self._wechat_refund_data()).status_code, 502)
+        refund = ManualRefund.query.one()
+        with patch('wechat_pay_support.query_manual_refund',
+                   return_value=self._manual_refund_payload(refund.out_refund_no, status='SUCCESS')), \
+                patch('wechat_pay_support.create_wechat_refund') as create:
+            response = self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                        headers=headers, json={'out_refund_no': refund.out_refund_no})
+            create.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ManualRefund.query.one().status, 'SUCCESS')
+        self.assertEqual(ManualRefund.query.count(), 1)
+
+    def test_wechat_refund_mismatched_application_response_stays_unconfirmed(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/wechat-refunds'
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no', return_value=self._paid_trade_payload()), \
+                patch('wechat_pay_support.create_wechat_refund') as create:
+            create.side_effect = lambda _tx, refund_no, _fen, _reason: {
+                **self._manual_refund_payload(refund_no),
+                'out_trade_no': 'OTHER_ORDER',
+            }
+            response = self.client.post(path, headers=headers, json=self._wechat_refund_data())
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(ManualRefund.query.one().status, 'APPLYING')
+        self.assertIsNone(ManualRefund.query.one().refund_id)
+        self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
+                                         headers=headers, json={'status': 30}).status_code, 409)
+
+    def test_wechat_refund_rejects_wrong_trade_and_existing_manual_refund(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/wechat-refunds'
+        bad_trade = self._paid_trade_payload()
+        bad_trade['transaction_id'] = 'OTHER'
+        with patch('wechat_pay_support.query_jsapi_order_by_out_trade_no', return_value=bad_trade), \
+                patch('wechat_pay_support.create_wechat_refund') as create:
+            self.assertEqual(self.client.post(path, headers=headers, json=self._wechat_refund_data()).status_code, 502)
+            create.assert_not_called()
+        self.assertEqual(ManualRefund.query.count(), 0)
+        self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refund-requests',
+                         headers=headers, json={'operator_note': '商户平台人工处理'})
+        with patch('wechat_pay_support.create_wechat_refund') as create:
+            self.assertEqual(self.client.post(path, headers=headers, json=self._wechat_refund_data()).status_code, 409)
+            create.assert_not_called()
 
     def test_manual_refund_request_pauses_fulfillment_without_wechat_money_call(self):
         headers = self._paid_admin_headers()

@@ -359,6 +359,14 @@ h2 {
     box-shadow: 0 -8px 16px rgba(255,255,255,0.95);
 }
 
+.refund-warning {
+    padding: 12px;
+    border-left: 4px solid #c45429;
+    background: #fff4ea;
+    color: #623316;
+    line-height: 1.5;
+}
+
 .close {
     position: absolute;
     right: 20px;

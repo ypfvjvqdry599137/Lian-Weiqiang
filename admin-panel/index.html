@@ -224,6 +224,30 @@
         </main>
     </div>
 
+    <div id="wechat-refund-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="wechat-refund-title">
+        <div class="modal-content">
+            <span class="close" onclick="closeWechatRefundModal()">&times;</span>
+            <h2 id="wechat-refund-title">微信原路退款</h2>
+            <p id="wechat-refund-summary"></p>
+            <p class="refund-warning">这会向微信支付申请整单退款。微信受理不代表已退回；请随后查询退款结果。实际到账渠道以微信返回为准。</p>
+            <form id="wechat-refund-form" onsubmit="submitWechatRefund(event)">
+                <div class="form-group" id="wechat-refund-reason-group">
+                    <label for="wechat-refund-reason">退款原因（会展示给用户，不超过 80 字节）</label>
+                    <input id="wechat-refund-reason" type="text" autocomplete="off" maxlength="80">
+                </div>
+                <div class="form-group">
+                    <label for="wechat-refund-confirm-order">再次输入完整订单号</label>
+                    <input id="wechat-refund-confirm-order" type="text" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="wechat-refund-password">再次输入管理员登录密码</label>
+                    <input id="wechat-refund-password" type="password" autocomplete="current-password" required>
+                </div>
+                <button id="wechat-refund-submit" type="submit" class="btn btn-danger">确认向微信申请退款</button>
+            </form>
+        </div>
+    </div>
+
     <!-- 商品编辑弹窗 -->
     <div id="product-modal" class="modal">
         <div class="modal-content">

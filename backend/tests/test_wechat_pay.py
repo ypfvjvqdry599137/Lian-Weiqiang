@@ -490,6 +490,15 @@ class WeChatPayTestCase(unittest.TestCase):
             self.assertEqual(wechat_pay_support.query_manual_refund('REFUND_001'), {'status': 'SUCCESS'})
         request.assert_called_once_with('GET', '/v3/refund/domestic/refunds/REFUND_001')
 
+    def test_refund_application_uses_full_original_transaction_amount(self):
+        with patch.object(wechat_pay_support, '_wechat_api_request', return_value={'status': 'PROCESSING'}) as request:
+            result = wechat_pay_support.create_wechat_refund('WECHAT_TX', 'AR123', 399, '用户申请退款')
+        self.assertEqual(result['status'], 'PROCESSING')
+        request.assert_called_once_with('POST', '/v3/refund/domestic/refunds', {
+            'transaction_id': 'WECHAT_TX', 'out_refund_no': 'AR123', 'reason': '用户申请退款',
+            'amount': {'refund': 399, 'total': 399, 'currency': 'CNY'},
+        })
+
     def test_signed_order_not_exist_error_preserves_code(self):
         private_key, certificate = _build_test_certificate()
         body = '{"code":"ORDER_NOT_EXIST","message":"missing"}'

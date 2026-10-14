@@ -29,6 +29,7 @@ def manual_refund_status_text(order):
         return None
     return {
         'REQUESTED': '待人工退款，配送已暂停',
+        'APPLYING': '退款申请待确认，配送已暂停',
         'PROCESSING': '退款处理中',
         'SUCCESS': '退款成功',
         'CLOSED': '退款已关闭',
@@ -49,6 +50,7 @@ def serialize_manual_refund(refund):
         'refund_id': refund.refund_id,
         'refund_fen': refund.refund_fen,
         'status': refund.status,
+        'refund_channel': refund.refund_channel,
         'operator_note': refund.operator_note,
         'checked_at': refund.checked_at.isoformat() if refund.checked_at else None,
         'success_time': refund.success_time,
