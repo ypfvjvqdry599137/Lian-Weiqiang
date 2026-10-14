@@ -1587,11 +1587,11 @@ async function loadPriceReviews() {
             : '';
         card.innerHTML = `
             <div class="data-card-content">
-                <h4>${item.ingredient_name || '未知原料'} <span style="float:right;color:#666;">${item.status_text}</span></h4>
-                <p>供应商: ${item.supplier_name || '未知供应商'}</p>
+                <h4>${escapeHtml(item.ingredient_name || '未知原料')} <span style="float:right;color:#666;">${escapeHtml(item.status_text)}</span></h4>
+                <p>供应商: ${escapeHtml(item.supplier_name || '未知供应商')}</p>
                 <p>当前价格: ${item.old_price ? formatCurrency(item.old_price) : '未设置'} | 申请价格: ${item.requested_price ? formatCurrency(item.requested_price) : '未设置'}</p>
-                <p>申请时间: ${formatDate(item.created_at)}${item.reviewed_at ? ` | 审核时间: ${formatDate(item.reviewed_at)}` : ''}</p>
-                ${item.remark ? `<p>备注: ${item.remark}</p>` : ''}
+                <p>申请时间: ${escapeHtml(formatDate(item.created_at))}${item.reviewed_at ? ` | 审核时间: ${escapeHtml(formatDate(item.reviewed_at))}` : ''}</p>
+                ${item.remark ? `<p>备注: ${escapeHtml(item.remark)}</p>` : ''}
             </div>
             <div class="data-card-actions">${actionHtml}</div>
         `;
@@ -1856,7 +1856,7 @@ function renderAdminSupplierOrdersSummary(summary) {
 
     const supplierTotals = (summary.supplier_totals || []).map(item => `
         <div class="stat-card">
-            <h3>${item.supplier_name}</h3>
+            <h3>${escapeHtml(item.supplier_name)}</h3>
             <p class="number">${formatCurrency(item.today_total_cost)}</p>
         </div>
     `).join('');
@@ -1899,19 +1899,19 @@ async function loadSupplierOrders() {
             const card = document.createElement('div');
             card.classList.add('data-card', `status-${order.status}`);
             const itemsHtml = order.items ? order.items.map(item => `
-                <p>${item.ingredient_name} x ${item.quantity} ${item.unit} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
+                <p>${escapeHtml(item.ingredient_name)} x ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
             `).join('') : '';
             card.innerHTML = `
                 <div class="data-card-content">
                     <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
-                    <p>关联订单号: ${order.order_sn}</p>
-                    <p>供应商: ${order.supplier_name || '未知'} | 备货区域: ${formatZoneName(order.zone_name)}</p>
+                    <p>关联订单号: ${escapeHtml(order.order_sn)}</p>
+                    <p>供应商: ${escapeHtml(order.supplier_name || '未知')} | 备货区域: ${escapeHtml(formatZoneName(order.zone_name))}</p>
                     <p>材料费用: ${formatCurrency(order.total_cost)}</p>
-                    <p>备注: ${order.notes || '无'}</p>
+                    <p>备注: ${escapeHtml(order.notes || '无')}</p>
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                         ${itemsHtml}
                     </div>
-                    <p style="font-size:12px;color:#999;margin-top:10px;">创建时间: ${formatDate(order.created_at)}</p>
+                    <p style="font-size:12px;color:#999;margin-top:10px;">创建时间: ${escapeHtml(formatDate(order.created_at))}</p>
                 </div>
                 <div class="data-card-actions">
                     ${renderSupplierOrderStatusSelect(order)}
@@ -2376,11 +2376,11 @@ async function loadFulfillmentIssues() {
         card.classList.add('data-card', `status-${issue.status}`);
         card.innerHTML = `
             <div class="data-card-content">
-                <h4>#${issue.id} ${issue.issue_type} <span style="float:right;color:#666;">${getFulfillmentIssueStatusText(issue.status)}</span></h4>
-                <p>订单号: ${issue.order_sn}</p>
-                <p>区域: ${issue.zone_name || '无'} | 配送站: ${issue.station_name || '无'}</p>
-                <p>描述: ${issue.message}</p>
-                <p style="font-size:12px;color:#999;">创建时间: ${formatDate(issue.created_at)}${issue.resolved_at ? ` | 处理时间: ${formatDate(issue.resolved_at)}` : ''}</p>
+                <h4>#${escapeHtml(issue.id)} ${escapeHtml(issue.issue_type)} <span style="float:right;color:#666;">${getFulfillmentIssueStatusText(issue.status)}</span></h4>
+                <p>订单号: ${escapeHtml(issue.order_sn)}</p>
+                <p>区域: ${escapeHtml(issue.zone_name || '无')} | 配送站: ${escapeHtml(issue.station_name || '无')}</p>
+                <p>描述: ${escapeHtml(issue.message)}</p>
+                <p style="font-size:12px;color:#999;">创建时间: ${escapeHtml(formatDate(issue.created_at))}${issue.resolved_at ? ` | 处理时间: ${escapeHtml(formatDate(issue.resolved_at))}` : ''}</p>
             </div>
             <div class="data-card-actions">
                 <button class="btn btn-sm btn-success" onclick="updateFulfillmentIssueStatus(${issue.id}, 20)">设为已处理</button>
