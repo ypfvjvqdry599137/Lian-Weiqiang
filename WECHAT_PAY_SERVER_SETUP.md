@@ -51,7 +51,7 @@ WECHAT_PAY_NOTIFY_URL=https://你的正式域名/client/wechat/pay/notify
 TENCENT_MAP_KEY=如果页面需要地图就填
 ```
 
-如果数据库配置也是环境变量管理，就一并放进去：
+部署脚本优先从应用实际使用的 `DATABASE_URL` 解析数据库连接，用于备份和迁移；不要把连接串或密码贴到聊天或提交到仓库。如果没有 `DATABASE_URL`，则需在服务器 `.env` 中提供以下变量：
 
 ```env
 DB_HOST=127.0.0.1

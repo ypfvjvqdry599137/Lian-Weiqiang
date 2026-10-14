@@ -43,6 +43,26 @@ jobs:
             pip install -r requirements.txt
             cd ..
 
+            if [ -n "${DATABASE_URL:-}" ]; then
+              DB_CONNECTION_FIELDS="$(python3 - <<'PY'
+            import os
+            from sqlalchemy.engine import make_url
+
+            url = make_url(os.environ['DATABASE_URL'])
+            if not url.drivername.startswith('mysql'):
+                raise SystemExit('Deployment requires a MySQL DATABASE_URL')
+            for value in (url.username, url.password, url.database, url.host or 'localhost', str(url.port or 3306)):
+                print(value or '')
+            PY
+              )"
+              mapfile -t DB_PARTS <<< "$DB_CONNECTION_FIELDS"
+              DB_USER="${DB_PARTS[0]}"
+              DB_PASSWORD="${DB_PARTS[1]}"
+              DB_NAME="${DB_PARTS[2]}"
+              DB_HOST="${DB_PARTS[3]}"
+              DB_PORT="${DB_PARTS[4]}"
+            fi
+
             if [ -n "${DB_USER:-}" ] && [ -n "${DB_PASSWORD:-}" ] && [ -n "${DB_NAME:-}" ]; then
               BACKUP_DIR="$PROJECT_DIR/backups/mysql"
               TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -57,6 +77,7 @@ jobs:
                 echo "user=$DB_USER"
                 echo "password=$DB_PASSWORD"
                 echo "host=${DB_HOST:-localhost}"
+                echo "port=${DB_PORT:-3306}"
               } > "$MYSQL_CNF"
 
               BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_${TIMESTAMP}.sql.gz"
@@ -67,7 +88,7 @@ jobs:
               mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < schema/update_supplier_schema.sql
               mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < schema/update_manual_refund_schema.sql
             else
-              echo "Missing DB_USER, DB_PASSWORD or DB_NAME; refusing to restart without the required schema migration" >&2
+              echo "Missing MySQL connection settings; refusing to restart without the required schema migration" >&2
               exit 1
             fi
 
