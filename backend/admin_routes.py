@@ -47,7 +47,7 @@ def authenticate_admin():
 def admin_login():
     password_hash = current_app.config.get('ADMIN_PASSWORD_HASH')
     password = (request.get_json(silent=True) or {}).get('password')
-    if not password_hash or not isinstance(password, str) or not check_password_hash(password_hash, password):
+    if not password_hash or not isinstance(password, str) or not password.strip() or not check_password_hash(password_hash, password):
         return jsonify({'message': '账号或密码错误'}), 401
     return jsonify({'token': issue_token('admin', 1, password_hash)})
 
@@ -1385,7 +1385,7 @@ def request_wechat_refund(order_sn):
     reason = data.get('reason')
     password = data.get('admin_password')
     confirmed_fen = data.get('confirm_amount_fen')
-    if not isinstance(password, str) or not check_password_hash(current_app.config['ADMIN_PASSWORD_HASH'], password):
+    if not isinstance(password, str) or not password.strip() or not check_password_hash(current_app.config['ADMIN_PASSWORD_HASH'], password):
         return jsonify({'message': '管理员密码校验失败，未发起退款'}), 403
     if data.get('confirm_order_sn') != order_sn or type(confirmed_fen) is not int:
         return jsonify({'message': '请重新确认订单号和实付金额'}), 400

@@ -147,6 +147,21 @@ class AuthIsolationTestCase(unittest.TestCase):
         token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
         self.assertEqual(self.client.get('/admin/stations', headers={'Authorization': f'Bearer {token}'}).status_code, 200)
 
+    def test_admin_rejects_blank_password_even_if_configured_hash_matches(self):
+        for password in ('', '   '):
+            with self.subTest(password=password):
+                password_hash = generate_password_hash(password, method='pbkdf2:sha256:1000')
+                self.app.config['ADMIN_PASSWORD_HASH'] = password_hash
+                self.assertEqual(self.client.post('/admin/auth/login', json={'password': password}).status_code, 401)
+
+                token = issue_token('admin', 1, password_hash)
+                response = self.client.post(
+                    f'/admin/orders/{self.order.order_sn}/wechat-refunds',
+                    headers={'Authorization': f'Bearer {token}'},
+                    json={'admin_password': password, 'confirm_order_sn': self.order.order_sn, 'confirm_amount_fen': 1600},
+                )
+                self.assertEqual(response.status_code, 403)
+
     def test_admin_cannot_fake_payment_or_delete_paid_order(self):
         token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
         headers = {'Authorization': f'Bearer {token}'}
