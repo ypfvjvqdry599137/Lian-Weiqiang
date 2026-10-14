@@ -88,6 +88,7 @@
 
 - **当前目标服务器** `43.155.202.205`；`43.128.145.146` 是迁移前的来源服务器，不要反过来。历史正式域名：`https://xianpeiju.site`（小程序 API）和 `https://admin.xianpeiju.site`（后台），后台登录路径 `/admin-panel/login.html`。变更前重查 DNS/Nginx。
 - 目标机项目曾位于 `/home/ubuntu/Lian-Weiqiang`，`fresh-produce.service` 运行后端，Nginx 反代 HTTPS。根目录 `.env`、`backend/.wechatpay/apiclient_key.pem`、数据库、uploads、Nginx/Let's Encrypt 证书独立于 Git。GitHub Actions Secrets 用于 SSH 等部署连接；支付变量由服务器 `.env` 加载。工作流在有 DB 环境变量时还会备份并执行 `schema/update_supplier_schema.sql`，然后重启服务。不要覆盖生产秘密、证书、上传文件或数据库。
+- `deploy.yml` 会在启用 `set -u` 后用 Shell 读取根目录 `.env`。手动更新 `ADMIN_PASSWORD_HASH` 时，必须把完整哈希放在单引号内，否则 scrypt 哈希中的 `$` 会被 Shell 展开，导致自动部署失败；`backend/config.py` 会去掉外层引号。生产 `.env` 应由 `ubuntu` 持有、权限为 `600`，且管理员密码绝不能为空。不要将哈希或明文提交到 Git。
 - **不要推翻** OpenID 到独立用户的映射和所有私有接口的身份过滤；不要把旧共享用户的地址/订单无证据迁给新客户。
 - **不要推翻** 一份商品 + 区域供货规则 + 各类供应商供货到区域配送站 + 站点统一打包配送 + 同一供应商可覆盖多站的模型。不要退回“每区域一个总供应商”，也不要按区域复制商品。
 - **不要推翻** 支付/退款资金状态与业务订单状态分开、可追溯的原则；不要靠删除已付款订单或直接改状态处理资金问题。
