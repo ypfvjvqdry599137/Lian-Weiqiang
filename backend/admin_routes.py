@@ -1,4 +1,5 @@
 import json
+import re
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -13,10 +14,14 @@ from product_features import normalize_text, product_feature_payload, serialize_
 from status_utils import (
     get_order_status_text,
     get_supplier_order_status_text,
+    has_refund_hold,
+    latest_manual_refund,
+    serialize_manual_refund,
     sync_order_status_after_supplier_update,
 )
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 from auth import issue_token, require_admin
@@ -934,8 +939,9 @@ def get_all_supplier_orders():
 
 @admin_bp.route('/supplier-orders/<int:order_id>/status', methods=['PUT'])
 def update_supplier_order_status(order_id):
-    from models import SupplierOrder
+    from models import OrderMaster, SupplierOrder
     so = SupplierOrder.query.get_or_404(order_id)
+    order = OrderMaster.query.filter_by(order_sn=so.order_sn).populate_existing().with_for_update().first_or_404()
     data = request.get_json()
     
     try:
@@ -944,6 +950,8 @@ def update_supplier_order_status(order_id):
         new_status = None
     if new_status not in [10, 20, 30, 40]:
         return jsonify({"message": "无效的备货单状态"}), 400
+    if new_status != 40 and has_refund_hold(order):
+        return jsonify({'message': '订单正在退款核验中，不能推进备货'}), 409
     
     so.status = new_status
     order, order_status_updated = sync_order_status_after_supplier_update(so.order_sn)
@@ -1276,6 +1284,7 @@ def get_all_orders():
     output = []
     for order in orders:
         status_text = get_order_status_text(order.order_status)
+        refund = latest_manual_refund(order)
 
         
         items_output = []
@@ -1298,6 +1307,13 @@ def get_all_orders():
             'fulfillment_issue_count': len(order.fulfillment_issues or []),
             'has_fulfillment_issue': any(issue.status == 10 for issue in (order.fulfillment_issues or [])),
             'order_status': order.order_status,
+            'refund_summary': serialize_manual_refund(refund) if refund else None,
+            'can_request_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
+                                  and not order.refund_status and not has_refund_hold(order),
+            'can_verify_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
+                                 and not order.refund_status and refund is not None and refund.status != 'CLOSED',
+            'can_delete': order.order_status == 60 and not order.transaction_id and not order.paid_at
+                          and not order.refund_status and not order.manual_refunds,
             'status_text': status_text,
             'total_amount': str(order.total_amount),
             'delivery_fee': str(order.delivery_fee),
@@ -1310,11 +1326,135 @@ def get_all_orders():
         })
     return jsonify({"orders": output}), 200
 
+
+@admin_bp.route('/orders/<order_sn>/manual-refunds', methods=['GET'])
+def list_manual_refunds(order_sn):
+    from models import ManualRefund, OrderMaster
+
+    OrderMaster.query.filter_by(order_sn=order_sn).first_or_404()
+    refunds = ManualRefund.query.filter_by(order_sn=order_sn).order_by(ManualRefund.id.desc()).all()
+    return jsonify({'refunds': [serialize_manual_refund(refund) for refund in refunds]})
+
+
+@admin_bp.route('/orders/<order_sn>/manual-refund-requests', methods=['POST'])
+def request_manual_refund(order_sn):
+    from models import ManualRefund, OrderMaster
+
+    data = request.get_json(silent=True) or {}
+    note = data.get('operator_note')
+    if not isinstance(note, str) or not note.strip() or len(note.strip()) > 255:
+        return jsonify({'message': '请填写不超过 255 字的退款原因和操作人员'}), 400
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).populate_existing().with_for_update().first_or_404()
+    if order.order_status not in (20, 30, 40, 50) or not order.transaction_id or order.refund_status:
+        return jsonify({'message': '只有无历史售后记录且有微信交易号的已付款订单可创建待办'}), 409
+    refunds = ManualRefund.query.filter_by(order_sn=order_sn).with_for_update().all()
+    if any(refund.status != 'CLOSED' for refund in refunds):
+        return jsonify({'message': '已有未关闭的人工退款待办或退款单，请先核验'}), 409
+
+    amount_fen = int(Decimal(str(order.final_amount)) * 100)
+    if amount_fen <= 0:
+        return jsonify({'message': '订单实付金额无效，请先人工核对'}), 409
+    refund = ManualRefund(
+        order_sn=order_sn,
+        transaction_id=order.transaction_id,
+        order_total_fen=amount_fen,
+        refund_fen=amount_fen,
+        status='REQUESTED',
+        operator_note=note.strip(),
+    )
+    db.session.add(refund)
+    db.session.commit()
+    return jsonify({
+        'message': '已创建人工退款待办并暂停履约；尚未向微信发起退款，请到商户平台人工操作',
+        'refund': serialize_manual_refund(refund),
+    }), 201
+
+
+@admin_bp.route('/orders/<order_sn>/manual-refunds', methods=['POST'])
+def verify_manual_refund(order_sn):
+    from models import ManualRefund, OrderMaster
+    from wechat_pay_support import WeChatPayError, query_manual_refund, validate_manual_refund
+
+    data = request.get_json(silent=True) or {}
+    out_refund_no = data.get('out_refund_no')
+    note = data.get('operator_note')
+    if not isinstance(out_refund_no, str) or not re.fullmatch(r'[0-9A-Za-z_\-|*@]{1,64}', out_refund_no):
+        return jsonify({'message': '请输入微信商户平台上的有效商户退款单号'}), 400
+    if note is not None and (not isinstance(note, str) or len(note.strip()) > 255):
+        return jsonify({'message': '操作备注不能超过 255 字'}), 400
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).first_or_404()
+    if order.order_status not in (20, 30, 40, 50) or not order.transaction_id:
+        return jsonify({'message': '只有记录了微信交易号的已付款订单才能核验人工退款'}), 409
+    if order.refund_status:
+        return jsonify({'message': '订单已有历史售后状态，请先人工核实，不能重复登记退款'}), 409
+
+    try:
+        payload = query_manual_refund(out_refund_no)
+        status, amount_fen = validate_manual_refund(
+            payload, out_refund_no, order.order_sn, order.transaction_id, order.final_amount
+        )
+    except WeChatPayError as exc:
+        current_app.logger.error('人工退款查询或核验失败: %s: %s', order_sn, exc)
+        return jsonify({'message': '微信退款查询未通过核验，未修改本地记录'}), 502
+
+    order = OrderMaster.query.filter_by(order_sn=order_sn).populate_existing().with_for_update().first_or_404()
+    if order.order_status not in (20, 30, 40, 50) or order.transaction_id != payload['transaction_id'] or order.refund_status:
+        db.session.rollback()
+        return jsonify({'message': '订单在核验期间发生变化，请重新操作'}), 409
+
+    refunds = ManualRefund.query.filter_by(order_sn=order_sn).with_for_update().all()
+    existing = next((item for item in refunds if item.out_refund_no == out_refund_no), None)
+    requested = next((item for item in refunds if item.status == 'REQUESTED' and not item.out_refund_no), None)
+    if existing:
+        if existing.refund_id != payload['refund_id'] or existing.refund_fen != amount_fen:
+            db.session.rollback()
+            return jsonify({'message': '退款单与既有记录不一致，未修改本地记录'}), 409
+        if existing.status == 'SUCCESS' and status != 'SUCCESS':
+            db.session.rollback()
+            return jsonify({'message': '微信退款状态与已确认的成功记录冲突，请人工核查'}), 409
+        refund = existing
+    elif requested:
+        if requested.transaction_id != order.transaction_id or requested.refund_fen != amount_fen:
+            db.session.rollback()
+            return jsonify({'message': '待办中的交易号或金额与当前订单不一致，请人工核查'}), 409
+        refund = requested
+        refund.out_refund_no = out_refund_no
+    else:
+        if any(item.status != 'CLOSED' for item in refunds):
+            db.session.rollback()
+            return jsonify({'message': '已有未关闭的退款单，请先核验原退款单'}), 409
+        if not isinstance(note, str) or not note.strip():
+            db.session.rollback()
+            return jsonify({'message': '首次登记退款请填写操作备注'}), 400
+        refund = ManualRefund(
+            order_sn=order_sn,
+            out_refund_no=out_refund_no,
+            transaction_id=order.transaction_id,
+            order_total_fen=amount_fen,
+            refund_fen=amount_fen,
+            operator_note=note.strip(),
+        )
+        db.session.add(refund)
+
+    refund.refund_id = payload['refund_id']
+    refund.status = status
+    refund.success_time = payload.get('success_time') if status == 'SUCCESS' else None
+    refund.checked_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'message': '该退款单已被登记，请刷新订单后核对'}), 409
+
+    return jsonify({'message': '仅已核验微信退款状态，未发起退款', 'refund': serialize_manual_refund(refund)}), 200 if existing or requested else 201
+
 @admin_bp.route('/orders/<order_sn>/status', methods=['PUT'])
 def update_order_status(order_sn):
     from models import OrderMaster
     """更新订单状态（总后台）"""
-    order = OrderMaster.query.get_or_404(order_sn)
+    order = OrderMaster.query.filter_by(order_sn=order_sn).populate_existing().with_for_update().first_or_404()
     data = request.get_json()
     
     try:
@@ -1326,6 +1466,8 @@ def update_order_status(order_sn):
     allowed_transitions = {20: 30, 30: 40, 40: 50}
     if allowed_transitions.get(order.order_status) != new_status:
         return jsonify({"message": "只能按已支付、配送中、已送达、已完成顺序更新；取消和退款不能直接修改订单状态"}), 400
+    if has_refund_hold(order):
+        return jsonify({'message': '订单正在退款核验中，不能推进配送'}), 409
     
     order.order_status = new_status
     db.session.commit()
@@ -1345,8 +1487,8 @@ def delete_order(order_sn):
     from models import OrderMaster
     """删除订单，并同步清理供应商备货单和区域配送订单数据"""
     order = OrderMaster.query.get_or_404(order_sn)
-    if order.order_status not in (10, 60):
-        return jsonify({"message": "已支付订单不能直接删除，请先走退款和售后流程"}), 400
+    if order.order_status != 60 or order.transaction_id or order.paid_at or order.refund_status or order.manual_refunds:
+        return jsonify({"message": "订单必须先确认微信关单并取消，已付款订单不能删除"}), 400
 
     supplier_order_count = len(order.supplier_orders or [])
     order_item_count = len(order.items or [])

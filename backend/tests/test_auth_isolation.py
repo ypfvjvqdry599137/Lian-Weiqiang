@@ -14,8 +14,10 @@ from auth import issue_token
 from client_routes import client_bp
 from extensions import db
 from fulfillment_admin_routes import fulfillment_admin_bp
-from models import Cart, ClientIdentity, DeliveryZone, OrderMaster, Product, Supplier, User, UserAddress
+from merchant_routes import get_merchant_key, merchant_bp
+from models import Cart, ClientIdentity, DeliveryZone, ManualRefund, OrderMaster, Product, Supplier, SupplierOrder, User, UserAddress
 from supplier_routes import supplier_bp
+from wechat_pay_support import WeChatPayError
 
 
 class AuthIsolationTestCase(unittest.TestCase):
@@ -29,7 +31,7 @@ class AuthIsolationTestCase(unittest.TestCase):
             ADMIN_PASSWORD_HASH=generate_password_hash('admin-test-password', method='pbkdf2:sha256:1000'),
         )
         db.init_app(self.app)
-        for blueprint in (client_bp, admin_bp, fulfillment_admin_bp, supplier_bp):
+        for blueprint in (client_bp, admin_bp, fulfillment_admin_bp, supplier_bp, merchant_bp):
             self.app.register_blueprint(blueprint)
         self.ctx = self.app.app_context()
         self.ctx.push()
@@ -148,6 +150,257 @@ class AuthIsolationTestCase(unittest.TestCase):
         db.session.commit()
         self.assertEqual(self.client.put(f'{path}/status', json={'status': 60}, headers=headers).status_code, 400)
         self.assertEqual(self.client.delete(path, headers=headers).status_code, 400)
+
+    def test_admin_cannot_delete_unclosed_or_paid_cancelled_order(self):
+        token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
+        headers = {'Authorization': f'Bearer {token}'}
+        path = f'/admin/orders/{self.order.order_sn}'
+
+        orders = self.client.get('/admin/orders', headers=headers).get_json()['orders']
+        self.assertFalse(orders[0]['can_delete'])
+        self.assertEqual(self.client.delete(path, headers=headers).status_code, 400)
+        self.assertIsNotNone(db.session.get(OrderMaster, self.order.order_sn))
+
+        self.order.order_status = 60
+        self.order.transaction_id = 'wechat-transaction-id'
+        db.session.commit()
+        self.assertEqual(self.client.delete(path, headers=headers).status_code, 400)
+        self.assertIsNotNone(db.session.get(OrderMaster, self.order.order_sn))
+        orders = self.client.get('/admin/orders', headers=headers).get_json()['orders']
+        self.assertFalse(orders[0]['can_delete'])
+
+        self.order.transaction_id = None
+        self.order.refund_status = 1
+        db.session.commit()
+        self.assertEqual(self.client.delete(path, headers=headers).status_code, 400)
+        orders = self.client.get('/admin/orders', headers=headers).get_json()['orders']
+        self.assertFalse(orders[0]['can_delete'])
+
+    def test_admin_can_delete_unpaid_cancelled_order(self):
+        token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
+        headers = {'Authorization': f'Bearer {token}'}
+        self.order.order_status = 60
+        db.session.commit()
+
+        orders = self.client.get('/admin/orders', headers=headers).get_json()['orders']
+        self.assertTrue(orders[0]['can_delete'])
+        self.assertEqual(self.client.delete(f'/admin/orders/{self.order.order_sn}', headers=headers).status_code, 200)
+        self.assertIsNone(db.session.get(OrderMaster, self.order.order_sn))
+
+    def _manual_refund_payload(self, out_refund_no='REFUND_ORDER_A', status='PROCESSING'):
+        return {
+            'out_refund_no': out_refund_no,
+            'out_trade_no': self.order.order_sn,
+            'transaction_id': 'wechat-transaction-id',
+            'refund_id': f'wx-{out_refund_no}',
+            'status': status,
+            'amount': {'total': 1600, 'refund': 1600, 'currency': 'CNY'},
+        }
+
+    def _paid_admin_headers(self):
+        self.order.order_status = 20
+        self.order.transaction_id = 'wechat-transaction-id'
+        db.session.commit()
+        token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
+        return {'Authorization': f'Bearer {token}'}
+
+    def test_manual_refund_request_pauses_fulfillment_without_wechat_money_call(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/manual-refund-requests'
+        self.assertEqual(self.client.post(path, json={'operator_note': 'test'}).status_code, 401)
+
+        with patch('wechat_pay_support.query_manual_refund') as query:
+            response = self.client.post(path, headers=headers, json={'operator_note': '客服 A：用户申请整单退款'})
+            query.assert_not_called()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()['refund']['status'], 'REQUESTED')
+        refund = ManualRefund.query.one()
+        self.assertIsNone(refund.out_refund_no)
+        self.assertIsNone(refund.checked_at)
+        self.assertEqual(refund.refund_fen, 1600)
+        self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
+                                         headers=headers, json={'status': 30}).status_code, 409)
+        self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
+                         .get_json()['manual_refund_status_text'], '待人工退款，配送已暂停')
+        self.assertFalse(self.client.get('/admin/orders', headers=headers).get_json()['orders'][0]['can_request_refund'])
+        self.assertEqual(self.client.post(path, headers=headers, json={'operator_note': '重复请求'}).status_code, 409)
+        self.assertEqual(ManualRefund.query.count(), 1)
+
+    def test_failed_manual_refund_query_keeps_requested_hold(self):
+        headers = self._paid_admin_headers()
+        request_path = f'/admin/orders/{self.order.order_sn}/manual-refund-requests'
+        self.assertEqual(self.client.post(request_path, headers=headers,
+                                          json={'operator_note': '客服 A：用户申请整单退款'}).status_code, 201)
+        with patch('wechat_pay_support.query_manual_refund', side_effect=WeChatPayError('暂时不可查询')):
+            response = self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                        headers=headers, json={'out_refund_no': 'REFUND_ORDER_A'})
+        self.assertEqual(response.status_code, 502)
+        refund = ManualRefund.query.one()
+        self.assertEqual(refund.status, 'REQUESTED')
+        self.assertIsNone(refund.out_refund_no)
+        self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
+                                         headers=headers, json={'status': 30}).status_code, 409)
+
+    def test_manual_refund_query_fills_request_in_place(self):
+        headers = self._paid_admin_headers()
+        request_path = f'/admin/orders/{self.order.order_sn}/manual-refund-requests'
+        self.assertEqual(self.client.post(request_path, headers=headers,
+                                          json={'operator_note': '客服 A：用户申请整单退款'}).status_code, 201)
+        pending_id = ManualRefund.query.one().id
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload()):
+            response = self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                        headers=headers, json={'out_refund_no': 'REFUND_ORDER_A'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ManualRefund.query.count(), 1)
+        refund = ManualRefund.query.one()
+        self.assertEqual(refund.id, pending_id)
+        self.assertEqual(refund.out_refund_no, 'REFUND_ORDER_A')
+        self.assertEqual(refund.status, 'PROCESSING')
+        self.assertIsNotNone(refund.checked_at)
+
+    def test_manual_refund_is_verified_and_refreshed_without_sending_money(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/manual-refunds'
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload()):
+            response = self.client.post(path, headers=headers, json={
+                'out_refund_no': 'REFUND_ORDER_A', 'operator_note': '客服在商户平台人工退款'
+            })
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()['refund']['status'], 'PROCESSING')
+        self.assertEqual(ManualRefund.query.count(), 1)
+        self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
+                         .get_json()['manual_refund_status_text'], '退款处理中')
+        self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
+                                         headers=headers, json={'status': 30}).status_code, 409)
+
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload(status='SUCCESS')):
+            response = self.client.post(path, headers=headers, json={'out_refund_no': 'REFUND_ORDER_A'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['refund']['status'], 'SUCCESS')
+        self.assertEqual(ManualRefund.query.count(), 1)
+        self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
+                         .get_json()['manual_refund_status_text'], '退款成功')
+
+    def test_manual_refund_rejects_wrong_trade_and_amount(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/manual-refunds'
+        for field, value in [('out_trade_no', 'OTHER_ORDER'), ('transaction_id', 'OTHER_TX')]:
+            payload = self._manual_refund_payload()
+            payload[field] = value
+            with self.subTest(field=field), patch('wechat_pay_support.query_manual_refund', return_value=payload):
+                self.assertEqual(self.client.post(path, headers=headers, json={
+                    'out_refund_no': 'REFUND_ORDER_A', 'operator_note': '人工退款'
+                }).status_code, 502)
+        for key, value in [('total', 1500), ('refund', 1500), ('currency', 'USD')]:
+            payload = self._manual_refund_payload()
+            payload['amount'][key] = value
+            with self.subTest(key=key), patch('wechat_pay_support.query_manual_refund', return_value=payload):
+                self.assertEqual(self.client.post(path, headers=headers, json={
+                    'out_refund_no': 'REFUND_ORDER_A', 'operator_note': '人工退款'
+                }).status_code, 502)
+        self.assertEqual(ManualRefund.query.count(), 0)
+
+    def test_manual_refund_cannot_replace_active_attempt_but_can_retry_closed(self):
+        headers = self._paid_admin_headers()
+        path = f'/admin/orders/{self.order.order_sn}/manual-refunds'
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload()):
+            self.assertEqual(self.client.post(path, headers=headers, json={
+                'out_refund_no': 'REFUND_ORDER_A', 'operator_note': '首次人工退款'
+            }).status_code, 201)
+        next_payload = self._manual_refund_payload('REFUND_ORDER_B')
+        with patch('wechat_pay_support.query_manual_refund', return_value=next_payload):
+            self.assertEqual(self.client.post(path, headers=headers, json={
+                'out_refund_no': 'REFUND_ORDER_B', 'operator_note': '第二次人工退款'
+            }).status_code, 409)
+
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload(status='CLOSED')):
+            self.assertEqual(self.client.post(path, headers=headers,
+                                              json={'out_refund_no': 'REFUND_ORDER_A'}).status_code, 200)
+        with patch('wechat_pay_support.query_manual_refund', return_value=next_payload):
+            self.assertEqual(self.client.post(path, headers=headers, json={
+                'out_refund_no': 'REFUND_ORDER_B', 'operator_note': '首次退款关闭后重试'
+            }).status_code, 201)
+        self.assertEqual(ManualRefund.query.count(), 2)
+        self.assertEqual(self.client.get(path, headers=headers).get_json()['refunds'][0]['out_refund_no'],
+                         'REFUND_ORDER_B')
+
+    def test_manual_refund_requires_paid_order_and_admin_auth(self):
+        path = f'/admin/orders/{self.order.order_sn}/manual-refunds'
+        self.assertEqual(self.client.post(path, json={'out_refund_no': 'REFUND_ORDER_A'}).status_code, 401)
+        token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
+        headers = {'Authorization': f'Bearer {token}'}
+        with patch('wechat_pay_support.query_manual_refund') as query:
+            self.assertEqual(self.client.post(path, headers=headers, json={
+                'out_refund_no': 'REFUND_ORDER_A', 'operator_note': 'test'
+            }).status_code, 409)
+            query.assert_not_called()
+
+    def test_manual_refund_rejects_legacy_after_sale_state(self):
+        headers = self._paid_admin_headers()
+        self.order.refund_status = 30
+        db.session.commit()
+        path = f'/admin/orders/{self.order.order_sn}/manual-refunds'
+        with patch('wechat_pay_support.query_manual_refund') as query:
+            self.assertEqual(self.client.post(path, headers=headers, json={
+                'out_refund_no': 'REFUND_ORDER_A', 'operator_note': '人工退款'
+            }).status_code, 409)
+            query.assert_not_called()
+        self.assertFalse(self.client.get('/admin/orders', headers=headers).get_json()['orders'][0]['can_verify_refund'])
+
+    def test_manual_refund_blocks_supplier_and_station_progress(self):
+        headers = self._paid_admin_headers()
+        zone = DeliveryZone(
+            zone_name='退款测试区域', center_lng=Decimal('116.1'), center_lat=Decimal('39.9'),
+            merchant_username='merchant-refund', merchant_password='merchant-test-password', is_active=True
+        )
+        supplier = Supplier(name='退款测试供应商', username='supplier-refund', password='supplier-test-password',
+                            is_active=True, is_deleted=False)
+        db.session.add_all((zone, supplier))
+        db.session.flush()
+        self.order.zone_id = zone.id
+        supplier_order = SupplierOrder(order_sn=self.order.order_sn, supplier_id=supplier.id, status=10)
+        db.session.add(supplier_order)
+        db.session.commit()
+
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload()):
+            self.assertEqual(self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                              headers=headers, json={'out_refund_no': 'REFUND_ORDER_A',
+                                                                     'operator_note': '人工退款'}).status_code, 201)
+
+        supplier_token = self.client.post('/supplier/login',
+                                          json={'username': supplier.username, 'password': 'supplier-test-password'})
+        supplier_headers = {'Authorization': f"Bearer {supplier_token.get_json()['token']}"}
+        supplier_path = f'/supplier/orders/{supplier_order.id}/status?supplier_id={supplier.id}'
+        self.assertEqual(self.client.put(supplier_path, headers=supplier_headers,
+                                         json={'status': 20}).status_code, 409)
+        self.assertEqual(self.client.put(f'/admin/supplier-orders/{supplier_order.id}/status', headers=headers,
+                                         json={'status': 20}).status_code, 409)
+        merchant_path = f'/merchant/orders/{self.order.order_sn}/start-delivery?zone_id={zone.id}'
+        self.assertEqual(self.client.post(merchant_path, headers={'X-Merchant-Key': get_merchant_key(zone)}).status_code, 409)
+
+        with patch('wechat_pay_support.query_manual_refund',
+                   return_value=self._manual_refund_payload(status='CLOSED')):
+            self.assertEqual(self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                              headers=headers, json={'out_refund_no': 'REFUND_ORDER_A'}).status_code, 200)
+        self.assertEqual(self.client.put(supplier_path, headers=supplier_headers,
+                                         json={'status': 20}).status_code, 200)
+
+    def test_admin_can_cancel_supplier_preparation_during_manual_refund(self):
+        headers = self._paid_admin_headers()
+        supplier = Supplier(name='取消备货供应商', username='cancel-supplier', password='supplier-password',
+                            is_active=True, is_deleted=False)
+        db.session.add(supplier)
+        db.session.flush()
+        supplier_order = SupplierOrder(order_sn=self.order.order_sn, supplier_id=supplier.id, status=10)
+        db.session.add(supplier_order)
+        db.session.commit()
+        with patch('wechat_pay_support.query_manual_refund', return_value=self._manual_refund_payload()):
+            self.assertEqual(self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
+                                              headers=headers, json={'out_refund_no': 'REFUND_ORDER_A',
+                                                                     'operator_note': '人工退款'}).status_code, 201)
+        self.assertEqual(self.client.put(f'/admin/supplier-orders/{supplier_order.id}/status', headers=headers,
+                                         json={'status': 40}).status_code, 200)
+        self.assertEqual(db.session.get(SupplierOrder, supplier_order.id).status, 40)
 
     def test_supplier_id_cannot_be_switched(self):
         one = Supplier(name='One', username='one', password='supplier-password', is_active=True, is_deleted=False)

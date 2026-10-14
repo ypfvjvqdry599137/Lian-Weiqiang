@@ -3,6 +3,7 @@ from extensions import db
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from hashlib import sha256
+from status_utils import has_refund_hold
 
 merchant_bp = Blueprint('merchant', __name__, url_prefix='/merchant')
 BUSINESS_TZ = timezone(timedelta(hours=8))
@@ -404,10 +405,12 @@ def start_delivery(order_sn):
     order = OrderMaster.query.filter_by(
         order_sn=order_sn,
         zone_id=zone.id
-    ).first_or_404()
+    ).populate_existing().with_for_update().first_or_404()
 
     if order.order_status != 20:
         return jsonify({'message': '订单状态异常，无法开始配送'}), 400
+    if has_refund_hold(order):
+        return jsonify({'message': '订单正在退款核验中，不能开始配送'}), 409
     if not are_supplier_orders_ready(order):
         return jsonify({'message': '供应商备货未全部完成，暂不能开始配送'}), 400
 
@@ -427,10 +430,12 @@ def confirm_delivery(order_sn):
     order = OrderMaster.query.filter_by(
         order_sn=order_sn,
         zone_id=zone.id
-    ).first_or_404()
+    ).populate_existing().with_for_update().first_or_404()
 
     if order.order_status != 30:
         return jsonify({'message': '订单状态异常，无法确认送达'}), 400
+    if has_refund_hold(order):
+        return jsonify({'message': '订单正在退款核验中，不能确认送达'}), 409
 
     order.order_status = 40
     db.session.commit()

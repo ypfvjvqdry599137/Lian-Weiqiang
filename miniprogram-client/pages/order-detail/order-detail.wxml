@@ -9,6 +9,7 @@
 
   <view class="status-section status-bg-{{order.order_status}}">
     <view class="status-text">{{order.status_text}}</view>
+    <view wx:if="{{order.manual_refund_status_text}}">{{order.manual_refund_status_text}}</view>
     <view class="status-desc">
       <block wx:if="{{order.can_pay}}">订单尚未支付，可继续支付</block>
       <block wx:elif="{{order.can_cancel}}">如需调整订单，可在商家配货前取消</block>

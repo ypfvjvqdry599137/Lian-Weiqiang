@@ -1,17 +1,22 @@
 import base64
+import io
 import json
 import os
 import sys
 import tempfile
+import time
 import unittest
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.x509.oid import NameOID
 from flask import Flask
 import werkzeug
@@ -71,6 +76,21 @@ def _sign_callback_body(private_key, timestamp, nonce, body_text):
         hashes.SHA256()
     )
     return base64.b64encode(signature).decode('utf-8')
+
+
+class FakeWeChatResponse:
+    def __init__(self, body, headers):
+        self.body = body.encode('utf-8')
+        self.headers = headers
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
 
 
 class WeChatPayTestCase(unittest.TestCase):
@@ -176,18 +196,30 @@ class WeChatPayTestCase(unittest.TestCase):
         db.session.expire_all()
         return OrderMaster.query.filter_by(order_sn=self.order.order_sn).first()
 
-    def test_parse_wechatpay_notification_round_trip(self):
-        private_key, certificate = _build_test_certificate()
-        api_v3_key = self.app.config['WECHAT_PAY_API_V3_KEY']
-        resource_payload = {
+    def _successful_trade(self, transaction_id='4200001234567890'):
+        return {
             'appid': self.app.config['WECHAT_MINI_PROGRAM_APPID'],
             'mchid': self.app.config['WECHAT_PAY_MCHID'],
             'out_trade_no': self.order.order_sn,
-            'transaction_id': '4200001234567890',
+            'transaction_id': transaction_id,
+            'trade_type': 'JSAPI',
             'trade_state': 'SUCCESS',
-            'trade_state_desc': '支付成功',
-            'success_time': '2026-08-15T08:00:00+08:00'
+            'amount': {'total': 3000, 'currency': 'CNY'},
+            'payer': {'openid': self.user.openid}
         }
+
+    def _unpaid_trade(self):
+        return {
+            'appid': self.app.config['WECHAT_MINI_PROGRAM_APPID'],
+            'mchid': self.app.config['WECHAT_PAY_MCHID'],
+            'out_trade_no': self.order.order_sn,
+            'trade_state': 'NOTPAY'
+        }
+
+    def test_parse_wechatpay_notification_round_trip(self):
+        private_key, certificate = _build_test_certificate()
+        api_v3_key = self.app.config['WECHAT_PAY_API_V3_KEY']
+        resource_payload = self._successful_trade()
         resource = _encrypt_resource(api_v3_key, resource_payload)
         notification = {
             'id': 'notify-001',
@@ -196,7 +228,7 @@ class WeChatPayTestCase(unittest.TestCase):
             'resource': resource
         }
         body_text = json.dumps(notification, ensure_ascii=False, separators=(',', ':'))
-        timestamp = '1720000000'
+        timestamp = str(int(time.time()))
         nonce = 'nonce-123456'
         signature = _sign_callback_body(private_key, timestamp, nonce, body_text)
         headers = {
@@ -215,14 +247,8 @@ class WeChatPayTestCase(unittest.TestCase):
         self.assertEqual(parsed_resource['trade_state'], 'SUCCESS')
 
     def test_wechat_pay_notify_is_idempotent(self):
-        resource = {
-            'appid': self.app.config['WECHAT_MINI_PROGRAM_APPID'],
-            'mchid': self.app.config['WECHAT_PAY_MCHID'],
-            'out_trade_no': self.order.order_sn,
-            'transaction_id': '4200001234567890',
-            'trade_state': 'SUCCESS'
-        }
-        notification = {'resource': resource}
+        resource = self._successful_trade()
+        notification = {'event_type': 'TRANSACTION.SUCCESS'}
 
         with patch.object(wechat_pay_support, 'parse_wechatpay_notification', return_value=(notification, resource)):
             first_response = self.client.post('/client/wechat/pay/notify', data='{}', content_type='application/json')
@@ -239,15 +265,35 @@ class WeChatPayTestCase(unittest.TestCase):
         self.assertEqual(self.product.stock.lock_stock, 0)
         self.assertEqual(self.product.sales_count, 2)
 
+    def test_second_transaction_id_for_paid_order_is_rejected(self):
+        notification = {'event_type': 'TRANSACTION.SUCCESS'}
+        first = self._successful_trade('4200001234567890')
+        second = self._successful_trade('4200009999999999')
+        with patch.object(wechat_pay_support, 'parse_wechatpay_notification',
+                          return_value=(notification, first)):
+            self.assertEqual(self.client.post('/client/wechat/pay/notify', data='{}').status_code, 204)
+        with patch.object(wechat_pay_support, 'parse_wechatpay_notification',
+                          return_value=(notification, second)):
+            response = self.client.post('/client/wechat/pay/notify', data='{}')
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self._reload_order().transaction_id, '4200001234567890')
+        self.assertEqual(self.product.stock.total_stock, 98)
+
+    def test_paid_query_accepts_omitted_optional_currency(self):
+        trade = self._successful_trade()
+        del trade['amount']['currency']
+        with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no', return_value=trade):
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/pay', headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._reload_order().order_status, 20)
+
     def test_pay_order_finalizes_paid_order(self):
         with patch.object(
             wechat_pay_support,
             'query_jsapi_order_by_out_trade_no',
-            return_value={
-                'trade_state': 'SUCCESS',
-                'transaction_id': '4200000987654321',
-                'trade_state_desc': '支付成功'
-            }
+            return_value=self._successful_trade('4200000987654321')
         ):
             response = self.client.post(f'/client/orders/{self.order.order_sn}/pay', headers=self.auth_headers)
 
@@ -262,6 +308,225 @@ class WeChatPayTestCase(unittest.TestCase):
         self.assertEqual(self.product.stock.total_stock, 98)
         self.assertEqual(self.product.stock.lock_stock, 0)
         self.assertEqual(self.product.sales_count, 2)
+
+    def test_success_trade_mismatches_never_mark_paid(self):
+        mutations = [
+            ('appid', 'wx-other'),
+            ('mchid', 'other-merchant'),
+            ('out_trade_no', 'OTHER-ORDER'),
+            ('transaction_id', None),
+            ('amount', {'total': 1, 'currency': 'CNY'}),
+            ('payer', {'openid': 'other-user'})
+        ]
+        for field, value in mutations:
+            with self.subTest(field=field):
+                trade = self._successful_trade()
+                trade[field] = value
+                with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no', return_value=trade):
+                    response = self.client.post(f'/client/orders/{self.order.order_sn}/pay', headers=self.auth_headers)
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(self._reload_order().order_status, 10)
+                self.assertEqual(self.product.stock.lock_stock, 2)
+
+    def test_callback_mismatch_returns_failure_without_mutating_order(self):
+        for field, value in [('mchid', 'wrong'), ('amount', {'total': 1, 'currency': 'CNY'}),
+                             ('payer', {'openid': 'wrong'})]:
+            with self.subTest(field=field):
+                resource = deepcopy(self._successful_trade())
+                resource[field] = value
+                notification = {'event_type': 'TRANSACTION.SUCCESS'}
+                with patch.object(wechat_pay_support, 'parse_wechatpay_notification',
+                                  return_value=(notification, resource)):
+                    response = self.client.post('/client/wechat/pay/notify', data='{}')
+                self.assertEqual(response.status_code, 500)
+                self.assertEqual(self._reload_order().order_status, 10)
+
+    def test_cancel_closes_unpaid_wechat_order_before_releasing_stock(self):
+        with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no',
+                          return_value=self._unpaid_trade()), \
+             patch.object(wechat_pay_support, 'close_jsapi_order_by_out_trade_no') as close:
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/cancel', headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        close.assert_called_once_with(self.order.order_sn)
+        self.assertEqual(self._reload_order().order_status, 60)
+        self.assertEqual(self.product.stock.total_stock, 100)
+        self.assertEqual(self.product.stock.lock_stock, 0)
+
+    def test_cancel_keeps_order_when_close_fails(self):
+        with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no',
+                          return_value=self._unpaid_trade()), \
+             patch.object(wechat_pay_support, 'close_jsapi_order_by_out_trade_no',
+                          side_effect=wechat_pay_support.WeChatPayError('关单失败')):
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/cancel', headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self._reload_order().order_status, 10)
+        self.assertEqual(self.product.stock.lock_stock, 2)
+
+    def test_cancel_paid_wechat_order_updates_local_payment_instead(self):
+        with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no',
+                          return_value=self._successful_trade()):
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/cancel', headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self._reload_order().order_status, 20)
+        self.assertEqual(self.product.stock.total_stock, 98)
+
+    def test_cancel_when_wechat_order_does_not_exist(self):
+        missing = wechat_pay_support.WeChatPayApiError('不存在', 'ORDER_NOT_EXIST', 404)
+        with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no', side_effect=missing):
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/cancel', headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._reload_order().order_status, 60)
+
+    def test_cancel_does_not_release_stock_while_wechat_is_paying(self):
+        trade = self._unpaid_trade()
+        trade['trade_state'] = 'USERPAYING'
+        with patch.object(wechat_pay_support, 'query_jsapi_order_by_out_trade_no', return_value=trade), \
+             patch.object(wechat_pay_support, 'close_jsapi_order_by_out_trade_no') as close:
+            response = self.client.post(f'/client/orders/{self.order.order_sn}/cancel', headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 409)
+        close.assert_not_called()
+        self.assertEqual(self._reload_order().order_status, 10)
+        self.assertEqual(self.product.stock.lock_stock, 2)
+
+    def test_paid_callback_for_cancelled_order_is_not_silently_accepted(self):
+        self.order.order_status = 60
+        db.session.commit()
+        resource = self._successful_trade()
+        with patch.object(wechat_pay_support, 'parse_wechatpay_notification',
+                          return_value=({'event_type': 'TRANSACTION.SUCCESS'}, resource)):
+            response = self.client.post('/client/wechat/pay/notify', data='{}')
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self._reload_order().order_status, 60)
+
+    def test_duplicate_callback_after_dispatch_does_not_change_stock(self):
+        self.order.order_status = 30
+        self.order.transaction_id = '4200001234567890'
+        self.order.paid_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.product.stock.total_stock = 98
+        self.product.stock.lock_stock = 0
+        self.product.sales_count = 2
+        db.session.commit()
+        resource = self._successful_trade()
+        with patch.object(wechat_pay_support, 'parse_wechatpay_notification',
+                          return_value=({'event_type': 'TRANSACTION.SUCCESS'}, resource)):
+            response = self.client.post('/client/wechat/pay/notify', data='{}')
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(self._reload_order().order_status, 30)
+        self.assertEqual(self.product.stock.total_stock, 98)
+        self.assertEqual(self.product.sales_count, 2)
+
+    def test_expired_wechat_signature_is_rejected(self):
+        with self.assertRaises(wechat_pay_support.WeChatPayError):
+            wechat_pay_support.verify_wechatpay_signature({
+                'Wechatpay-Timestamp': '1720000000',
+                'Wechatpay-Nonce': 'old-nonce',
+                'Wechatpay-Signature': 'c2lnbmF0dXJl',
+                'Wechatpay-Serial': 'TEST_SERIAL_001'
+            }, '{}')
+
+    def test_query_api_response_must_have_valid_signature(self):
+        private_key, certificate = _build_test_certificate()
+        trade = self._successful_trade()
+        body = json.dumps(trade, separators=(',', ':'))
+        timestamp = str(int(time.time()))
+        nonce = 'api-response-nonce'
+        headers = {
+            'Wechatpay-Timestamp': timestamp,
+            'Wechatpay-Nonce': nonce,
+            'Wechatpay-Serial': 'TEST_SERIAL_001',
+            'Wechatpay-Signature': _sign_callback_body(private_key, timestamp, nonce, body)
+        }
+        path = '/v3/pay/transactions/out-trade-no/ORD202608150001?mchid=1900000001'
+
+        with patch.object(wechat_pay_support, '_build_auth_header', return_value='TEST'), \
+             patch.object(wechat_pay_support, '_get_platform_certificate', return_value=certificate), \
+             patch.object(wechat_pay_support, 'urlopen',
+                          return_value=FakeWeChatResponse(body, headers)):
+            self.assertEqual(wechat_pay_support._wechat_api_request('GET', path), trade)
+
+        with patch.object(wechat_pay_support, '_build_auth_header', return_value='TEST'), \
+             patch.object(wechat_pay_support, '_get_platform_certificate', return_value=certificate), \
+             patch.object(wechat_pay_support, 'urlopen',
+                          return_value=FakeWeChatResponse(body.replace('SUCCESS', 'NOTPAY'), headers)):
+            with self.assertRaises(wechat_pay_support.WeChatPayError):
+                wechat_pay_support._wechat_api_request('GET', path)
+
+    def test_wechatpay_public_key_mode_verifies_exact_configured_id(self):
+        private_key, _ = _build_test_certificate()
+        public_key_pem = private_key.public_key().public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+        self.app.config['WECHAT_PAY_PUBLIC_KEY_ID'] = 'PUB_KEY_ID_1234567890'
+        self.app.config['WECHAT_PAY_PUBLIC_KEY'] = public_key_pem
+        wechat_pay_support._load_wechatpay_public_key.cache_clear()
+
+        body = '{"status":"SUCCESS"}'
+        timestamp = str(int(time.time()))
+        headers = {
+            'Wechatpay-Timestamp': timestamp,
+            'Wechatpay-Nonce': 'public-key-nonce',
+            'Wechatpay-Serial': 'PUB_KEY_ID_1234567890',
+            'Wechatpay-Signature': _sign_callback_body(private_key, timestamp, 'public-key-nonce', body)
+        }
+        try:
+            wechat_pay_support.verify_wechatpay_signature(headers, body)
+            with self.assertRaises(wechat_pay_support.WeChatPayError):
+                wechat_pay_support.verify_wechatpay_signature(headers, '{"status":"NOTPAY"}')
+            headers['Wechatpay-Serial'] = 'PUB_KEY_ID_OTHER'
+            with self.assertRaises(wechat_pay_support.WeChatPayError):
+                wechat_pay_support.verify_wechatpay_signature(headers, body)
+        finally:
+            wechat_pay_support._load_wechatpay_public_key.cache_clear()
+
+    def test_refund_query_uses_read_only_endpoint(self):
+        with patch.object(wechat_pay_support, '_wechat_api_request', return_value={'status': 'SUCCESS'}) as request:
+            self.assertEqual(wechat_pay_support.query_manual_refund('REFUND_001'), {'status': 'SUCCESS'})
+        request.assert_called_once_with('GET', '/v3/refund/domestic/refunds/REFUND_001')
+
+    def test_signed_order_not_exist_error_preserves_code(self):
+        private_key, certificate = _build_test_certificate()
+        body = '{"code":"ORDER_NOT_EXIST","message":"missing"}'
+        timestamp = str(int(time.time()))
+        nonce = 'api-error-nonce'
+        headers = {
+            'Wechatpay-Timestamp': timestamp,
+            'Wechatpay-Nonce': nonce,
+            'Wechatpay-Serial': 'TEST_SERIAL_001',
+            'Wechatpay-Signature': _sign_callback_body(private_key, timestamp, nonce, body)
+        }
+        error = HTTPError('https://api.mch.weixin.qq.com/test', 404, 'Not Found', headers,
+                          io.BytesIO(body.encode('utf-8')))
+        with patch.object(wechat_pay_support, '_build_auth_header', return_value='TEST'), \
+             patch.object(wechat_pay_support, '_get_platform_certificate', return_value=certificate), \
+             patch.object(wechat_pay_support, 'urlopen', side_effect=error):
+            with self.assertRaises(wechat_pay_support.WeChatPayApiError) as caught:
+                wechat_pay_support._wechat_api_request('GET', '/test')
+
+        self.assertEqual(caught.exception.code, 'ORDER_NOT_EXIST')
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_close_api_verifies_signed_empty_response(self):
+        private_key, certificate = _build_test_certificate()
+        timestamp = str(int(time.time()))
+        nonce = 'close-response-nonce'
+        headers = {
+            'Wechatpay-Timestamp': timestamp,
+            'Wechatpay-Nonce': nonce,
+            'Wechatpay-Serial': 'TEST_SERIAL_001',
+            'Wechatpay-Signature': _sign_callback_body(private_key, timestamp, nonce, '')
+        }
+        with patch.object(wechat_pay_support, '_build_auth_header', return_value='TEST'), \
+             patch.object(wechat_pay_support, '_get_platform_certificate', return_value=certificate), \
+             patch.object(wechat_pay_support, 'urlopen',
+                          return_value=FakeWeChatResponse('', headers)):
+            self.assertEqual(wechat_pay_support.close_jsapi_order_by_out_trade_no(self.order.order_sn), {})
 
     def test_create_wechat_pay_returns_payment_payload(self):
         fake_payment = {

@@ -402,6 +402,25 @@ class OrderMaster(db.Model):
     def __repr__(self):
         return f'<OrderMaster {self.order_sn}>'
 
+
+class ManualRefund(db.Model):
+    __tablename__ = 'manual_refund'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    order_sn = db.Column(db.String(32), db.ForeignKey('order_master.order_sn'), nullable=False, index=True)
+    out_refund_no = db.Column(db.String(64), unique=True)
+    refund_id = db.Column(db.String(32), unique=True)
+    transaction_id = db.Column(db.String(100), nullable=False)
+    order_total_fen = db.Column(db.Integer, nullable=False)
+    refund_fen = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(16), nullable=False)
+    operator_note = db.Column(db.String(255))
+    success_time = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    checked_at = db.Column(db.DateTime)
+
+    order = db.relationship('OrderMaster', backref=db.backref('manual_refunds', lazy=True))
+
 # ============================================
 # 订单项模型
 # ============================================

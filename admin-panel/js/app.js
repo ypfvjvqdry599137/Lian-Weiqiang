@@ -1029,6 +1029,14 @@ async function loadOrders() {
         ordersData.orders.forEach(order => {
             const card = document.createElement('div');
             card.classList.add('data-card', `status-${order.order_status}`);
+            const refund = order.refund_summary;
+            const refundLabels = {
+                REQUESTED: '待人工退款，配送已暂停',
+                PROCESSING: '退款处理中',
+                SUCCESS: '退款成功',
+                CLOSED: '退款已关闭',
+                ABNORMAL: '退款异常，需人工处理'
+            };
             const itemsHtml = order.items ? order.items.map(item => `
                 <p>${item.product_name} x ${item.quantity}</p>
             `).join('') : '';
@@ -1038,6 +1046,7 @@ async function loadOrders() {
                     <p>配送区域: ${order.zone_name || order.zone_id || '未分配'} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee}</p>
                     <p>收货人: ${order.receiver_name} | 电话: ${order.receiver_phone}</p>
                     <p>收货地址: ${order.receiver_address}</p>
+                    ${refund ? `<p>人工退款：${refundLabels[refund.status] || '状态未知'}${refund.out_refund_no ? `，商户退款单号：${refund.out_refund_no}` : ''}</p>` : ''}
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                         ${itemsHtml}
                     </div>
@@ -1045,11 +1054,47 @@ async function loadOrders() {
                 </div>
                 <div class="data-card-actions">
                     ${renderOrderStatusSelect(order)}
-                    <button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.order_sn}')">删除订单</button>
+                    ${order.can_request_refund ? `<button class="btn btn-sm" onclick="requestManualRefund('${order.order_sn}')">创建人工退款待办</button>` : ''}
+                    ${order.can_verify_refund ? `<button class="btn btn-sm" onclick="verifyManualRefund('${order.order_sn}', '${refund.out_refund_no || ''}', ${refund.status === 'REQUESTED'})">${refund.status === 'REQUESTED' ? '填写退款单号并核验' : '刷新退款核验'}</button>` : ''}
+                    ${order.can_delete ? `<button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.order_sn}')">删除已取消订单</button>` : ''}
                 </div>
             `;
             ordersList.appendChild(card);
         });
+    }
+}
+
+async function requestManualRefund(orderSn) {
+    const note = prompt('填写退款原因和操作人员（不要填写密码或密钥）。创建后立即暂停备货和配送，但不会向微信发起退款。');
+    if (note === null || !note.trim()) return;
+    if (!confirm('确认先暂停这笔订单的履约？创建待办本身不会转钱，随后仍须去微信商户平台人工退款。')) return;
+
+    const result = await fetchData(`/admin/orders/${orderSn}/manual-refund-requests`, 'POST', {
+        operator_note: note.trim()
+    }, true);
+    if (result) {
+        alert(result.message);
+        await loadOrders();
+    }
+}
+
+async function verifyManualRefund(orderSn, currentRefundNo, hasRequest) {
+    const refundNo = prompt('请先确认已在微信商户平台人工操作退款，再输入商户退款单号。此按钮只查询核验，不会发起退款。', currentRefundNo || '');
+    if (refundNo === null || !refundNo.trim()) return;
+
+    let note = null;
+    if (!hasRequest && refundNo.trim() !== currentRefundNo) {
+        note = prompt('首次登记请填写操作备注（例如退款原因和操作人员），不要填写密码或密钥。');
+        if (note === null) return;
+    }
+
+    const result = await fetchData(`/admin/orders/${orderSn}/manual-refunds`, 'POST', {
+        out_refund_no: refundNo.trim(),
+        operator_note: note
+    }, true);
+    if (result) {
+        alert(`${result.message}\n微信退款状态：${result.refund.status}`);
+        await loadOrders();
     }
 }
 
@@ -1071,7 +1116,7 @@ async function updateOrderStatusFromSelect(orderSn, selectEl) {
 }
 
 async function deleteOrder(orderSn) {
-    if (!confirm('确定要删除该订单吗？删除后会同步从供应商后台和区域配送后台移除，并按安全规则回补未完成库存。')) {
+    if (!confirm('确定要删除这笔已取消且未付款的订单吗？删除后会同步移除关联的供应商备货记录。')) {
         return;
     }
 

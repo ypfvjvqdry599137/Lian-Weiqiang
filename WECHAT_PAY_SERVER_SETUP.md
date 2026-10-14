@@ -15,6 +15,7 @@
 - APIv3 密钥
 - 商户 API 证书序列号
 - 商户 API 私钥文件，通常是 `apiclient_key.pem`
+- 如果商户号使用微信支付公钥模式：微信支付公钥 ID 和从商户平台下载的微信支付公钥 PEM 文件
 - 支付回调地址 `notify_url`
 
 如果项目会用到地图能力，再准备腾讯地图 Key。
@@ -44,6 +45,9 @@ WECHAT_PAY_API_V3_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 WECHAT_PAY_SERIAL_NO=1234567890ABCDEF1234567890ABCDEF12345678
 WECHAT_PAY_PRIVATE_KEY_PATH=/你的项目目录/backend/.wechatpay/apiclient_key.pem
 WECHAT_PAY_NOTIFY_URL=https://你的正式域名/client/wechat/pay/notify
+# 仅在商户号使用微信支付公钥模式时添加以下两项
+# WECHAT_PAY_PUBLIC_KEY_ID=PUB_KEY_ID_你的公钥ID
+# WECHAT_PAY_PUBLIC_KEY_PATH=/你的项目目录/backend/.wechatpay/wechatpay_public_key.pem
 TENCENT_MAP_KEY=如果页面需要地图就填
 ```
 
@@ -66,6 +70,9 @@ DB_NAME=你的数据库名
 - `WECHAT_PAY_SERIAL_NO`：商户 API 证书序列号
 - `WECHAT_PAY_PRIVATE_KEY_PATH`：商户 API 私钥文件路径
 - `WECHAT_PAY_NOTIFY_URL`：微信支付异步回调地址
+- `WECHAT_PAY_PUBLIC_KEY_ID` 和 `WECHAT_PAY_PUBLIC_KEY_PATH`：可选，仅用于微信支付公钥模式验签。这里是**微信支付公钥**，不是商户 API 私钥；ID 必须与微信返回的 `Wechatpay-Serial` 完全一致。平台证书模式可不配置。
+
+如需公钥模式，由商户平台超级管理员或安全联系人进入“账户中心 → API安全”下载微信支付公钥，并记录公钥 ID。将 PEM 放在服务器受控路径，不要提交 Git。配置后重启服务，再通过当前商户号的小额测试验证微信应答和回调验签。参见[微信支付公钥验签说明](https://pay.wechatpay.cn/doc/v3/merchant/4013053249)。
 
 ## 服务器上怎么操作
 

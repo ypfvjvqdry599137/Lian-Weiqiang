@@ -8,6 +8,7 @@ from extensions import db
 from status_utils import (
     get_order_status_text,
     get_supplier_order_status_text,
+    has_refund_hold,
     sync_order_status_after_supplier_update,
 )
 
@@ -214,13 +215,16 @@ def get_supplier_orders():
 
 @supplier_bp.route('/orders/<int:order_id>/status', methods=['PUT'])
 def update_supplier_order_status(order_id):
-    from models import SupplierOrder # Lazy import
+    from models import OrderMaster, SupplierOrder # Lazy import
     supplier_id = request.args.get('supplier_id')
 
     if not supplier_id:
         return jsonify({'message': '未授权'}), 401
 
     so = SupplierOrder.query.filter_by(id=order_id, supplier_id=supplier_id).first_or_404()
+    order = OrderMaster.query.filter_by(order_sn=so.order_sn).populate_existing().with_for_update().first_or_404()
+    if has_refund_hold(order):
+        return jsonify({'message': '订单正在退款核验中，不能推进备货'}), 409
     data = request.get_json()
     
     try:
