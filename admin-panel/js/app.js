@@ -422,10 +422,11 @@ function renderStatusOptions(options, currentValue) {
 }
 
 function renderOrderStatusSelect(order) {
+    const orderSnArg = escapeHtml(JSON.stringify(order.order_sn));
     return `
         <label class="status-control">
             <span>订单状态</span>
-            <select class="status-select" data-current="${order.order_status}" onchange="updateOrderStatusFromSelect('${order.order_sn}', this)">
+            <select class="status-select" data-current="${Number(order.order_status)}" onchange="updateOrderStatusFromSelect(${orderSnArg}, this)">
                 ${renderStatusOptions(ORDER_STATUS_OPTIONS, order.order_status)}
             </select>
         </label>
@@ -1026,6 +1027,8 @@ async function loadOrders() {
         ordersData.orders.forEach(order => {
             const card = document.createElement('div');
             card.classList.add('data-card', `status-${order.order_status}`);
+            const orderSnArg = escapeHtml(JSON.stringify(order.order_sn));
+            const amountArg = escapeHtml(JSON.stringify(String(order.final_amount)));
             const refund = order.refund_summary;
             const refundLabels = {
                 REQUESTED: '待人工退款，配送已暂停',
@@ -1036,27 +1039,27 @@ async function loadOrders() {
                 ABNORMAL: '退款异常，需人工处理'
             };
             const itemsHtml = order.items ? order.items.map(item => `
-                <p>${item.product_name} x ${item.quantity}</p>
+                <p>${escapeHtml(item.product_name)} x ${escapeHtml(item.quantity)}</p>
             `).join('') : '';
             card.innerHTML = `
                 <div class="data-card-content">
-                    <h4>订单号: ${order.order_sn} <span style="float:right;color:#666;">${getOrderStatusText(order.order_status)}</span></h4>
-                    <p>配送区域: ${order.zone_name || order.zone_id || '未分配'} | 总金额: ¥${order.total_amount} | 配送费: ¥${order.delivery_fee} | 实付: ${formatCurrency(order.final_amount)}</p>
-                    <p>收货人: ${order.receiver_name} | 电话: ${order.receiver_phone}</p>
-                    <p>收货地址: ${order.receiver_address}</p>
-                    ${refund ? `<p>退款：${refundLabels[refund.status] || '状态未知'}${refund.out_refund_no ? `，商户退款单号：${refund.out_refund_no}` : ''}${refund.refund_channel ? `，微信返回渠道：${{ ORIGINAL: '原路', BALANCE: '余额', OTHER_BALANCE: '其他余额账户', OTHER_BANKCARD: '其他银行卡' }[refund.refund_channel] || '待核对'}` : ''}</p>` : ''}
+                    <h4>订单号: ${escapeHtml(order.order_sn)} <span style="float:right;color:#666;">${getOrderStatusText(order.order_status)}</span></h4>
+                    <p>配送区域: ${escapeHtml(order.zone_name || order.zone_id || '未分配')} | 总金额: ¥${escapeHtml(order.total_amount)} | 配送费: ¥${escapeHtml(order.delivery_fee)} | 实付: ${formatCurrency(order.final_amount)}</p>
+                    <p>收货人: ${escapeHtml(order.receiver_name)} | 电话: ${escapeHtml(order.receiver_phone)}</p>
+                    <p>收货地址: ${escapeHtml(order.receiver_address)}</p>
+                    ${refund ? `<p>退款：${refundLabels[refund.status] || '状态未知'}${refund.out_refund_no ? `，商户退款单号：${escapeHtml(refund.out_refund_no)}` : ''}${refund.refund_channel ? `，微信返回渠道：${{ ORIGINAL: '原路', BALANCE: '余额', OTHER_BALANCE: '其他余额账户', OTHER_BANKCARD: '其他银行卡' }[refund.refund_channel] || '待核对'}` : ''}</p>` : ''}
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">
                         ${itemsHtml}
                     </div>
-                    <p style="font-size:12px;color:#999;margin-top:10px;">下单时间: ${formatDate(order.created_at)}</p>
+                    <p style="font-size:12px;color:#999;margin-top:10px;">下单时间: ${escapeHtml(formatDate(order.created_at))}</p>
                 </div>
                 <div class="data-card-actions">
                     ${renderOrderStatusSelect(order)}
-                    ${order.can_request_refund ? `<button class="btn btn-sm btn-danger" onclick="openWechatRefundModal('${order.order_sn}', '${order.final_amount}', false)">向微信申请整单退款</button>` : ''}
-                    ${order.can_retry_wechat_refund ? `<button class="btn btn-sm btn-danger" onclick="openWechatRefundModal('${order.order_sn}', '${order.final_amount}', true)">沿用原退款单号重试</button>` : ''}
-                    ${order.can_request_refund ? `<button class="btn btn-sm" onclick="requestManualRefund('${order.order_sn}')">创建人工退款待办</button>` : ''}
-                    ${order.can_verify_refund ? (refund.out_refund_no && refund.out_refund_no.startsWith('AR') ? `<button class="btn btn-sm" onclick="refreshWechatRefund('${order.order_sn}', '${refund.out_refund_no}')">查询微信退款结果</button>` : `<button class="btn btn-sm" onclick="verifyManualRefund('${order.order_sn}', '${refund.out_refund_no || ''}', ${refund.status === 'REQUESTED'})">${refund.status === 'REQUESTED' ? '填写退款单号并核验' : '刷新退款核验'}</button>`) : ''}
-                    ${order.can_delete ? `<button class="btn btn-sm btn-danger" onclick="deleteOrder('${order.order_sn}')">删除已取消订单</button>` : ''}
+                    ${order.can_request_refund ? `<button class="btn btn-sm btn-danger" onclick="openWechatRefundModal(${orderSnArg}, ${amountArg}, false)">向微信申请整单退款</button>` : ''}
+                    ${order.can_retry_wechat_refund ? `<button class="btn btn-sm btn-danger" onclick="openWechatRefundModal(${orderSnArg}, ${amountArg}, true)">沿用原退款单号重试</button>` : ''}
+                    ${order.can_request_refund ? `<button class="btn btn-sm" onclick="requestManualRefund(${orderSnArg})">创建人工退款待办</button>` : ''}
+                    ${order.can_verify_refund ? (refund.out_refund_no && refund.out_refund_no.startsWith('AR') ? `<button class="btn btn-sm" onclick="refreshWechatRefund(${orderSnArg}, ${escapeHtml(JSON.stringify(refund.out_refund_no))})">查询微信退款结果</button>` : `<button class="btn btn-sm" onclick="verifyManualRefund(${orderSnArg}, ${escapeHtml(JSON.stringify(refund.out_refund_no || ''))}, ${refund.status === 'REQUESTED'})">${refund.status === 'REQUESTED' ? '填写退款单号并核验' : '刷新退款核验'}</button>`) : ''}
+                    ${order.can_delete ? `<button class="btn btn-sm btn-danger" onclick="deleteOrder(${orderSnArg})">删除已取消订单</button>` : ''}
                 </div>
             `;
             ordersList.appendChild(card);
