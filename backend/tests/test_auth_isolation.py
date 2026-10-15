@@ -92,6 +92,22 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(len(self.client.get('/client/orders', headers=self.a).get_json()['orders']), 1)
         self.assertEqual(self.client.get('/client/orders', headers=self.b).get_json()['orders'], [])
 
+    def test_order_status_labels_are_readable_in_list_and_detail(self):
+        labels = {
+            10: '待付款', 20: '待配货', 30: '配送中',
+            40: '已送达', 50: '已完成', 60: '已取消',
+        }
+        for status, expected in labels.items():
+            with self.subTest(status=status):
+                self.order.order_status = status
+                db.session.commit()
+                listed = self.client.get('/client/orders', headers=self.a)
+                detail = self.client.get('/client/orders/ORDER_A', headers=self.a)
+                self.assertEqual(listed.status_code, 200)
+                self.assertEqual(detail.status_code, 200)
+                self.assertEqual(listed.get_json()['orders'][0]['status_text'], expected)
+                self.assertEqual(detail.get_json()['status_text'], expected)
+
     def test_legacy_shared_account_is_quarantined_even_when_openid_matches(self):
         legacy = User(openid='legacy-openid', nickname='Legacy shared account')
         db.session.add(legacy)

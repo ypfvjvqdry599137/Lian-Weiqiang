@@ -661,7 +661,7 @@ def create_order():
 @client_bp.route('/orders', methods=['GET'])
 def get_orders():
     from models import OrderMaster
-    from status_utils import manual_refund_status_text
+    from status_utils import get_order_status_text, manual_refund_status_text
     user = current_client_user()
     status = request.args.get('status')
 
@@ -685,7 +685,7 @@ def get_orders():
                 'is_preorder': bool(item.is_preorder)
             })
 
-        status_text = {10: '寰呬粯娆?', 20: '寰呴厤璐?', 30: '閰嶉€佷腑', 40: '宸查€佽揪', 50: '宸插畬鎴?', 60: '宸插彇娑?'}.get(order.order_status, '鏈煡')
+        status_text = get_order_status_text(order.order_status)
         station = order.zone.station if order.zone and order.zone.station else None
         issues = list(order.fulfillment_issues or [])
 
@@ -717,7 +717,7 @@ def get_orders():
 def get_order_detail(order_sn):
     from models import OrderMaster
     from fulfillment import serialize_fulfillment_issue
-    from status_utils import manual_refund_status_text
+    from status_utils import get_order_status_text, manual_refund_status_text
 
     user = current_client_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
@@ -734,7 +734,7 @@ def get_order_detail(order_sn):
             'is_preorder': bool(item.is_preorder)
         })
 
-    status_text = {10: '寰呬粯娆?', 20: '寰呴厤璐?', 30: '閰嶉€佷腑', 40: '宸查€佽揪', 50: '宸插畬鎴?', 60: '宸插彇娑?'}.get(order.order_status, '鏈煡')
+    status_text = get_order_status_text(order.order_status)
     station = order.zone.station if order.zone and order.zone.station else None
     issues = [serialize_fulfillment_issue(issue) for issue in (order.fulfillment_issues or [])]
 
