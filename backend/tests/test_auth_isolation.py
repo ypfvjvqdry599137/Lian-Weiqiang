@@ -19,7 +19,7 @@ from client_routes import client_bp
 from extensions import db
 from fulfillment_admin_routes import fulfillment_admin_bp
 from merchant_routes import get_merchant_key, merchant_bp
-from models import Cart, ClientIdentity, DeliveryZone, ManualRefund, OrderMaster, Product, Supplier, SupplierOrder, User, UserAddress
+from models import Cart, Category, ClientIdentity, DeliveryZone, ManualRefund, OrderMaster, Product, Supplier, SupplierOrder, User, UserAddress
 from supplier_routes import supplier_bp
 from wechat_pay_support import WeChatPayError
 
@@ -162,6 +162,27 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(self.client.post('/admin/auth/login', json={'password': 'wrong'}).status_code, 401)
         token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
         self.assertEqual(self.client.get('/admin/stations', headers={'Authorization': f'Bearer {token}'}).status_code, 200)
+
+    def test_legacy_category_request_only_exposes_public_categories_to_clients(self):
+        db.session.add_all((
+            Category(name='Visible', is_active=True),
+            Category(name='Hidden', is_active=False),
+        ))
+        db.session.commit()
+
+        public = self.client.get('/client/categories').get_json()
+        legacy = self.client.get('/admin/categories', headers=self.a)
+        self.assertEqual(legacy.status_code, 200)
+        self.assertEqual(legacy.get_json(), public)
+        self.assertEqual([category['name'] for category in public['categories']], ['Visible'])
+        self.assertEqual(self.client.get('/admin/categories').status_code, 401)
+        self.assertEqual(self.client.get('/admin/categories', headers={'Authorization': 'Bearer invalid'}).status_code, 401)
+        self.assertEqual(self.client.post('/admin/categories', headers=self.a, json={'name': 'Nope'}).status_code, 401)
+
+        token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
+        admin = self.client.get('/admin/categories', headers={'Authorization': f'Bearer {token}'})
+        self.assertEqual(admin.status_code, 200)
+        self.assertEqual({category['name'] for category in admin.get_json()['categories']}, {'Visible', 'Hidden'})
 
     def test_admin_rejects_blank_password_even_if_configured_hash_matches(self):
         for password in ('', '   '):

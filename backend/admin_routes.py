@@ -40,7 +40,16 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 def authenticate_admin():
     if request.endpoint == 'admin.admin_login':
         return None
-    return require_admin()
+    admin_error = require_admin()
+    if admin_error is None:
+        return None
+    # Previously published mini-programs still request this admin URL for public categories.
+    if request.endpoint == 'admin.get_categories' and request.method == 'GET':
+        from client_routes import authenticate_client, get_categories as get_public_categories
+
+        if authenticate_client() is None:
+            return get_public_categories()
+    return admin_error
 
 
 @admin_bp.route('/auth/login', methods=['POST'])

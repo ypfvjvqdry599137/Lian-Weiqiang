@@ -14,7 +14,7 @@ Page({
 
   loadCategories() {
     app.request({
-      url: '/admin/categories',
+      url: '/client/categories',
       success: (res) => {
         if (res.data && res.data.categories) {
           this.setData({
