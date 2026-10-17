@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily backup of fresh produce uploaded images
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=fresh-produce-images-backup.service
+
+[Install]
+WantedBy=timers.target

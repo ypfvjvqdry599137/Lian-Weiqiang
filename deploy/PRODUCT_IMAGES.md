@@ -26,9 +26,11 @@ Production checks for `43.155.202.205`:
    ```
 
    Until this is configured, the existing Flask route can serve images.
-3. Back up `UPLOAD_FOLDER` along with MySQL. The current automatic deployment
-   backs up MySQL only. A same-disk copy is useful for accidental deletion but
-   not for disk loss: enable cloud disk snapshots or separate storage.
+3. Enable `fresh-produce-images-backup.timer` for a daily image archive under
+   `backups/uploads`. The automatic GitHub deployment backs up MySQL only.
+   Same-disk archives help with accidental deletion but not disk loss: enable
+   cloud disk snapshots or separate storage. There is no automatic archive
+   retention; monitor backup disk usage and set an approved retention policy.
 4. After deployment, upload one non-sensitive image and verify both URLs,
    cache headers, the mini-program list thumbnail, detail image, and broken
    image placeholder on a real WeChat device.

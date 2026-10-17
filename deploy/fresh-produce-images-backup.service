@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up fresh produce uploaded images
+
+[Service]
+Type=oneshot
+User=ubuntu
+Environment="UPLOAD_FOLDER=/srv/fresh-produce/uploads"
+ExecStart=/bin/bash /home/ubuntu/Lian-Weiqiang/deploy/backup-product-images.sh
