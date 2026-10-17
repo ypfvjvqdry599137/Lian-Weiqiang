@@ -78,6 +78,12 @@ describe('首页 - 分类区域', () => {
   });
 
   describe('搜索功能', () => {
+    test('首页默认最多渲染 20 个商品', () => {
+      page.setData({ products: Array.from({ length: 200 }, (_, id) => ({ id })) });
+      page.updateSearchResults('');
+      expect(page.data.displayProducts).toHaveLength(20);
+    });
+
     test('输入关键词应过滤商品列表', () => {
       page.setData({
         products: [

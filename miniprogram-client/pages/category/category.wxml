@@ -15,9 +15,9 @@
     </scroll-view>
 
     <!-- 右侧商品列表 -->
-    <scroll-view class="product-wrapper" scroll-y="true">
+    <scroll-view class="product-wrapper" scroll-y="true" lower-threshold="160" bindscrolltolower="onProductsScrollToLower">
       <view class="product-card" wx:for="{{products}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
-        <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="product-img" />
+        <image wx:if="{{item.image_url && !item.imageUnavailable}}" src="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" mode="aspectFill" class="product-img" lazy-load="{{true}}" binderror="onProductImageError" data-id="{{item.id}}" data-image-url="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" />
         <view wx:else class="product-img product-placeholder">
           <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
         </view>
@@ -29,10 +29,12 @@
           </view>
         </view>
       </view>
-      <view class="empty-state" wx:if="{{products.length === 0}}">
+      <view class="empty-state" wx:if="{{!loadingProducts && !productsError && products.length === 0}}">
         <image class="empty-state-icon" src="/images/icons/empty-box.svg" mode="aspectFit" />
         <text class="empty-state-text">该分类暂无商品</text>
       </view>
+      <view class="product-list-status" wx:if="{{loadingProducts}}">正在加载商品...</view>
+      <view class="product-list-status product-list-retry" wx:if="{{productsError}}" bindtap="retryLoadProducts">加载失败，点击重试</view>
     </scroll-view>
   </view>
 

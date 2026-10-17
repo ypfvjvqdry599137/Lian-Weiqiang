@@ -48,6 +48,12 @@ Page({
     });
   },
 
+  onProductImageError() {
+    if (this.data.product) {
+      this.setData({ product: { ...this.data.product, imageError: true } });
+    }
+  },
+
   selectProcessingOption(e) {
     const option = e.currentTarget.dataset.option || '';
     this.setData({ selectedProcessingOption: option });

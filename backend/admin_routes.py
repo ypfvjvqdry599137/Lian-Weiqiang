@@ -62,6 +62,7 @@ def admin_login():
 
 ALLOWED_PRODUCT_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
 PRODUCT_IMAGE_MAX_SIDE = 1200
+PRODUCT_IMAGE_THUMB_SIDE = 600
 PRODUCT_IMAGE_QUALITY = 82
 BUSINESS_TZ = timezone(timedelta(hours=8))
 
@@ -1750,11 +1751,16 @@ def upload_product_image():
 
     upload_dir = Path(current_app.config['UPLOAD_FOLDER']) / 'products'
     upload_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid4().hex}.jpg"
+    image_id = uuid4().hex
+    filename = f"{image_id}-detail.jpg"
+    thumb_filename = f"{image_id}-thumb.jpg"
     target_path = upload_dir / filename
+    thumb_path = upload_dir / thumb_filename
 
     try:
         image = Image.open(upload.stream)
+        if image.width * image.height > 25_000_000:
+            return jsonify({"message": "图片尺寸过大，请选择较小的图片"}), 400
         image = ImageOps.exif_transpose(image)
         image.thumbnail((PRODUCT_IMAGE_MAX_SIDE, PRODUCT_IMAGE_MAX_SIDE), Image.Resampling.LANCZOS)
 
@@ -1766,13 +1772,18 @@ def upload_product_image():
             image = image.convert('RGB')
 
         image.save(target_path, 'JPEG', quality=PRODUCT_IMAGE_QUALITY, optimize=True, progressive=True)
+        image.thumbnail((PRODUCT_IMAGE_THUMB_SIDE, PRODUCT_IMAGE_THUMB_SIDE), Image.Resampling.LANCZOS)
+        image.save(thumb_path, 'JPEG', quality=PRODUCT_IMAGE_QUALITY, optimize=True, progressive=True)
     except (UnidentifiedImageError, OSError, ValueError):
+        target_path.unlink(missing_ok=True)
+        thumb_path.unlink(missing_ok=True)
         return jsonify({"message": "图片文件无法识别，请重新选择"}), 400
 
     relative_url = f"uploads/products/{filename}"
     return jsonify({
         "message": "Image uploaded successfully",
         "image_url": get_public_upload_url(relative_url),
+        "thumbnail_url": get_public_upload_url(f"uploads/products/{thumb_filename}"),
         "path": f"/{relative_url}"
     }), 201
 

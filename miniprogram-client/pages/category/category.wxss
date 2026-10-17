@@ -69,6 +69,17 @@
   background: #eef7ef;
 }
 
+.product-list-status {
+  padding: 24rpx 0 50rpx;
+  text-align: center;
+  color: #888;
+  font-size: 24rpx;
+}
+
+.product-list-retry {
+  color: #3c9e45;
+}
+
 .placeholder-icon-img {
   width: 64rpx;
   height: 64rpx;

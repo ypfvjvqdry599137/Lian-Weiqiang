@@ -67,7 +67,7 @@
     <scroll-view class="flash-list" scroll-x show-scrollbar="{{false}}">
       <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="flash-img">
-          <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="img" />
+          <image wx:if="{{item.image_url && !item.imageUnavailable}}" src="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" mode="aspectFill" class="img" binderror="onProductImageError" data-id="{{item.id}}" data-image-url="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" />
           <view wx:else class="img-placeholder">
             <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
           </view>
@@ -98,7 +98,7 @@
     <view class="product-grid">
       <view class="product-card" wx:for="{{displayProducts}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="product-image">
-          <image wx:if="{{item.image_url}}" src="{{item.image_url}}" mode="aspectFill" class="product-img" />
+          <image wx:if="{{item.image_url && !item.imageUnavailable}}" src="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" mode="aspectFill" class="product-img" lazy-load="{{true}}" binderror="onProductImageError" data-id="{{item.id}}" data-image-url="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" />
           <view wx:else class="product-img product-placeholder">
             <image class="placeholder-icon-img" src="/images/icons/empty-product.svg" mode="aspectFit" />
           </view>
@@ -118,6 +118,7 @@
         </view>
       </view>
     </view>
+    <view wx:if="{{!searchKeyword && products.length > displayProducts.length}}" class="product-more" bindtap="goToCategory">查看更多商品 &gt;</view>
   </view>
   <view class="empty-state" wx:else>
     <image class="empty-state-icon" src="/images/icons/empty-product.svg" mode="aspectFit" />

@@ -129,7 +129,7 @@ Page({
     const normalizedKeyword = (keyword || '').trim().toLowerCase();
 
     if (!normalizedKeyword) {
-      return sourceProducts.slice();
+      return sourceProducts.slice(0, 20);
     }
 
     return sourceProducts.filter((product) => {
@@ -144,6 +144,22 @@ Page({
     this.setData({
       searchKeyword,
       displayProducts
+    });
+  },
+
+  onProductImageError(e) {
+    const id = Number(e.currentTarget.dataset.id);
+    const failedUrl = e.currentTarget.dataset.imageUrl;
+    const markFailed = products => products.map(product =>
+      product.id === id ? {
+        ...product,
+        imageError: true,
+        imageUnavailable: failedUrl === product.image_url
+      } : product);
+    this.setData({
+      products: markFailed(this.data.products),
+      flashProducts: markFailed(this.data.flashProducts),
+      displayProducts: markFailed(this.data.displayProducts)
     });
   },
 

@@ -4,7 +4,10 @@ Page({
   data: {
     categories: [],
     products: [],
-    currentCategory: 0
+    currentCategory: 0,
+    hasMore: true,
+    loadingProducts: false,
+    productsError: false
   },
 
   onLoad() {
@@ -18,7 +21,7 @@ Page({
       success: (res) => {
         if (res.data && res.data.categories) {
           this.setData({
-            categories: res.data.categories
+            categories: [{ id: 0, name: '全部' }, ...res.data.categories]
           });
         }
       }
@@ -26,19 +29,66 @@ Page({
   },
 
   loadProducts(categoryId) {
-    let url = '/client/products';
-    if (categoryId) {
-      url += `?category_id=${categoryId}`;
-    }
+    this._productRequestVersion = (this._productRequestVersion || 0) + 1;
+    this._activeCategoryId = categoryId || null;
+    this._nextPage = 1;
+    this.setData({ products: [], hasMore: true, loadingProducts: false, productsError: false });
+    this.loadNextProducts();
+  },
+
+  loadNextProducts() {
+    if (this.data.loadingProducts || !this.data.hasMore) return;
+
+    const version = this._productRequestVersion;
+    const page = this._nextPage;
+    const categoryId = this._activeCategoryId;
+    const url = `/client/products?page=${page}&page_size=20` +
+      (categoryId ? `&category_id=${categoryId}` : '');
+    this.setData({ loadingProducts: true, productsError: false });
     app.request({
-      url: url,
+      url,
       success: (res) => {
-        if (res.data && res.data.products) {
-          this.setData({
-            products: res.data.products
-          });
+        if (version !== this._productRequestVersion) return;
+        const batch = res.data && res.data.products;
+        if (!Array.isArray(batch)) {
+          this.setData({ loadingProducts: false, productsError: true });
+          return;
+        }
+        this._nextPage = page + 1;
+        const seen = new Set(this.data.products.map(product => product.id));
+        const newProducts = batch.filter(product => !seen.has(product.id));
+        this.setData({
+          products: this.data.products.concat(newProducts),
+          hasMore: res.data.has_more === true,
+          loadingProducts: false
+        });
+      },
+      fail: () => {
+        if (version === this._productRequestVersion) {
+          this.setData({ loadingProducts: false, productsError: true });
         }
       }
+    });
+  },
+
+  onProductsScrollToLower() {
+    this.loadNextProducts();
+  },
+
+  retryLoadProducts() {
+    this.loadNextProducts();
+  },
+
+  onProductImageError(e) {
+    const id = Number(e.currentTarget.dataset.id);
+    const failedUrl = e.currentTarget.dataset.imageUrl;
+    this.setData({
+      products: this.data.products.map(product =>
+        product.id === id ? {
+          ...product,
+          imageError: true,
+          imageUnavailable: failedUrl === product.image_url
+        } : product)
     });
   },
 

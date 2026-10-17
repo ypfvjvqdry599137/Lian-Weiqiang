@@ -6,7 +6,7 @@
 
   <view wx:elif="{{product}}">
     <view class="hero">
-      <image wx:if="{{product.image_url}}" src="{{product.image_url}}" mode="aspectFill" class="hero-img" />
+      <image wx:if="{{product.image_url && !product.imageError}}" src="{{product.image_url}}" mode="aspectFill" class="hero-img" binderror="onProductImageError" />
       <view wx:else class="hero-placeholder">
         <image class="placeholder-icon" src="/images/icons/empty-product.svg" mode="aspectFit" />
         <text class="placeholder-text">暂无商品图片</text>

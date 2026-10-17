@@ -6,9 +6,11 @@ from datetime import datetime, timezone
 import math
 from extensions import db
 from product_features import normalize_text, normalize_processing_options, product_feature_payload
+from product_images import thumbnail_url
 from supplier_helpers import supplier_serves_zone
 from auth import CLIENT_TOKEN_AGE, issue_token, read_token, token_binding
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload, selectinload
 
 client_bp = Blueprint('client', __name__, url_prefix='/client')
 
@@ -289,6 +291,17 @@ def get_products():
     from models import Product
     category_id = request.args.get('category_id')
     is_recommend = request.args.get('is_recommend')
+    page_raw = request.args.get('page')
+    page_size_raw = request.args.get('page_size', '20')
+
+    if page_raw is not None:
+        try:
+            page = int(page_raw)
+            page_size = int(page_size_raw)
+        except ValueError:
+            return jsonify({'message': '分页参数无效'}), 400
+        if page < 1 or not 1 <= page_size <= 50:
+            return jsonify({'message': '分页参数无效'}), 400
     
     query = Product.query.filter_by(is_active=True)
     if category_id:
@@ -296,7 +309,15 @@ def get_products():
     if is_recommend == 'true':
         query = query.filter_by(is_recommend=True)
     
-    products = query.order_by(Product.sort_order.desc(), Product.sales_count.desc()).all()
+    query = query.options(joinedload(Product.category), selectinload(Product.stock))
+    query = query.order_by(Product.sort_order.desc(), Product.sales_count.desc(), Product.id.desc())
+    if page_raw is None:
+        products = query.all()
+        has_more = False
+    else:
+        products = query.offset((page - 1) * page_size).limit(page_size + 1).all()
+        has_more = len(products) > page_size
+        products = products[:page_size]
     result = []
     for product in products:
         available_stock = 0
@@ -312,12 +333,13 @@ def get_products():
             'price': str(product.price),
             'original_price': str(product.original_price) if product.original_price else None,
             'image_url': product.image_url,
+            'thumbnail_url': thumbnail_url(product.image_url),
             'unit': product.unit,
             'sales_count': product.sales_count,
             **product_feature_payload(product),
             'available_stock': available_stock
         })
-    return jsonify({'products': result})
+    return jsonify({'products': result, 'has_more': has_more})
 
 @client_bp.route('/products/<int:product_id>', methods=['GET'])
 def get_product_detail(product_id):

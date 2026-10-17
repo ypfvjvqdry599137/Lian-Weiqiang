@@ -676,6 +676,9 @@ async function uploadProductImage() {
     try {
         status.textContent = '正在压缩上传...';
         const compressedFile = await compressProductImageFile(file);
+        if (compressedFile.size > 7 * 1024 * 1024) {
+            throw new Error('图片压缩后仍超过 7MB，请选择较小的图片');
+        }
         const formData = new FormData();
         formData.append('image', compressedFile, compressedFile.name);
 
