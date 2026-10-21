@@ -8,10 +8,12 @@ from fulfillment import (
     serialize_delivery_station,
     serialize_zone_supply_rule,
     serialize_fulfillment_issue,
+    supplier_supports_category,
 )
 from supplier_helpers import (
     serialize_supplier_supply_categories,
     set_supplier_supply_categories,
+    supplier_serves_zone,
 )
 
 fulfillment_admin_bp = Blueprint('fulfillment_admin', __name__, url_prefix='/admin')
@@ -197,6 +199,12 @@ def create_zone_supply_rule():
         return jsonify({'message': '区域、配送站、品类或供应商不存在'}), 404
     if station.zone_id != zone.id:
         return jsonify({'message': '配送站必须归属该配送区域'}), 400
+    if not supplier.is_active or supplier.is_deleted:
+        return jsonify({'message': '该供应商未启用'}), 400
+    if not supplier_serves_zone(supplier, zone.id):
+        return jsonify({'message': '该供应商未配置服务此配送区域'}), 400
+    if not supplier_supports_category(supplier, category.id):
+        return jsonify({'message': '该供应商未配置此供货品类'}), 400
 
     rule = ZoneSupplyRule(
         zone_id=zone.id,
@@ -276,6 +284,21 @@ def update_zone_supply_rule(rule_id):
         rule.is_active = bool(data.get('is_active'))
     if 'notes' in data:
         rule.notes = data.get('notes')
+
+    station = db.session.get(DeliveryStation, rule.station_id)
+    supplier = db.session.get(Supplier, rule.supplier_id)
+    if rule.is_active and (not station or station.zone_id != rule.zone_id):
+        db.session.rollback()
+        return jsonify({'message': '配送站必须归属当前区域'}), 400
+    if rule.is_active and (not supplier or not supplier.is_active or supplier.is_deleted):
+        db.session.rollback()
+        return jsonify({'message': '该供应商未启用'}), 400
+    if rule.is_active and not supplier_serves_zone(supplier, rule.zone_id):
+        db.session.rollback()
+        return jsonify({'message': '该供应商未配置服务此配送区域'}), 400
+    if rule.is_active and not supplier_supports_category(supplier, rule.category_id):
+        db.session.rollback()
+        return jsonify({'message': '该供应商未配置此供货品类'}), 400
 
     if rule.is_primary:
         ZoneSupplyRule.query.filter(

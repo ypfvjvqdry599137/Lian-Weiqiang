@@ -31,6 +31,7 @@ from supplier_helpers import (
     serialize_supplier_service_zones,
     serialize_supplier_supply_categories,
     set_supplier_service_zones,
+    set_supplier_supply_categories,
     validate_supplier_zone,
 )
 
@@ -384,10 +385,10 @@ def create_supplier():
     password = data.get('password')
 
     if not all([name, username, password]):
-        return jsonify({"message": "Name, username and password are required"}), 400
+        return jsonify({"message": "请填写供应商名称、登录账号和密码"}), 400
 
-    if Supplier.query.filter_by(username=username, is_deleted=False).first():
-        return jsonify({"message": "Username already exists"}), 409
+    if Supplier.query.filter_by(username=username).first():
+        return jsonify({"message": "供应商登录账号已存在，请换一个账号"}), 409
 
     supplier = Supplier(
         name=name,
@@ -403,7 +404,13 @@ def create_supplier():
         set_supplier_supply_categories(supplier, data.get('supply_category_ids'))
     except ValueError as exc:
         return jsonify({"message": str(exc)}), 400
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        if 'username' not in str(exc.orig).lower():
+            raise
+        return jsonify({"message": "供应商登录账号已存在，请换一个账号"}), 409
     return jsonify({"message": "Supplier created successfully", "id": supplier.id}), 201
 
 @admin_bp.route('/suppliers', methods=['GET'])
@@ -462,11 +469,10 @@ def update_supplier(supplier_id):
     if 'username' in data:
         existing = Supplier.query.filter(
             Supplier.username == data['username'],
-            Supplier.id != supplier_id,
-            Supplier.is_deleted == False
+            Supplier.id != supplier_id
         ).first()
         if existing:
-            return jsonify({"message": "Username already exists"}), 409
+            return jsonify({"message": "供应商登录账号已存在，请换一个账号"}), 409
         supplier.username = data['username']
 
     if 'service_zone_ids' in data:
@@ -480,7 +486,13 @@ def update_supplier(supplier_id):
         except ValueError as exc:
             return jsonify({"message": str(exc)}), 400
         
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        if 'username' not in str(exc.orig).lower():
+            raise
+        return jsonify({"message": "供应商登录账号已存在，请换一个账号"}), 409
     return jsonify({"message": "Supplier updated successfully"}), 200
 
 @admin_bp.route('/suppliers/<int:supplier_id>', methods=['DELETE'])

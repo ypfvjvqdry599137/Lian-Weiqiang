@@ -39,6 +39,12 @@ class Supplier(db.Model):
         backref=db.backref('serving_suppliers', lazy=True),
         lazy=True
     )
+    supply_categories = db.relationship(
+        'Category',
+        secondary=supplier_category,
+        backref=db.backref('suppliers', lazy=True),
+        lazy=True
+    )
 
     def __repr__(self):
         return f'<Supplier {self.name}>'

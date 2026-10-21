@@ -167,6 +167,10 @@ def split_order_to_supplier_orders(order_sn):
             add_issue('missing_product', f'订单 {order_sn} 存在缺失商品信息的条目')
             continue
 
+        if not product.ingredients:
+            add_issue('missing_ingredient', f'{product.name} 尚未配置原料，无法分发供应商备货单')
+            continue
+
         for rel in product.ingredients:
             ingredient = rel.ingredient
             if not ingredient:

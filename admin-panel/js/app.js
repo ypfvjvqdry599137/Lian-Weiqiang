@@ -385,12 +385,37 @@ function formatSupplierServiceZones(zoneNames) {
     return zoneNames && zoneNames.length > 0 ? zoneNames.join('、') : '未配置';
 }
 
-function getSelectedNumberValues(selectId) {
-    const select = document.getElementById(selectId);
-    if (!select) return [];
-    return Array.from(select.selectedOptions)
-        .map(option => parseInt(option.value, 10))
+function getSelectedNumberValues(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(input => parseInt(input.value, 10))
         .filter(value => !Number.isNaN(value));
+}
+
+function renderSupplierCheckboxOptions(container, options, selectedIds, emptyMessage) {
+    const selectedSet = new Set((selectedIds || []).map(Number));
+    container.replaceChildren();
+    if (!options.length) {
+        const empty = document.createElement('span');
+        empty.className = 'supplier-option-empty';
+        empty.textContent = emptyMessage;
+        container.appendChild(empty);
+        return;
+    }
+
+    options.forEach(option => {
+        const label = document.createElement('label');
+        label.className = 'supplier-option';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = option.id;
+        checkbox.checked = selectedSet.has(Number(option.id));
+        const text = document.createElement('span');
+        text.textContent = option.label;
+        label.append(checkbox, text);
+        container.appendChild(label);
+    });
 }
 
 const ORDER_STATUS_OPTIONS = [
@@ -1251,7 +1276,7 @@ async function loadSuppliers() {
                     <p>联系人: ${supplier.contact_person || '无'} | 电话: ${supplier.phone || '无'}</p>
                     <p>登录账号: ${supplier.username}</p>
                     <p>服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)}</p>
-                    <p>供货品类: ${(supplier.supply_category_names && supplier.supply_category_names.length > 0) ? supplier.supply_category_names.join('、') : '未配置'}</p>
+                    <p>供货品类: ${(supplier.supply_category_names && supplier.supply_category_names.length > 0) ? supplier.supply_category_names.join('、') : '全部品类（未限制）'}</p>
                     <p>供应商后台: <a href="/admin-panel/supplier_login.html" target="_blank">打开登录入口</a></p>
                     <p>状态: ${supplier.is_active ? '已启用' : '已禁用'}</p>
                     <p style="font-size:12px;color:#999;">创建时间: ${formatDate(supplier.created_at)}</p>
@@ -1267,21 +1292,11 @@ async function loadSuppliers() {
 }
 
 async function loadSupplierServiceZoneOptions(selectedIds = []) {
-    const zonesData = await fetchData('/admin/delivery-zones');
-    const select = document.getElementById('supplier-service-zone-ids');
-    if (!select) return;
-
-    const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
-    select.innerHTML = '';
-    if (zonesData && zonesData.zones) {
-        zonesData.zones.forEach(zone => {
-            const option = document.createElement('option');
-            option.value = zone.id;
-            option.textContent = zone.zone_name;
-            option.selected = selectedSet.has(Number(zone.id));
-            select.appendChild(option);
-        });
-    }
+    const zonesData = await fetchData('/admin/delivery-zones', 'GET', null, true);
+    const container = document.getElementById('supplier-service-zone-ids');
+    if (!container) return;
+    const options = (zonesData?.zones || []).map(zone => ({ id: zone.id, label: zone.zone_name }));
+    renderSupplierCheckboxOptions(container, options, selectedIds, '请先到配送区域添加区域');
 }
 
 async function showSupplierModal(supplierId = null) {
@@ -1291,6 +1306,7 @@ async function showSupplierModal(supplierId = null) {
     form.reset();
     document.getElementById('supplier-id').value = '';
     document.getElementById('supplier-active').checked = true;
+    document.getElementById('supplier-password').required = !supplierId;
 
     let selectedServiceZoneIds = [];
     let selectedSupplyCategoryIds = [];
@@ -1333,8 +1349,11 @@ document.getElementById('supplier-form').addEventListener('submit', async functi
     if (password) {
         data.password = password;
     }
+    if (!data.supply_category_ids.length && !confirm('未勾选供货品类，该供应商将可承接所有原料品类。确定继续保存吗？')) {
+        return;
+    }
 
-    const result = await fetchData(url, method, data);
+    const result = await fetchData(url, method, data, true);
     if (result) {
         alert('供应商保存成功！');
         closeModal('supplier-modal');
@@ -2003,21 +2022,14 @@ function supplierServesZone(supplier, zoneValue) {
 }
 
 async function loadSupplierCategoryOptions(selectedIds = []) {
-    const select = document.getElementById('supplier-supply-category-ids');
-    if (!select) return;
-
-    const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
-    const categoriesData = await fetchData('/admin/categories');
-    select.innerHTML = '';
-    if (categoriesData && categoriesData.categories) {
-        categoriesData.categories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category.id;
-            option.textContent = `${category.icon || ''} ${category.name}`.trim();
-            option.selected = selectedSet.has(Number(category.id));
-            select.appendChild(option);
-        });
-    }
+    const container = document.getElementById('supplier-supply-category-ids');
+    if (!container) return;
+    const categoriesData = await fetchData('/admin/categories', 'GET', null, true);
+    const options = (categoriesData?.categories || []).map(category => ({
+        id: category.id,
+        label: `${category.icon || ''} ${category.name}`.trim(),
+    }));
+    renderSupplierCheckboxOptions(container, options, selectedIds, '请先到分类管理添加原料品类');
 }
 
 async function loadZoneOptionsForStationModal(selectId, selectedZoneId = null) {

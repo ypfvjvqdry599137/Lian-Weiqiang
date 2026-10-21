@@ -440,13 +440,13 @@
                 </div>
                 <div class="form-group">
                     <label>服务配送区域</label>
-                    <select id="supplier-service-zone-ids" multiple size="5"></select>
-                    <p class="form-help">按住 Ctrl/Command 可多选</p>
+                    <div id="supplier-service-zone-ids" class="supplier-option-list" role="group" aria-label="服务配送区域"></div>
+                    <p class="form-help">直接勾选该供应商能够配送的区域，可选多个。</p>
                 </div>
                 <div class="form-group">
                     <label>供货品类</label>
-                    <select id="supplier-supply-category-ids" multiple size="6"></select>
-                    <p class="form-help">用于后续配送站供货规则匹配，不选表示该供应商可承接所有品类</p>
+                    <div id="supplier-supply-category-ids" class="supplier-option-list" role="group" aria-label="供货品类"></div>
+                    <p class="form-help">按原料品类勾选，如蔬菜、肉类；组合商品会按已配置的原料分别生成供应商备货单。未勾选表示不限制品类。</p>
                 </div>
                 <div class="form-group checkbox">
                     <input type="checkbox" id="supplier-active" checked>
@@ -595,6 +595,7 @@
         <div class="modal-content" style="max-width: 700px;">
             <span class="close" onclick="closeModal('product-ingredients-modal')">&times;</span>
             <h2>配置成品原料</h2>
+            <p class="form-help">组合商品请逐一添加蔬菜、肉类等原料及每份用量，并为每种原料设置分类；下单后才会按原料分发给对应供应商。</p>
             <div id="product-ingredients-form">
                 <input type="hidden" id="pi-product-id">
                 <div class="form-group">
