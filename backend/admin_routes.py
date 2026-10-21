@@ -12,6 +12,7 @@ from uuid import uuid4
 from extensions import db
 from product_features import normalize_text, product_feature_payload, serialize_processing_options
 from status_utils import (
+    display_order_status,
     get_order_status_text,
     get_supplier_order_status_text,
     has_refund_hold,
@@ -1287,13 +1288,15 @@ def get_all_orders():
     status_filter = request.args.get('status')
     query = OrderMaster.query
     
-    if status_filter and status_filter.isdigit():
-        query = query.filter_by(order_status=int(status_filter))
+    requested_status = int(status_filter) if status_filter and status_filter.isdigit() else None
         
     orders = query.order_by(OrderMaster.created_at.desc()).all()
     output = []
     for order in orders:
-        status_text = get_order_status_text(order.order_status)
+        display_status = display_order_status(order)
+        if requested_status is not None and display_status != requested_status:
+            continue
+        status_text = get_order_status_text(display_status)
         refund = latest_manual_refund(order)
 
         
@@ -1317,6 +1320,7 @@ def get_all_orders():
             'fulfillment_issue_count': len(order.fulfillment_issues or []),
             'has_fulfillment_issue': any(issue.status == 10 for issue in (order.fulfillment_issues or [])),
             'order_status': order.order_status,
+            'display_status': display_status,
             'refund_summary': serialize_manual_refund(refund) if refund else None,
             'can_request_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
                                   and not order.refund_status and not has_refund_hold(order),

@@ -264,6 +264,16 @@ h2 {
     cursor: wait;
 }
 
+.status-readonly {
+    min-width: 128px;
+    padding: 7px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #f5f5f5;
+    color: #555;
+    font-size: 13px;
+}
+
 .order-card {
     border-left: 4px solid #4CAF50;
 }
@@ -461,7 +471,8 @@ h2 {
 .status-30 { border-left-color: #9C27B0; } /* 配送中 */
 .status-40 { border-left-color: #FFC107; } /* 待自提 */
 .status-50 { border-left-color: #4CAF50; } /* 已完成 */
-.status-60 { border-left-color: #9E9E9E; } /* 已关闭 */
+.status-60 { border-left-color: #9E9E9E; } /* 已取消 */
+.status-70 { border-left-color: #64748B; } /* 已退款 */
 
 .map-modal-content {
     max-width: 860px;

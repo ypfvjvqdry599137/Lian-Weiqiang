@@ -153,6 +153,36 @@ class AuthIsolationTestCase(unittest.TestCase):
                 self.assertEqual(listed.get_json()['orders'][0]['status_text'], expected)
                 self.assertEqual(detail.get_json()['status_text'], expected)
 
+    def test_admin_order_filters_use_refund_display_status_without_changing_payment_state(self):
+        headers = self._paid_admin_headers()
+        canceled = OrderMaster(order_sn='CANCELED_ORDER', user_id=self.a_id, order_status=60)
+        db.session.add(canceled)
+        db.session.commit()
+
+        pending = self.client.get('/admin/orders?status=20', headers=headers).get_json()['orders']
+        self.assertEqual([item['order_sn'] for item in pending], [self.order.order_sn])
+        self.assertEqual(pending[0]['status_text'], '待配货')
+        self.assertEqual(pending[0]['display_status'], 20)
+
+        refund = ManualRefund(
+            order_sn=self.order.order_sn, out_refund_no='REFUND_ORDER_A',
+            transaction_id=self.order.transaction_id, order_total_fen=1600,
+            refund_fen=1600, status='SUCCESS',
+        )
+        db.session.add(refund)
+        db.session.commit()
+
+        refunded = self.client.get('/admin/orders?status=70', headers=headers).get_json()['orders']
+        self.assertEqual(len(refunded), 1)
+        self.assertEqual(refunded[0]['order_status'], 20)
+        self.assertEqual(refunded[0]['display_status'], 70)
+        self.assertEqual(refunded[0]['status_text'], '已退款')
+        self.assertFalse(refunded[0]['can_request_refund'])
+        self.assertEqual(self.client.get('/admin/orders?status=20', headers=headers).get_json()['orders'], [])
+        canceled_list = self.client.get('/admin/orders?status=60', headers=headers).get_json()['orders']
+        self.assertEqual([item['order_sn'] for item in canceled_list], [canceled.order_sn])
+        self.assertEqual(canceled_list[0]['status_text'], '已取消')
+
     def test_legacy_shared_account_is_quarantined_even_when_openid_matches(self):
         legacy = User(openid='legacy-openid', nickname='Legacy shared account')
         db.session.add(legacy)

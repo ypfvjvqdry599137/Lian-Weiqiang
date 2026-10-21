@@ -24,7 +24,7 @@ def latest_manual_refund(order):
     return refunds[0] if refunds else None
 
 
-def client_order_status(order):
+def display_order_status(order):
     if any(refund.status == 'SUCCESS' and refund.refund_fen == refund.order_total_fen
            for refund in order.manual_refunds):
         return 70
@@ -32,7 +32,7 @@ def client_order_status(order):
 
 
 def manual_refund_status_text(order):
-    if client_order_status(order) == 70:
+    if display_order_status(order) == 70:
         return None
     refund = latest_manual_refund(order)
     if not refund:
