@@ -63,6 +63,12 @@
                     <h2>📦 商品管理</h2>
                     <button class="btn btn-primary" onclick="showProductModal()">+ 添加商品</button>
                 </div>
+                <div class="product-bulk-actions">
+                    <label><input type="checkbox" id="products-select-all" onchange="toggleProductSelection(this.checked)"> 全选当前商品</label>
+                    <span id="products-selected-count" aria-live="polite">已选 0 个</span>
+                    <button type="button" id="products-batch-delete" class="btn btn-danger" onclick="batchDeleteProducts()" disabled>批量删除</button>
+                    <span class="product-bulk-hint">删除仅下架商品，不影响历史订单和已上传图片</span>
+                </div>
                 <div id="products-list" class="data-list"></div>
             </div>
 

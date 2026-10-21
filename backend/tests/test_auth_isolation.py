@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from flask import Flask
@@ -19,7 +20,7 @@ from client_routes import client_bp
 from extensions import db
 from fulfillment_admin_routes import fulfillment_admin_bp
 from merchant_routes import get_merchant_key, merchant_bp
-from models import Cart, Category, ClientIdentity, DeliveryZone, ManualRefund, OrderMaster, Product, Supplier, SupplierOrder, User, UserAddress
+from models import Cart, Category, ClientIdentity, DeliveryZone, ManualRefund, OrderItem, OrderMaster, Product, Supplier, SupplierOrder, User, UserAddress
 from supplier_routes import supplier_bp
 from wechat_pay_support import WeChatPayError
 
@@ -91,6 +92,50 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(self.client.get('/client/addresses', headers=self.b).get_json()['addresses'], [])
         self.assertEqual(len(self.client.get('/client/orders', headers=self.a).get_json()['orders']), 1)
         self.assertEqual(self.client.get('/client/orders', headers=self.b).get_json()['orders'], [])
+
+    def test_bulk_product_delete_is_atomic_and_preserves_order_history(self):
+        first = Product.query.first()
+        first.image_url = 'https://example.com/first.jpg'
+        second = Product(name='second product', price=Decimal('3.00'), unit='item', is_active=True)
+        db.session.add(second)
+        db.session.flush()
+        order_item = OrderItem(
+            order_sn=self.order.order_sn, product_id=first.id,
+            product_name=first.name, price=first.price, quantity=1, unit=first.unit,
+        )
+        db.session.add(order_item)
+        db.session.commit()
+
+        url = '/admin/products/batch'
+        ids = [first.id, second.id]
+        self.assertEqual(self.client.delete(url, json={'ids': ids}).status_code, 401)
+        token = self.client.post('/admin/auth/login', json={'password': 'admin-test-password'}).get_json()['token']
+        headers = {'Authorization': f'Bearer {token}'}
+
+        self.assertEqual(self.client.delete(url, headers=headers, json=[first.id]).status_code, 400)
+        for invalid in ([], [first.id, first.id], [first.id, True], ['1'], list(range(1, 202))):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(self.client.delete(url, headers=headers, json={'ids': invalid}).status_code, 400)
+        self.assertEqual(self.client.delete(url, headers=headers, json={'ids': [first.id, 99999]}).status_code, 409)
+        self.assertTrue(db.session.get(Product, first.id).is_active)
+        self.assertTrue(db.session.get(Product, second.id).is_active)
+
+        response = self.client.delete(url, headers=headers, json={'ids': ids})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['count'], 2)
+        self.assertFalse(db.session.get(Product, first.id).is_active)
+        self.assertFalse(db.session.get(Product, second.id).is_active)
+        self.assertEqual(db.session.get(Product, first.id).image_url, 'https://example.com/first.jpg')
+        self.assertEqual(OrderItem.query.filter_by(order_sn=self.order.order_sn).count(), 1)
+        self.assertEqual(self.client.get('/admin/products?is_active=true', headers=headers).get_json()['products'], [])
+        self.assertEqual(self.client.delete(url, headers=headers, json={'ids': ids}).status_code, 409)
+
+        zone = SimpleNamespace(id=1, delivery_fee=Decimal('0'))
+        with patch('client_routes.check_delivery_available', return_value={'available': True, 'zone': zone}):
+            checkout = self.client.post('/client/orders', headers=self.a, json={'address_id': self.address_id})
+        self.assertEqual(checkout.status_code, 400)
+        self.assertIn('已下架', checkout.get_json()['message'])
+        self.assertEqual(OrderMaster.query.count(), 1)
 
     def test_order_status_labels_are_readable_in_list_and_detail(self):
         labels = {

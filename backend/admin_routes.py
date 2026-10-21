@@ -1944,6 +1944,28 @@ def delete_product(product_id):
     db.session.commit()
     return jsonify({"message": "Product disabled successfully"}), 200
 
+
+@admin_bp.route('/products/batch', methods=['DELETE'])
+def batch_delete_products():
+    from models import Product
+
+    data = request.get_json(silent=True)
+    ids = data.get('ids') if isinstance(data, dict) else None
+    if (not isinstance(ids, list) or not 1 <= len(ids) <= 200
+            or any(type(item) is not int or item <= 0 for item in ids)
+            or len(set(ids)) != len(ids)):
+        return jsonify({'message': '请选择 1 至 200 个不重复的有效商品'}), 400
+
+    products = Product.query.filter(Product.id.in_(ids)).with_for_update().all()
+    if len(products) != len(ids) or any(not product.is_active for product in products):
+        db.session.rollback()
+        return jsonify({'message': '所选商品已变化，请刷新列表后重新选择'}), 409
+
+    for product in products:
+        product.is_active = False
+    db.session.commit()
+    return jsonify({'message': '所选商品已下架', 'count': len(products)}), 200
+
 # ==================== 库存管理 ====================
 
 @admin_bp.route('/products/<int:product_id>/stock', methods=['PUT'])

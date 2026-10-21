@@ -603,6 +603,9 @@ def create_order():
             'quantity': item.quantity,
             'processing_option': item.processing_option
         })
+
+    if not order_items_data:
+        return jsonify({'message': '购物车商品已下架，请重新选择商品'}), 400
     
     # 计算最终金额（含配送费）
     delivery_fee = zone.delivery_fee

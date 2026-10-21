@@ -545,6 +545,29 @@ async function loadDashboardStats() {
 
 // ==================== 商品管理 (Products) ====================
 
+function getSelectedProductIds() {
+    return Array.from(document.querySelectorAll('.product-select:checked'))
+        .map(input => Number(input.value));
+}
+
+function syncProductSelection() {
+    const checkboxes = Array.from(document.querySelectorAll('.product-select'));
+    const selectedCount = checkboxes.filter(input => input.checked).length;
+    const selectAll = document.getElementById('products-select-all');
+    selectAll.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    selectAll.disabled = checkboxes.length === 0;
+    document.getElementById('products-selected-count').textContent = `已选 ${selectedCount} 个`;
+    document.getElementById('products-batch-delete').disabled = selectedCount === 0;
+}
+
+function toggleProductSelection(checked) {
+    document.querySelectorAll('.product-select').forEach(input => {
+        input.checked = checked;
+    });
+    syncProductSelection();
+}
+
 async function loadProducts() {
     const productsData = await fetchData('/admin/products?is_active=true');
     const productsList = document.getElementById('products-list');
@@ -556,9 +579,9 @@ async function loadProducts() {
             card.classList.add('data-card');
             card.innerHTML =
                 '<div class="data-card-content">' +
-                    '<h4>' + product.name + '</h4>' +
-                    '<p>' + (product.description || '无描述') + '</p>' +
-                    '<p class="price">¥' + product.price + ' / ' + product.unit + '</p>' +
+                    '<h4>' + escapeHtml(product.name) + '</h4>' +
+                    '<p>' + escapeHtml(product.description || '无描述') + '</p>' +
+                    '<p class="price">¥' + escapeHtml(product.price) + ' / ' + escapeHtml(product.unit) + '</p>' +
                     ((product.is_preorder || product.has_processing_options)
                         ? '<p>' +
                             (product.is_preorder ? '预定商品' : '') +
@@ -566,9 +589,10 @@ async function loadProducts() {
                             (product.has_processing_options ? ('加工 ' + product.processing_options.length + ' 项') : '') +
                           '</p>'
                         : '') +
-                    '<p>库存: ' + product.available_stock + '</p>' +
+                    '<p>库存: ' + escapeHtml(product.available_stock) + '</p>' +
                 '</div>' +
                 '<div class="data-card-actions">' +
+                    '<input type="checkbox" class="product-select" value="' + product.id + '" onchange="syncProductSelection()" aria-label="选择' + escapeHtml(product.name) + '">' +
                     '<button class="btn btn-sm btn-primary" onclick="showProductIngredientsModal(' + product.id + ')">配置原料</button>' +
                     '<button class="btn btn-sm btn-success" onclick="showProductModal(' + product.id + ')">编辑</button>' +
                     '<button class="btn btn-sm btn-danger" onclick="deleteProduct(' + product.id + ')">删除</button>' +
@@ -576,6 +600,7 @@ async function loadProducts() {
             productsList.appendChild(card);
         });
     }
+    syncProductSelection();
 }
 
 function updateProductImagePreview(url) {
@@ -793,6 +818,23 @@ async function deleteProduct(productId) {
             await loadProducts();
             await loadDashboardStats();
         }
+    }
+}
+
+async function batchDeleteProducts() {
+    const ids = getSelectedProductIds();
+    if (!ids.length) return;
+    if (!confirm(`确定要批量删除选中的 ${ids.length} 个商品吗？\n此操作只会下架商品，不删除历史订单或已上传图片。`)) return;
+
+    const button = document.getElementById('products-batch-delete');
+    button.disabled = true;
+    const result = await fetchData('/admin/products/batch', 'DELETE', { ids }, true);
+    if (result) {
+        alert(`已下架 ${result.count} 个商品`);
+        await loadProducts();
+        await loadDashboardStats();
+    } else {
+        button.disabled = false;
     }
 }
 
