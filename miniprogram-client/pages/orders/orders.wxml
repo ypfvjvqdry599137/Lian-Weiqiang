@@ -3,7 +3,7 @@
     <view class="tab-item {{currentTab === 'all' ? 'active' : ''}}" bindtap="switchTab" data-tab="all">全部</view>
     <view class="tab-item {{currentTab === 'pending' ? 'active' : ''}}" bindtap="switchTab" data-tab="pending">待处理</view>
     <view class="tab-item {{currentTab === 'completed' ? 'active' : ''}}" bindtap="switchTab" data-tab="completed">已完成</view>
-    <view class="tab-item {{currentTab === 'canceled' ? 'active' : ''}}" bindtap="switchTab" data-tab="canceled">已取消</view>
+    <view class="tab-item {{currentTab === 'canceled' ? 'active' : ''}}" bindtap="switchTab" data-tab="canceled">已关闭</view>
   </view>
 
   <view class="order-list">
@@ -12,7 +12,7 @@
         <text class="order-sn">订单号：{{item.order_sn}}</text>
         <text class="order-status status-{{item.order_status}}">{{item.status_text}}</text>
       </view>
-      <view wx:if="{{item.manual_refund_status_text}}">{{item.manual_refund_status_text}}</view>
+      <view class="refund-notice" wx:if="{{item.manual_refund_status_text}}">{{item.manual_refund_status_text}}</view>
 
       <view class="order-content">
         <view class="product-mini" wx:for="{{item.items}}" wx:key="product_name" wx:for-item="product">

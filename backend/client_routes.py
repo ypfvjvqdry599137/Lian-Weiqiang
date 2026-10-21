@@ -683,18 +683,20 @@ def create_order():
 @client_bp.route('/orders', methods=['GET'])
 def get_orders():
     from models import OrderMaster
-    from status_utils import get_order_status_text, manual_refund_status_text
+    from status_utils import client_order_status, get_order_status_text, manual_refund_status_text
     user = current_client_user()
     status = request.args.get('status')
 
     query = OrderMaster.query.filter_by(user_id=user.id)
-    if status:
-        query = query.filter_by(order_status=int(status))
+    requested_status = int(status) if status and status.isdigit() else None
 
     orders = query.order_by(OrderMaster.created_at.desc()).all()
     result = []
 
     for order in orders:
+        display_status = client_order_status(order)
+        if requested_status is not None and display_status != requested_status:
+            continue
         items = []
         for item in order.items:
             items.append({
@@ -707,13 +709,13 @@ def get_orders():
                 'is_preorder': bool(item.is_preorder)
             })
 
-        status_text = get_order_status_text(order.order_status)
+        status_text = get_order_status_text(display_status)
         station = order.zone.station if order.zone and order.zone.station else None
         issues = list(order.fulfillment_issues or [])
 
         result.append({
             'order_sn': order.order_sn,
-            'order_status': order.order_status,
+            'order_status': display_status,
             'status_text': status_text,
             'manual_refund_status_text': manual_refund_status_text(order),
             'can_cancel': can_user_cancel_order(order),
@@ -739,7 +741,7 @@ def get_orders():
 def get_order_detail(order_sn):
     from models import OrderMaster
     from fulfillment import serialize_fulfillment_issue
-    from status_utils import get_order_status_text, manual_refund_status_text
+    from status_utils import client_order_status, get_order_status_text, manual_refund_status_text
 
     user = current_client_user()
     order = OrderMaster.query.filter_by(order_sn=order_sn, user_id=user.id).first_or_404()
@@ -756,13 +758,14 @@ def get_order_detail(order_sn):
             'is_preorder': bool(item.is_preorder)
         })
 
-    status_text = get_order_status_text(order.order_status)
+    display_status = client_order_status(order)
+    status_text = get_order_status_text(display_status)
     station = order.zone.station if order.zone and order.zone.station else None
     issues = [serialize_fulfillment_issue(issue) for issue in (order.fulfillment_issues or [])]
 
     return jsonify({
         'order_sn': order.order_sn,
-        'order_status': order.order_status,
+        'order_status': display_status,
         'status_text': status_text,
         'manual_refund_status_text': manual_refund_status_text(order),
         'can_cancel': can_user_cancel_order(order),

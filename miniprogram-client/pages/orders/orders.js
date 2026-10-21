@@ -4,7 +4,7 @@ const TAB_STATUS_MAP = {
   all: null,
   pending: [10, 20, 30, 40],
   completed: [50],
-  canceled: [60]
+  canceled: [60, 70]
 };
 
 Page({

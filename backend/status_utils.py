@@ -5,7 +5,8 @@ def get_order_status_text(status):
         30: '配送中',
         40: '已送达',
         50: '已完成',
-        60: '已取消'
+        60: '已取消',
+        70: '已退款',
     }.get(status, '未知')
 
 
@@ -23,7 +24,16 @@ def latest_manual_refund(order):
     return refunds[0] if refunds else None
 
 
+def client_order_status(order):
+    if any(refund.status == 'SUCCESS' and refund.refund_fen == refund.order_total_fen
+           for refund in order.manual_refunds):
+        return 70
+    return order.order_status
+
+
 def manual_refund_status_text(order):
+    if client_order_status(order) == 70:
+        return None
     refund = latest_manual_refund(order)
     if not refund:
         return None

@@ -58,4 +58,22 @@ describe('Orders page', () => {
       icon: 'none'
     });
   });
+
+  test('refunded orders are closed rather than pending', () => {
+    page.setData({
+      allOrders: [
+        { order_sn: 'PENDING', order_status: 20 },
+        { order_sn: 'CANCELED', order_status: 60 },
+        { order_sn: 'REFUNDED', order_status: 70 }
+      ],
+      currentTab: 'pending'
+    });
+
+    page.filterOrders();
+    expect(page.data.orders.map(order => order.order_sn)).toEqual(['PENDING']);
+
+    page.setData({ currentTab: 'canceled' });
+    page.filterOrders();
+    expect(page.data.orders.map(order => order.order_sn)).toEqual(['CANCELED', 'REFUNDED']);
+  });
 });

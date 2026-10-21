@@ -78,8 +78,18 @@
   color: #4CAF50;
 }
 
-.status-60 {
+.status-60,
+.status-70 {
   color: #999;
+}
+
+.refund-notice {
+  margin-bottom: 20rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 8rpx;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 24rpx;
 }
 
 .order-content {

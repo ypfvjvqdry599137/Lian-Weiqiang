@@ -59,7 +59,8 @@
   background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
 }
 
-.status-bg-60 {
+.status-bg-60,
+.status-bg-70 {
   background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
 }
 

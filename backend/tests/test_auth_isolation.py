@@ -323,6 +323,15 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(verify.status_code, 200)
         self.assertEqual(ManualRefund.query.one().status, 'SUCCESS')
         self.assertEqual(ManualRefund.query.count(), 1)
+        refunded = self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a).get_json()
+        self.assertEqual(refunded['order_status'], 70)
+        self.assertEqual(refunded['status_text'], '已退款')
+        self.assertIsNone(refunded['manual_refund_status_text'])
+        self.assertEqual(db.session.get(OrderMaster, self.order.order_sn).order_status, 20)
+        self.assertEqual(self.client.get('/client/orders?status=20', headers=self.a).get_json()['orders'], [])
+        self.assertEqual(self.client.get('/client/orders?status=70', headers=self.a)
+                         .get_json()['orders'][0]['status_text'], '已退款')
+        self.assertEqual(self.client.get('/client/orders', headers=self.b).get_json()['orders'], [])
 
     def test_wechat_refund_timeout_reuses_same_number_or_can_query(self):
         headers = self._paid_admin_headers()
@@ -461,6 +470,8 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(ManualRefund.query.count(), 1)
         self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
                          .get_json()['manual_refund_status_text'], '退款处理中')
+        self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
+                         .get_json()['order_status'], 20)
         self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
                                          headers=headers, json={'status': 30}).status_code, 409)
 
@@ -469,8 +480,10 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['refund']['status'], 'SUCCESS')
         self.assertEqual(ManualRefund.query.count(), 1)
-        self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
-                         .get_json()['manual_refund_status_text'], '退款成功')
+        refunded = self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a).get_json()
+        self.assertEqual(refunded['order_status'], 70)
+        self.assertEqual(refunded['status_text'], '已退款')
+        self.assertIsNone(refunded['manual_refund_status_text'])
 
     def test_manual_refund_rejects_wrong_trade_and_amount(self):
         headers = self._paid_admin_headers()
