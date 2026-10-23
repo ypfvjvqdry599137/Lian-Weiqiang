@@ -133,6 +133,17 @@ describe('首页 - 分类区域', () => {
       });
     });
 
+    test('点击具体分类携带 ID，更多分类仍打开全部', () => {
+      page.goToCategory({ currentTarget: { dataset: { id: 12, more: false } } });
+      expect(wx.redirectTo).toHaveBeenLastCalledWith({
+        url: '/pages/category/category?categoryId=12'
+      });
+      page.goToCategory({ currentTarget: { dataset: { id: 6, more: true } } });
+      expect(wx.redirectTo).toHaveBeenLastCalledWith({
+        url: '/pages/category/category'
+      });
+    });
+
     test('点击不应触发 navigateTo（避免页面栈堆积）', () => {
       page.goToCategory({});
       expect(wx.navigateTo).not.toHaveBeenCalled();

@@ -47,7 +47,7 @@
 
   <!-- 快捷分类导航 -->
   <view class="quick-nav">
-    <view class="nav-item" wx:for="{{quickNavItems}}" wx:key="id" hover-class="nav-item-hover" bindtap="goToCategory" data-id="{{item.id}}">
+    <view class="nav-item" wx:for="{{quickNavItems}}" wx:key="id" hover-class="nav-item-hover" bindtap="goToCategory" data-id="{{item.id}}" data-more="{{index === 5}}">
       <view class="quick-nav-icon" style="background: {{item.bg}}">
         <image class="quick-nav-icon-img" src="{{item.icon}}" mode="aspectFit" />
       </view>
@@ -64,7 +64,7 @@
       </view>
       <text class="more" bindtap="goToCategory">更多 ></text>
     </view>
-    <scroll-view class="flash-list" scroll-x show-scrollbar="{{false}}">
+    <scroll-view class="flash-list" scroll-x enable-flex="{{true}}" show-scrollbar="{{false}}">
       <view class="flash-item" wx:for="{{flashProducts}}" wx:key="id" hover-class="card-hover" bindtap="goToDetail" data-id="{{item.id}}">
         <view class="flash-img">
           <image wx:if="{{item.image_url && !item.imageUnavailable}}" src="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" mode="aspectFill" class="img" binderror="onProductImageError" data-id="{{item.id}}" data-image-url="{{item.imageError ? item.image_url : (item.thumbnail_url || item.image_url)}}" />

@@ -1,4 +1,5 @@
 const app = getApp();
+const { hidePrivateShareMenu } = require('../../utils/share');
 
 Page({
   data: {
@@ -11,6 +12,10 @@ Page({
       this.setData({ orderSn: options.sn });
       this.loadOrderDetail(options.sn);
     }
+  },
+
+  onShow() {
+    hidePrivateShareMenu();
   },
 
   loadOrderDetail(orderSn) {

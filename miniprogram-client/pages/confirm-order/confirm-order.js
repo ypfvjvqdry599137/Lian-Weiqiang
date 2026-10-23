@@ -1,4 +1,5 @@
 const app = getApp();
+const { hidePrivateShareMenu } = require('../../utils/share');
 
 Page({
   data: {
@@ -23,6 +24,7 @@ Page({
   },
 
   onShow() {
+    hidePrivateShareMenu();
     // 更新地址
     if (app.globalData.selectedAddress) {
       this.setData({ selectedAddress: app.globalData.selectedAddress });

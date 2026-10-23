@@ -1,4 +1,5 @@
 const app = getApp();
+const { HOME_TITLE, SHARE_COVER, showPublicShareMenu } = require('../../utils/share');
 
 Page({
   data: {
@@ -10,9 +11,15 @@ Page({
     productsError: false
   },
 
-  onLoad() {
+  onLoad(options = {}) {
+    const categoryId = Number(options.categoryId);
+    this._initialCategoryId = Number.isSafeInteger(categoryId) && categoryId > 0 ? categoryId : null;
+    this.loadProducts(this._initialCategoryId);
     this.loadCategories();
-    this.loadProducts();
+  },
+
+  onShow() {
+    showPublicShareMenu();
   },
 
   loadCategories() {
@@ -20,9 +27,15 @@ Page({
       url: '/client/categories',
       success: (res) => {
         if (res.data && res.data.categories) {
+          const categories = [{ id: 0, name: '全部' }, ...res.data.categories];
+          const selectedIndex = categories.findIndex(category => Number(category.id) === this._activeCategoryId);
           this.setData({
-            categories: [{ id: 0, name: '全部' }, ...res.data.categories]
+            categories,
+            currentCategory: selectedIndex > 0 ? selectedIndex : 0
           });
+          if (this._activeCategoryId && selectedIndex < 0) {
+            this.loadProducts();
+          }
         }
       }
     });
@@ -148,5 +161,27 @@ Page({
     wx.redirectTo({
       url: '/pages/orders/orders'
     });
+  },
+
+  getShareInfo() {
+    const categoryId = this._activeCategoryId;
+    const category = this.data.categories.find(item => Number(item.id) === categoryId);
+    const query = categoryId && category ? `categoryId=${categoryId}` : '';
+    return {
+      title: query ? `${category.name} - 鲜配居` : HOME_TITLE,
+      path: `/pages/category/category${query ? `?${query}` : ''}`,
+      query,
+      imageUrl: SHARE_COVER
+    };
+  },
+
+  onShareAppMessage() {
+    const { title, path, imageUrl } = this.getShareInfo();
+    return { title, path, imageUrl };
+  },
+
+  onShareTimeline() {
+    const { title, query, imageUrl } = this.getShareInfo();
+    return { title, query, imageUrl };
   }
 })

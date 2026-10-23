@@ -1,4 +1,5 @@
 const app = getApp();
+const { hidePrivateShareMenu } = require('../../utils/share');
 
 const TAB_STATUS_MAP = {
   all: null,
@@ -19,6 +20,7 @@ Page({
   },
 
   onShow() {
+    hidePrivateShareMenu();
     this.loadOrders();
   },
 

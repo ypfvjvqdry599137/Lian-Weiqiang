@@ -222,6 +222,7 @@
 
 .flash-item {
   display: inline-block;
+  flex-shrink: 0;
   width: 220rpx;
   margin-right: 16rpx;
   background: #f5f7fa;

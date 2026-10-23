@@ -1,4 +1,5 @@
 const app = getApp();
+const { hidePrivateShareMenu } = require('../../utils/share');
 
 Page({
   data: {
@@ -12,6 +13,7 @@ Page({
   },
 
   onShow() {
+    hidePrivateShareMenu();
     this.loadCart();
   },
 

@@ -47,6 +47,8 @@ const wx = {
   hideLoading: jest.fn(),
   showModal: jest.fn(),
   showActionSheet: jest.fn(),
+  showShareMenu: jest.fn(),
+  hideShareMenu: jest.fn(),
   setStorageSync: jest.fn(),
   getStorageSync: jest.fn(() => ''),
   removeStorageSync: jest.fn(),

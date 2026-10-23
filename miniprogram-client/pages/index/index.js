@@ -1,4 +1,5 @@
 const app = getApp();
+const { HOME_TITLE, SHARE_COVER, showPublicShareMenu } = require('../../utils/share');
 
 
 Page({
@@ -34,6 +35,7 @@ Page({
   },
 
   onShow() {
+    showPublicShareMenu();
     // 页面显示时刷新购物车数据
     app.updateCartCount((info) => {
       this.setData({ cartCount: info.count, cartTotalPrice: info.totalPrice });
@@ -194,8 +196,14 @@ Page({
   },
 
   goToCategory(e) {
+    const dataset = e && e.currentTarget ? e.currentTarget.dataset || {} : {};
+    const categoryId = Number(dataset.id);
+    const isMore = dataset.more === true || dataset.more === 'true';
+    const query = !isMore && Number.isSafeInteger(categoryId) && categoryId > 0
+      ? `?categoryId=${categoryId}`
+      : '';
     wx.redirectTo({
-      url: '/pages/category/category'
+      url: `/pages/category/category${query}`
     });
   },
 
@@ -252,5 +260,20 @@ Page({
     wx.navigateTo({
       url: '/pages/confirm-order/confirm-order'
     });
+  },
+
+  onShareAppMessage() {
+    return {
+      title: HOME_TITLE,
+      path: '/pages/index/index',
+      imageUrl: SHARE_COVER
+    };
+  },
+
+  onShareTimeline() {
+    return {
+      title: HOME_TITLE,
+      imageUrl: SHARE_COVER
+    };
   }
 })

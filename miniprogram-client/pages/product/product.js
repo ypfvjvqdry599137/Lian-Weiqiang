@@ -1,4 +1,5 @@
 const app = getApp();
+const { HOME_TITLE, SHARE_COVER, showPublicShareMenu } = require('../../utils/share');
 
 Page({
   data: {
@@ -18,6 +19,10 @@ Page({
     }
     this.setData({ productId: options.id });
     this.loadProduct(options.id);
+  },
+
+  onShow() {
+    showPublicShareMenu();
   },
 
   loadProduct(productId) {
@@ -130,11 +135,30 @@ Page({
     });
   },
 
-  onShareAppMessage() {
+  getShareInfo() {
     const product = this.data.product || {};
+    const productId = Number(product.id || this.data.productId);
+    if (!Number.isSafeInteger(productId) || productId <= 0) {
+      return { title: HOME_TITLE, path: '/pages/index/index', query: '', imageUrl: SHARE_COVER };
+    }
+    const imageUrl = typeof product.image_url === 'string' && product.image_url.startsWith('https://')
+      ? product.image_url
+      : SHARE_COVER;
     return {
-      title: product.name || '鲜厢居商品',
-      path: '/pages/product/product?id=' + this.data.productId
+      title: product.name ? `${product.name} - 鲜配居` : HOME_TITLE,
+      path: `/pages/product/product?id=${productId}`,
+      query: `id=${productId}`,
+      imageUrl
     };
+  },
+
+  onShareAppMessage() {
+    const { title, path, imageUrl } = this.getShareInfo();
+    return { title, path, imageUrl };
+  },
+
+  onShareTimeline() {
+    const { title, query, imageUrl } = this.getShareInfo();
+    return { title, query, imageUrl };
   }
 });

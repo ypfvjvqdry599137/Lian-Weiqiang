@@ -1,4 +1,5 @@
 const app = getApp();
+const { hidePrivateShareMenu } = require('../../utils/share');
 
 function emptyForm() {
   return {
@@ -52,6 +53,10 @@ Page({
       selectedAddressId: options.selectedId ? parseInt(options.selectedId) : null
     });
     this.loadAddresses();
+  },
+
+  onShow() {
+    hidePrivateShareMenu();
   },
 
   loadAddresses() {
