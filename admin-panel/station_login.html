@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>配送站登录 - 鲜配居</title>
+    <link rel="stylesheet" href="/admin-panel/css/style.css">
+    <style>
+        body { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: #edf3ee; }
+        .login-card { width: min(100%, 420px); padding: 36px; border-radius: 12px; background: white; box-shadow: 0 14px 40px #203b261c; }
+        .login-card h1 { margin: 0 0 8px; color: #245b32; font-size: 26px; }
+        .login-card p { margin: 0 0 28px; color: #657269; }
+        .login-card label { display: block; margin: 18px 0 8px; font-weight: 600; }
+        .login-card input { width: 100%; padding: 12px; border: 1px solid #cbd8cd; border-radius: 6px; font: inherit; }
+        .login-card button { width: 100%; margin-top: 28px; padding: 12px; border: 0; border-radius: 6px; background: #338644; color: white; font: inherit; cursor: pointer; }
+        #error { min-height: 22px; margin-top: 14px; color: #c33232; }
+    </style>
+</head>
+<body>
+    <main class="login-card">
+        <h1>配送站登录</h1>
+        <p>仅查看本配送站所属区域的订单</p>
+        <form id="login-form">
+            <label for="username">账号</label>
+            <input id="username" type="text" required autocomplete="username">
+            <label for="password">密码</label>
+            <input id="password" type="password" required autocomplete="current-password">
+            <button type="submit">登录</button>
+            <div id="error" role="alert"></div>
+        </form>
+    </main>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const error = document.getElementById('error');
+            error.textContent = '';
+            try {
+                const response = await fetch('/station/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value.trim(),
+                        password: document.getElementById('password').value,
+                    }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || '登录失败');
+                sessionStorage.setItem('freshProduceStationToken', data.token);
+                location.replace('/admin-panel/station_dashboard.html');
+            } catch (exception) {
+                error.textContent = exception.message || '网络错误，请稍后重试';
+            }
+        });
+    </script>
+</body>
+</html>

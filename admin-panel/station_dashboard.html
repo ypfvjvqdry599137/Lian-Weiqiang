@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>配送站订单 - 鲜配居</title>
+    <link rel="stylesheet" href="/admin-panel/css/style.css">
+    <style>
+        body { background: #edf3ee; color: #243229; }
+        .station-shell { max-width: 1040px; margin: auto; padding: 24px 16px 60px; }
+        .station-header { display: flex; justify-content: space-between; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 24px; }
+        .station-header h1 { font-size: 26px; margin: 0 0 6px; color: #245b32; }
+        .station-header p { margin: 0; color: #637066; }
+        .station-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+        .station-controls button, .station-header button { padding: 9px 14px; border: 1px solid #b9d0be; border-radius: 6px; background: white; cursor: pointer; }
+        .station-controls button[aria-pressed="true"] { background: #338644; color: white; border-color: #338644; }
+        .station-orders { display: grid; gap: 14px; }
+        .station-order { padding: 20px; border-radius: 10px; background: white; box-shadow: 0 4px 15px #203b2610; }
+        .station-order-header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+        .station-order h2 { margin: 0; font-size: 17px; word-break: break-all; }
+        .station-order .status { color: #276e35; font-weight: 700; }
+        .station-order p { margin: 9px 0 0; word-break: break-word; }
+        .station-order .muted, #message { color: #66736a; }
+        @media (max-width: 600px) { .station-order { padding: 15px; } .station-order h2 { font-size: 15px; } }
+    </style>
+</head>
+<body>
+    <main class="station-shell">
+        <header class="station-header">
+            <div><h1 id="station-name">配送站订单</h1><p id="zone-name">只读查看所属区域订单</p></div>
+            <button id="logout" type="button">退出登录</button>
+        </header>
+        <nav class="station-controls" aria-label="订单状态筛选">
+            <button type="button" data-status="all" aria-pressed="true">全部</button>
+            <button type="button" data-status="pending">待配货</button>
+            <button type="button" data-status="delivering">配送中</button>
+            <button type="button" data-status="delivered">已送达</button>
+            <button type="button" data-status="completed">已完成</button>
+            <button type="button" data-status="canceled">已取消</button>
+            <button type="button" data-status="refunded">已退款</button>
+            <button type="button" id="refresh">刷新</button>
+        </nav>
+        <p id="message" role="status"></p>
+        <section id="orders" class="station-orders" aria-label="订单列表"></section>
+        <nav class="station-controls" aria-label="订单翻页" style="margin-top:20px">
+            <button type="button" id="previous-page">上一页</button>
+            <span id="page-label" style="align-self:center">第 1 页</span>
+            <button type="button" id="next-page">下一页</button>
+        </nav>
+    </main>
+    <script>
+        const tokenKey = 'freshProduceStationToken';
+        let status = 'all';
+        let page = 1;
+        const ordersElement = document.getElementById('orders');
+        const messageElement = document.getElementById('message');
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[char]);
+        }
+
+        async function getJson(path) {
+            const token = sessionStorage.getItem(tokenKey);
+            if (!token) { location.replace('/admin-panel/station_login.html'); return null; }
+            const response = await fetch(path, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+            if (response.status === 401) {
+                sessionStorage.removeItem(tokenKey);
+                location.replace('/admin-panel/station_login.html');
+                return null;
+            }
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || '加载失败');
+            return data;
+        }
+
+        async function loadOrders() {
+            messageElement.textContent = '正在加载订单...';
+            ordersElement.replaceChildren();
+            try {
+                const data = await getJson(`/station/orders?status=${encodeURIComponent(status)}&page=${page}`);
+                if (!data) return;
+                messageElement.textContent = data.orders.length ? `本页 ${data.orders.length} 笔订单` : '暂无订单';
+                document.getElementById('page-label').textContent = `第 ${page} 页`;
+                document.getElementById('previous-page').disabled = page === 1;
+                document.getElementById('next-page').disabled = !data.has_more;
+                for (const order of data.orders) {
+                    const card = document.createElement('article');
+                    card.className = 'station-order';
+                    card.innerHTML = `
+                        <div class="station-order-header"><h2>订单号：${escapeHtml(order.order_sn)}</h2><span class="status">${escapeHtml(order.status_text)}</span></div>
+                        <p class="muted">${escapeHtml(order.created_at)}</p>
+                        ${order.refund_status_text ? `<p>退款：${escapeHtml(order.refund_status_text)}</p>` : ''}
+                        <p>收货人：${escapeHtml(order.receiver_name)} · ${escapeHtml(order.receiver_phone)}</p>
+                        <p>地址：${escapeHtml(order.receiver_address)}</p>
+                        <p>商品：${order.items.map(item => `${escapeHtml(item.product_name)} × ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}`).join('、')}</p>
+                        ${order.remark ? `<p>备注：${escapeHtml(order.remark)}</p>` : ''}`;
+                    ordersElement.appendChild(card);
+                }
+            } catch (exception) { messageElement.textContent = exception.message || '加载失败'; }
+        }
+
+        document.querySelectorAll('[data-status]').forEach(button => button.addEventListener('click', () => {
+            status = button.dataset.status;
+            page = 1;
+            document.querySelectorAll('[data-status]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+            loadOrders();
+        }));
+        document.getElementById('refresh').addEventListener('click', loadOrders);
+        document.getElementById('previous-page').addEventListener('click', () => { if (page > 1) { page--; loadOrders(); } });
+        document.getElementById('next-page').addEventListener('click', () => { page++; loadOrders(); });
+        document.getElementById('logout').addEventListener('click', () => {
+            sessionStorage.removeItem(tokenKey);
+            location.replace('/admin-panel/station_login.html');
+        });
+        (async () => {
+            try {
+                const profile = await getJson('/station/profile');
+                if (!profile) return;
+                document.getElementById('station-name').textContent = profile.station_name;
+                document.getElementById('zone-name').textContent = `${profile.zone_name} · 仅查看本区域订单`;
+                loadOrders();
+            } catch (exception) { messageElement.textContent = exception.message || '加载失败'; }
+        })();
+    </script>
+</body>
+</html>

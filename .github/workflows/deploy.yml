@@ -87,6 +87,7 @@ jobs:
 
               mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < schema/update_supplier_schema.sql
               mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < schema/update_manual_refund_schema.sql
+              mysql --defaults-extra-file="$MYSQL_CNF" "$DB_NAME" < schema/update_station_accounts.sql
             else
               echo "Missing MySQL connection settings; refusing to restart without the required schema migration" >&2
               exit 1

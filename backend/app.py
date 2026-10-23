@@ -28,12 +28,14 @@ def create_app(config_class=Config):
     from fulfillment_admin_routes import fulfillment_admin_bp
     from merchant_routes import merchant_bp
     from supplier_routes import supplier_bp
+    from station_routes import station_bp
     
     app.register_blueprint(admin_bp)
     app.register_blueprint(fulfillment_admin_bp)
     app.register_blueprint(client_bp)
     app.register_blueprint(merchant_bp)
     app.register_blueprint(supplier_bp)
+    app.register_blueprint(station_bp)
 
     @app.route('/')
     def index():

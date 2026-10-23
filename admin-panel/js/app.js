@@ -2195,10 +2195,13 @@ async function loadStations() {
                 <p>联系人: ${station.contact_person || '无'} | 电话: ${station.phone || '无'}</p>
                 <p>备注: ${station.notes || '无'}</p>
                 <p>状态: ${station.is_active ? '启用' : '禁用'}</p>
+                <p>登录账号: ${station.has_login ? escapeHtml(station.username) : '未配置'}</p>
                 <p style="font-size:12px;color:#999;">创建时间: ${formatDate(station.created_at)}</p>
             </div>
             <div class="data-card-actions">
                 <button class="btn btn-sm btn-success" onclick="showStationModal(${station.id})">编辑配送站</button>
+                <a class="btn btn-sm btn-primary" href="/admin-panel/station_login.html" target="_blank" rel="noopener">配送站登录页</a>
+                ${station.has_login ? `<button class="btn btn-sm btn-danger" onclick="deleteStationAccount(${station.id})">删除登录账号</button>` : ''}
                 <button class="btn btn-sm btn-primary" onclick="openZoneSupplyRulesForZone(${station.zone_id})">查看配送站规则</button>
                 <button class="btn btn-sm btn-danger" onclick="deleteStation(${station.id})">删除配送站</button>
             </div>
@@ -2227,6 +2230,7 @@ async function showStationModal(stationId = null, zoneIdHint = null) {
             document.getElementById('station-address').value = station.address || '';
             document.getElementById('station-contact-person').value = station.contact_person || '';
             document.getElementById('station-phone').value = station.phone || '';
+            document.getElementById('station-username').value = station.username || '';
             document.getElementById('station-notes').value = station.notes || '';
             document.getElementById('station-active').checked = station.is_active;
             selectedZoneId = station.zone_id;
@@ -2252,9 +2256,12 @@ if (stationForm) {
             address: document.getElementById('station-address').value || null,
             contact_person: document.getElementById('station-contact-person').value || null,
             phone: document.getElementById('station-phone').value || null,
+            username: document.getElementById('station-username').value.trim(),
             notes: document.getElementById('station-notes').value || null,
             is_active: document.getElementById('station-active').checked,
         };
+        const password = document.getElementById('station-password').value;
+        if (password) data.password = password;
 
         const result = await fetchData(url, method, data);
         if (result) {
@@ -2277,6 +2284,16 @@ async function deleteStation(stationId) {
         await loadStations();
         await loadDeliveryZones();
         await loadDashboardStats();
+    }
+}
+
+async function deleteStationAccount(stationId) {
+    if (!confirm('确定删除此配送站的登录账号吗？站点和订单会保留，但该账号会立即无法登录。')) {
+        return;
+    }
+    const result = await fetchData(`/admin/stations/${stationId}/account`, 'DELETE', null, true);
+    if (result) {
+        await loadStations();
     }
 }
 

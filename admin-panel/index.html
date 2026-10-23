@@ -486,6 +486,15 @@
                     <input type="text" id="station-phone">
                 </div>
                 <div class="form-group">
+                    <label>配送站登录账号</label>
+                    <input type="text" id="station-username" minlength="3" maxlength="50" autocomplete="off" placeholder="3 至 50 个字符">
+                </div>
+                <div class="form-group">
+                    <label>配送站登录密码</label>
+                    <input type="password" id="station-password" minlength="12" autocomplete="new-password" placeholder="首次设置必填；编辑时留空则不修改">
+                    <p class="form-help">至少 12 个字符。密码不会在后台回显；修改后旧登录立即失效。</p>
+                </div>
+                <div class="form-group">
                     <label>备注</label>
                     <textarea id="station-notes"></textarea>
                 </div>

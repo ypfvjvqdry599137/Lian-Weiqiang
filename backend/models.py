@@ -186,6 +186,8 @@ class DeliveryStation(db.Model):
     address = db.Column(db.String(500), nullable=True, comment='配送站地址')
     contact_person = db.Column(db.String(100), nullable=True, comment='配送站联系人')
     phone = db.Column(db.String(20), nullable=True, comment='配送站电话')
+    username = db.Column(db.String(50), unique=True, nullable=True, comment='配送站登录账号')
+    password_hash = db.Column(db.String(255), nullable=True, comment='配送站密码哈希')
     notes = db.Column(db.Text, nullable=True, comment='备注')
     is_active = db.Column(db.Boolean, default=True, comment='是否启用')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')

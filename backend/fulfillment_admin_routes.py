@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify
+from werkzeug.security import generate_password_hash
 
 from extensions import db
 from auth import require_admin
@@ -17,6 +18,31 @@ from supplier_helpers import (
 )
 
 fulfillment_admin_bp = Blueprint('fulfillment_admin', __name__, url_prefix='/admin')
+
+
+def station_credentials_error(data, station=None):
+    from models import DeliveryStation
+
+    raw_username = data.get('username') or ''
+    password = data.get('password') or ''
+    if not isinstance(raw_username, str) or not isinstance(password, str):
+        return jsonify({'message': '账号或密码格式不正确'}), 400
+    username = raw_username.strip()
+    if station and station.username and 'username' in data and not username:
+        return jsonify({'message': '已有账号不能为空；如需停止登录，请禁用配送站'}), 400
+    if username and (len(username) < 3 or len(username) > 50):
+        return jsonify({'message': '配送站账号需为3至50个字符'}), 400
+    if password and len(password) < 12:
+        return jsonify({'message': '配送站密码至少12个字符'}), 400
+    if password and not username and not (station and station.username):
+        return jsonify({'message': '设置密码前请先填写配送站账号'}), 400
+    if username and not password and not (station and station.password_hash):
+        return jsonify({'message': '首次设置配送站账号时必须填写密码'}), 400
+    if username:
+        existing = DeliveryStation.query.filter_by(username=username).first()
+        if existing and (not station or existing.id != station.id):
+            return jsonify({'message': '配送站账号已被使用'}), 409
+    return None
 
 
 @fulfillment_admin_bp.before_request
@@ -50,12 +76,18 @@ def create_station():
     if zone.station:
         return jsonify({'message': '该区域已经配置配送站，请先编辑现有配送站'}), 409
 
+    error = station_credentials_error(data)
+    if error:
+        return error
+
     station = DeliveryStation(
         zone_id=zone.id,
         station_name=station_name,
         address=data.get('address'),
         contact_person=data.get('contact_person'),
         phone=data.get('phone'),
+        username=(data.get('username') or '').strip() or None,
+        password_hash=generate_password_hash(data['password']) if data.get('password') else None,
         notes=data.get('notes'),
         is_active=data.get('is_active', True)
     )
@@ -78,6 +110,9 @@ def update_station(station_id):
 
     station = DeliveryStation.query.get_or_404(station_id)
     data = request.get_json() or {}
+    error = station_credentials_error(data, station)
+    if error:
+        return error
 
     if 'zone_id' in data:
         zone_id = data.get('zone_id')
@@ -99,6 +134,10 @@ def update_station(station_id):
         station.contact_person = data.get('contact_person')
     if 'phone' in data:
         station.phone = data.get('phone')
+    if data.get('username'):
+        station.username = data['username'].strip()
+    if data.get('password'):
+        station.password_hash = generate_password_hash(data['password'])
     if 'notes' in data:
         station.notes = data.get('notes')
     if 'is_active' in data:
@@ -126,6 +165,20 @@ def delete_station(station_id):
     db.session.delete(station)
     db.session.commit()
     return jsonify({'message': '配送站已删除'}), 200
+
+
+@fulfillment_admin_bp.route('/stations/<int:station_id>/account', methods=['DELETE'])
+def delete_station_account(station_id):
+    from models import DeliveryStation
+
+    station = DeliveryStation.query.get_or_404(station_id)
+    if not station.username and not station.password_hash:
+        return jsonify({'message': '该配送站尚未设置登录账号'}), 400
+
+    station.username = None
+    station.password_hash = None
+    db.session.commit()
+    return jsonify({'message': '配送站登录账号已删除，原登录立即失效'}), 200
 
 
 @fulfillment_admin_bp.route('/suppliers/<int:supplier_id>/supply-categories', methods=['GET'])

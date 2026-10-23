@@ -90,6 +90,8 @@ def serialize_delivery_station(station):
         'address': station.address,
         'contact_person': station.contact_person,
         'phone': station.phone,
+        'username': station.username,
+        'has_login': bool(station.username and station.password_hash),
         'notes': station.notes,
         'is_active': station.is_active,
         'created_at': station.created_at.strftime('%Y-%m-%d %H:%M:%S') if station.created_at else None,
