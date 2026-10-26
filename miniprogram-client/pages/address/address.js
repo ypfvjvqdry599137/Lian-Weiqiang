@@ -150,21 +150,42 @@ Page({
   },
 
   chooseLocation() {
-    wx.chooseLocation({
-      success: (res) => {
-        const addressText = buildAddressText(res);
-        this.setData({
-          'form.address': addressText,
-          'form.full_address': addressText,
-          'form.detail_address': res.name || addressText,
-          'form.name': res.name || '',
-          'form.lng': res.longitude,
-          'form.lat': res.latitude
-        });
-      },
-      fail: () => {
-        wx.showToast({ title: '未选择位置', icon: 'none' });
-      }
+    if (this._locationPicking) return;
+    this._locationPicking = true;
+    wx.showLoading({ title: '正在定位...', mask: true });
+
+    const openPicker = (location) => {
+      wx.hideLoading();
+      const latitude = location && location.latitude;
+      const longitude = location && location.longitude;
+      const hasCoordinates = location && Number.isFinite(latitude) && Number.isFinite(longitude)
+        && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+      wx.chooseLocation({
+        ...(hasCoordinates ? { latitude, longitude } : {}),
+        success: (res) => {
+          const addressText = buildAddressText(res);
+          this.setData({
+            'form.address': addressText,
+            'form.full_address': addressText,
+            'form.detail_address': res.name || addressText,
+            'form.name': res.name || '',
+            'form.lng': res.longitude,
+            'form.lat': res.latitude
+          });
+          this._locationPicking = false;
+        },
+        fail: (error) => {
+          this._locationPicking = false;
+          const cancelled = /cancel/i.test((error && error.errMsg) || '');
+          wx.showToast({ title: cancelled ? '未选择位置' : '地图打开失败，请检查定位权限', icon: 'none' });
+        }
+      });
+    };
+
+    wx.getLocation({
+      type: 'gcj02',
+      success: (location) => openPicker(location),
+      fail: () => openPicker()
     });
   },
 

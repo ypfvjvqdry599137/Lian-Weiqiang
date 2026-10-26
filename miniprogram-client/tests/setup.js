@@ -55,6 +55,7 @@ const wx = {
   setNavigationBarTitle: jest.fn(),
   request: jest.fn(),
   chooseLocation: jest.fn(),
+  getLocation: jest.fn(),
   requestPayment: jest.fn(),
   login: jest.fn()
 };

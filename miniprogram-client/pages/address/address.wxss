@@ -205,6 +205,13 @@
   flex-shrink: 0;
 }
 
+.location-tip {
+  margin-top: 12rpx;
+  color: #68756b;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
 .default-switch {
   display: flex;
   align-items: center;

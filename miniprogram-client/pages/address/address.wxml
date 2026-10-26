@@ -75,6 +75,7 @@
         <text class="location-text">{{form.address || '点击选择收货地址'}}</text>
         <image class="location-icon-img" src="/images/icons/location-green.svg" mode="aspectFit" />
       </view>
+      <view class="location-tip">允许定位后，地图会优先显示当前位置。请选实际收货点；位置不准时可点地图左下角定位按钮或搜索。</view>
     </view>
     
     <view class="form-group default-switch">
