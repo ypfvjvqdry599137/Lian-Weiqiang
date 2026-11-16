@@ -118,6 +118,31 @@ class StationAccessTestCase(unittest.TestCase):
                                          json={'is_active': False}).status_code, 200)
         self.assertEqual(self.client.get('/station/orders', headers=new_headers).status_code, 401)
 
+    def test_eight_character_station_password_is_allowed_and_shorter_one_rejected(self):
+        too_short = self.client.post('/admin/stations', headers=self.admin_headers, json={
+            'zone_id': self.zone_a_id, 'station_name': '测试配送站',
+            'username': 'station-a', 'password': 'abc1234',
+        })
+        self.assertEqual(too_short.status_code, 400)
+        self.assertIn('至少8个字符', too_short.get_json()['message'])
+
+        blank = self.client.post('/admin/stations', headers=self.admin_headers, json={
+            'zone_id': self.zone_a_id, 'station_name': '测试配送站',
+            'username': 'station-a', 'password': '        ',
+        })
+        self.assertEqual(blank.status_code, 400)
+
+        station_id = self.create_station(self.zone_a_id, 'station-a', password='abc12345')
+        old_token = self.login_station('station-a', password='abc12345')
+        self.assertEqual(self.client.get('/station/orders', headers=old_token).status_code, 200)
+
+        changed = self.client.put(f'/admin/stations/{station_id}', headers=self.admin_headers,
+                                  json={'password': 'new12345'})
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(self.client.get('/station/orders', headers=old_token).status_code, 401)
+        self.assertEqual(self.client.get('/station/orders',
+                         headers=self.login_station('station-a', password='new12345')).status_code, 200)
+
     def test_username_is_unique_and_zone_change_invalidates_token(self):
         first_id = self.create_station(self.zone_a_id, 'station-a')
         second_id = self.create_station(self.zone_b_id, 'station-b')

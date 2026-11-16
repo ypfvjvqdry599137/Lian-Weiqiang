@@ -32,8 +32,10 @@ def station_credentials_error(data, station=None):
         return jsonify({'message': '已有账号不能为空；如需停止登录，请禁用配送站'}), 400
     if username and (len(username) < 3 or len(username) > 50):
         return jsonify({'message': '配送站账号需为3至50个字符'}), 400
-    if password and len(password) < 12:
-        return jsonify({'message': '配送站密码至少12个字符'}), 400
+    if password and not password.strip():
+        return jsonify({'message': '配送站密码不能全为空格'}), 400
+    if password and len(password) < 8:
+        return jsonify({'message': '配送站密码至少8个字符'}), 400
     if password and not username and not (station and station.username):
         return jsonify({'message': '设置密码前请先填写配送站账号'}), 400
     if username and not password and not (station and station.password_hash):
