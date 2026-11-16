@@ -477,7 +477,11 @@ function renderSupplierOrderStatusSelect(order) {
 }
 
 function showModal(id) {
-    document.getElementById(id).classList.add('show');
+    const modal = document.getElementById(id);
+    const content = modal.querySelector('.modal-content');
+    if (content) content.scrollTop = 0;
+    modal.scrollTop = 0;
+    modal.classList.add('show');
 }
 
 function closeModal(id) {
@@ -639,27 +643,82 @@ async function loadProducts() {
     syncProductSelection();
 }
 
+let flashSaleProducts = [];
+
 async function loadFlashSales() {
     const list = document.getElementById('flash-sales-list');
-    const data = await fetchData('/admin/products?is_active=true');
+    const data = await fetchData('/admin/products');
     if (!data || !Array.isArray(data.products)) {
         list.textContent = '商品加载失败，请稍后重试';
         return;
     }
+    flashSaleProducts = data.products;
     list.innerHTML = '';
-    data.products.forEach(product => {
+    const configured = data.products.filter(product => product.flash_price !== null);
+    if (!configured.length) {
+        list.innerHTML = '<div class="empty-state">目前没有限时特惠。点击右上角“添加限时特惠”，从已有商品中选择。</div>';
+        return;
+    }
+    configured.forEach(product => {
         const card = document.createElement('div');
         card.className = 'data-card';
-        const state = !product.flash_price ? '未设置' : product.flash_active ? '进行中' :
+        const state = !product.is_active ? '商品已下架' : product.flash_active ? '进行中' :
             (new Date(product.flash_start_at) > new Date() ? '未开始' : '已结束');
         card.innerHTML = `<div class="data-card-content">
             <h4>${escapeHtml(product.name)}</h4>
-            <p>平时售价：¥${escapeHtml(product.price)}；特惠价：${product.flash_price ? '¥' + escapeHtml(product.flash_price) : '未设置'}；${state}</p>
-            ${product.flash_price ? `<p>活动：${escapeHtml(formatDate(product.flash_start_at))} 至 ${escapeHtml(formatDate(product.flash_end_at))}</p>` : ''}
-        </div><div class="data-card-actions"><button type="button" class="btn btn-sm btn-success" onclick="showProductModal(${product.id})">设置特惠</button></div>`;
+            <p>平时售价：¥${escapeHtml(product.price)}　特惠价：¥${escapeHtml(product.flash_price)}　${escapeHtml(state)}</p>
+            <p>活动：${escapeHtml(formatDate(product.flash_start_at))} 至 ${escapeHtml(formatDate(product.flash_end_at))}</p>
+        </div><div class="data-card-actions">
+            <button type="button" class="btn btn-sm btn-success" onclick="showFlashSaleModal(${product.id})">编辑特惠</button>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeFlashSale(${product.id})">移除特惠</button>
+        </div>`;
         list.appendChild(card);
     });
-    if (!data.products.length) list.textContent = '暂无在售商品';
+}
+
+function updateFlashSaleRegularPrice() {
+    const productId = Number(document.getElementById('flash-sale-product').value);
+    const product = flashSaleProducts.find(item => item.id === productId);
+    document.getElementById('flash-sale-regular-price').textContent = product ? `¥${product.price} / ${product.unit}` : '—';
+}
+
+function showFlashSaleModal(productId = null) {
+    const editingProduct = productId === null ? null : flashSaleProducts.find(item => item.id === Number(productId));
+    if (productId !== null && !editingProduct) {
+        alert('商品信息已变化，请刷新页面后重试');
+        return;
+    }
+    const available = editingProduct ? [editingProduct] : flashSaleProducts.filter(item => item.is_active && item.flash_price === null);
+    if (!available.length) {
+        alert('没有可添加的在售商品；请先在商品管理中添加商品');
+        return;
+    }
+    const form = document.getElementById('flash-sale-form');
+    const select = document.getElementById('flash-sale-product');
+    form.reset();
+    select.innerHTML = '';
+    available.forEach(product => {
+        const option = document.createElement('option');
+        option.value = String(product.id);
+        option.textContent = product.name;
+        select.appendChild(option);
+    });
+    select.disabled = !!editingProduct;
+    document.getElementById('flash-sale-modal-title').textContent = editingProduct ? '编辑限时特惠' : '添加限时特惠';
+    document.getElementById('flash-sale-price').value = editingProduct ? editingProduct.flash_price : '';
+    document.getElementById('flash-sale-start').value = editingProduct ? toLocalDateTimeInput(editingProduct.flash_start_at) : '';
+    document.getElementById('flash-sale-end').value = editingProduct ? toLocalDateTimeInput(editingProduct.flash_end_at) : '';
+    updateFlashSaleRegularPrice();
+    showModal('flash-sale-modal');
+}
+
+async function removeFlashSale(productId) {
+    const product = flashSaleProducts.find(item => item.id === Number(productId));
+    if (!product || !confirm(`确定移除“${product.name}”的限时特惠吗？移除后立即恢复平时售价。`)) return;
+    const result = await fetchData(`/admin/products/${productId}`, 'PUT', {
+        flash_price: null, flash_start_at: null, flash_end_at: null
+    }, true);
+    if (result) await loadFlashSales();
 }
 
 function updateProductImagePreview(url) {
@@ -850,6 +909,40 @@ function toLocalDateTimeInput(value) {
     const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
     return local.toISOString().slice(0, 16);
 }
+
+document.getElementById('flash-sale-product').addEventListener('change', updateFlashSaleRegularPrice);
+
+document.getElementById('flash-sale-form').addEventListener('submit', async function(event) {
+    event.preventDefault();
+    const productId = Number(document.getElementById('flash-sale-product').value);
+    const product = flashSaleProducts.find(item => item.id === productId);
+    const price = Number(document.getElementById('flash-sale-price').value);
+    const start = new Date(document.getElementById('flash-sale-start').value);
+    const end = new Date(document.getElementById('flash-sale-end').value);
+    if (!product || !Number.isFinite(price) || price <= 0 || price >= Number(product.price)) {
+        alert('特惠价需大于 0 且低于平时售价');
+        return;
+    }
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        alert('活动结束时间需晚于开始时间');
+        return;
+    }
+    const save = document.getElementById('flash-sale-save');
+    save.disabled = true;
+    try {
+        const result = await fetchData(`/admin/products/${productId}`, 'PUT', {
+            flash_price: document.getElementById('flash-sale-price').value,
+            flash_start_at: start.toISOString(),
+            flash_end_at: end.toISOString()
+        }, true);
+        if (result) {
+            closeModal('flash-sale-modal');
+            await loadFlashSales();
+        }
+    } finally {
+        save.disabled = false;
+    }
+});
 
 function toggleProductFlashFields() {
     const enabled = document.getElementById('product-flash-enabled').checked;

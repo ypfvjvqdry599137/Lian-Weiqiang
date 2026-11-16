@@ -277,6 +277,32 @@ h2 {
     justify-content: flex-end;
 }
 
+#page-flash-sales > .form-help {
+    margin: 0 0 18px;
+    color: #555;
+    font-size: 14px;
+}
+
+#flash-sales-list {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    align-items: start;
+}
+
+#flash-sales-list .data-card {
+    display: block;
+}
+
+#flash-sales-list .data-card-actions {
+    justify-content: flex-start;
+    padding-top: 14px;
+    margin-top: 14px;
+    border-top: 1px solid #eee;
+}
+
+@media (max-width: 600px) {
+    #flash-sales-list { grid-template-columns: 1fr; }
+}
+
 .status-control {
     display: flex;
     flex-direction: column;
@@ -435,6 +461,48 @@ h2 {
     width: 100%;
     margin-top: 16px;
     box-shadow: 0 -8px 16px rgba(255,255,255,0.95);
+}
+
+#product-modal .modal-content {
+    max-width: 640px;
+}
+
+.flash-sale-modal-content {
+    max-width: 520px;
+}
+
+#flash-sale-modal.show {
+    align-items: center;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 24px;
+}
+
+.modal-actions .btn {
+    min-width: 100px;
+}
+
+.modal-actions .btn:not(.btn-primary) {
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #333;
+}
+
+.flash-sale-base-price {
+    margin: -4px 0 16px;
+    color: #555;
+    font-size: 14px;
+}
+
+.modal-close-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    line-height: 1;
 }
 
 .refund-warning {

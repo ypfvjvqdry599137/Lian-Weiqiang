@@ -794,6 +794,14 @@ class AuthIsolationTestCase(unittest.TestCase):
         detail = self.client.get(f'/client/products/{product_id}').get_json()
         self.assertFalse(detail['flash_active'])
         self.assertEqual(detail['price'], '8.00')
+        removed = self.client.put(f'/admin/products/{product_id}', headers=headers, json={
+            'flash_price': None, 'flash_start_at': None, 'flash_end_at': None
+        })
+        self.assertEqual(removed.status_code, 200)
+        product = self.client.get(f'/admin/products/{product_id}', headers=headers).get_json()
+        self.assertIsNone(product['flash_price'])
+        self.assertIsNone(product['flash_start_at'])
+        self.assertIsNone(product['flash_end_at'])
 
     def test_admin_can_cancel_supplier_preparation_during_manual_refund(self):
         headers = self._paid_admin_headers()
