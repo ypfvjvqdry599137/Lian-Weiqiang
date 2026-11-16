@@ -316,6 +316,7 @@ async function fetchData(url, method = 'GET', data = null, showAlert = false) {
     
     const options = {
         method: method,
+        cache: method === 'GET' ? 'no-store' : 'default',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${adminToken() || ''}`,
@@ -482,7 +483,7 @@ function closeModal(id) {
 
 // ==================== 页面导航 ====================
 
-let currentPage = 'dashboard';
+let currentPage = 'orders';
 
 document.querySelectorAll('.menu-item').forEach(item => {
     item.addEventListener('click', function() {
@@ -1077,6 +1078,7 @@ async function deleteDeliveryZone(zoneId) {
 // ==================== 订单管理 (Orders) ====================
 
 let currentOrderStatusFilter = 'all';
+let ordersLoadSequence = 0;
 
 document.querySelectorAll('#page-orders .tabs .tab').forEach(tab => {
     tab.addEventListener('click', function() {
@@ -1088,13 +1090,33 @@ document.querySelectorAll('#page-orders .tabs .tab').forEach(tab => {
 });
 
 async function loadOrders() {
+    const sequence = ++ordersLoadSequence;
     let url = '/admin/orders';
     if (currentOrderStatusFilter !== 'all') {
         url += `?status=${currentOrderStatusFilter}`;
     }
-    const ordersData = await fetchData(url);
     const ordersList = document.getElementById('orders-list');
+    const ordersState = document.getElementById('orders-state');
+    ordersState.textContent = '正在加载订单…';
     ordersList.innerHTML = '';
+
+    let ordersData = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+            ordersState.textContent = `订单加载失败，正在自动重试（${attempt}/2）…`;
+            await new Promise(resolve => setTimeout(resolve, attempt * 800));
+            if (sequence !== ordersLoadSequence) return;
+        }
+        ordersData = await fetchData(url);
+        if (sequence !== ordersLoadSequence) return;
+        if (ordersData && Array.isArray(ordersData.orders)) break;
+        if (!adminToken()) return;
+    }
+    if (!ordersData || !Array.isArray(ordersData.orders)) {
+        ordersState.innerHTML = '订单加载失败，请检查网络后 <button type="button" class="btn btn-sm" onclick="loadOrders()">重试</button>';
+        return;
+    }
+    ordersState.textContent = ordersData.orders.length ? '' : '暂无订单';
 
     if (ordersData && ordersData.orders) {
         ordersData.orders.forEach(order => {

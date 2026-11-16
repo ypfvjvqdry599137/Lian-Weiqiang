@@ -17,7 +17,7 @@
 
         <nav class="sidebar">
             <ul class="menu">
-                <li class="menu-item active" data-page="dashboard">首页概览</li>
+                <li class="menu-item" data-page="dashboard">首页概览</li>
                 <li class="menu-item" data-page="categories">1. 分类管理</li>
                 <li class="menu-item" data-page="delivery-zones">2. 配送区域</li>
                 <li class="menu-item" data-page="stations">3. 配送站管理</li>
@@ -25,7 +25,7 @@
                 <li class="menu-item" data-page="ingredients">5. 原料管理</li>
                 <li class="menu-item" data-page="products">6. 商品管理</li>
                 <li class="menu-item" data-page="zone-supply-rules">7. 配送站供货规则</li>
-                <li class="menu-item" data-page="orders">订单管理</li>
+                <li class="menu-item active" data-page="orders">订单管理</li>
                 <li class="menu-item" data-page="supplier-orders">供应商备货单</li>
                 <li class="menu-item" data-page="fulfillment-issues">异常处理中心</li>
                 <li class="menu-item" data-page="price-reviews">价格审核</li>
@@ -35,7 +35,7 @@
 
         <main class="content">
             <!-- 首页概览 -->
-            <div id="page-dashboard" class="page active">
+            <div id="page-dashboard" class="page">
                 <h2>📊 数据概览</h2>
                 <div class="stats">
                     <div class="stat-card">
@@ -215,7 +215,7 @@
             </div>
 
             <!-- 订单管理 -->
-            <div id="page-orders" class="page">
+            <div id="page-orders" class="page active">
                 <h2>🛒 订单管理</h2>
                 <div class="tabs">
                     <button class="tab active" data-status="all">全部</button>
@@ -227,6 +227,7 @@
                     <button class="tab" data-status="60">已取消</button>
                     <button class="tab" data-status="70">已退款</button>
                 </div>
+                <div id="orders-state" role="status" aria-live="polite"></div>
                 <div id="orders-list" class="data-list"></div>
             </div>
         </main>

@@ -22,6 +22,7 @@ from status_utils import (
 )
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -1295,14 +1296,19 @@ def restore_inventory_for_deleted_order(order):
 
 @admin_bp.route('/orders', methods=['GET'])
 def get_all_orders():
-    from models import OrderMaster
+    from models import DeliveryZone, OrderMaster
     """获取所有订单（总后台）"""
     status_filter = request.args.get('status')
     query = OrderMaster.query
     
     requested_status = int(status_filter) if status_filter and status_filter.isdigit() else None
         
-    orders = query.order_by(OrderMaster.created_at.desc()).all()
+    orders = query.options(
+        joinedload(OrderMaster.zone).joinedload(DeliveryZone.station),
+        selectinload(OrderMaster.items),
+        selectinload(OrderMaster.manual_refunds),
+        selectinload(OrderMaster.fulfillment_issues),
+    ).order_by(OrderMaster.created_at.desc()).all()
     output = []
     for order in orders:
         display_status = display_order_status(order)
