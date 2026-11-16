@@ -154,6 +154,19 @@ def get_supplier_profile():
 
 # ==================== 备货单管理 ====================
 
+@supplier_bp.route('/order-alerts', methods=['GET'])
+def get_supplier_order_alerts():
+    from models import OrderMaster, SupplierOrder
+    from sqlalchemy.orm import joinedload, selectinload
+
+    supplier_id = request.args.get('supplier_id')
+    orders = SupplierOrder.query.filter_by(supplier_id=supplier_id, status=10).options(
+        joinedload(SupplierOrder.order).selectinload(OrderMaster.manual_refunds)
+    ).order_by(SupplierOrder.id.desc()).all()
+    pending_ids = [order.id for order in orders if supplier_order_block_reason(order.order) is None]
+    return jsonify({'pending_count': len(pending_ids), 'pending_ids': pending_ids})
+
+
 @supplier_bp.route('/orders', methods=['GET'])
 def get_supplier_orders():
     from models import SupplierOrder # Lazy import
@@ -227,7 +240,7 @@ def update_supplier_order_status(order_id):
     so = SupplierOrder.query.filter_by(id=order_id, supplier_id=supplier_id).first_or_404()
     order = OrderMaster.query.filter_by(order_sn=so.order_sn).populate_existing().with_for_update().first_or_404()
     if supplier_order_block_reason(order):
-        return jsonify({'message': '订单正在退款核验中，不能推进备货'}), 409
+        return jsonify({'message': '订单未付款或正在售后处理，不能推进备货'}), 409
     data = request.get_json()
     
     try:
@@ -306,6 +319,7 @@ def get_supplier_settlement():
         'pending_count': 0,
         'canceled_count': 0,
         'on_hold_count': 0,
+        'unpaid_count': 0,
         'refunded_count': 0,
         'total_cost': Decimal('0'),
         'payable_total': Decimal('0'),
@@ -334,6 +348,8 @@ def get_supplier_settlement():
         if block_reason and order.status in (10, 20, 30):
             if block_reason.startswith('已退款'):
                 summary['refunded_count'] += 1
+            elif block_reason.startswith('待付款'):
+                summary['unpaid_count'] += 1
             else:
                 summary['on_hold_count'] += 1
         elif order.status == 30:

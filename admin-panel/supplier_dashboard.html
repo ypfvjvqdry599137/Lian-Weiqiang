@@ -25,12 +25,23 @@
         </nav>
 
         <main class="content">
+            <div id="supplier-order-alert" class="supplier-order-alert" role="status" aria-live="polite">
+                <div>
+                    <strong id="supplier-alert-title">正在检查待备货订单…</strong>
+                    <p id="supplier-alert-detail">保持后台页面打开，即可收到新单提醒。</p>
+                </div>
+                <div class="supplier-alert-actions">
+                    <button class="btn btn-primary" type="button" id="supplier-alert-enable">开启声音和桌面提醒</button>
+                    <button class="btn" type="button" id="supplier-alert-view">查看待备货</button>
+                </div>
+            </div>
             <!-- 备货单管理 -->
             <div id="page-supplier-orders" class="page active">
                 <h2>📋 备货单管理</h2>
                 <div class="tabs">
                     <button class="tab" data-status="all">全部</button>
                     <button class="tab active" data-status="10">待备货</button>
+                    <button class="tab" data-status="unpaid">待付款</button>
                     <button class="tab" data-status="20">备货中</button>
                     <button class="tab" data-status="30">已完成</button>
                     <button class="tab" data-status="paused">售后暂停</button>
@@ -112,6 +123,7 @@
         </div>
     </div>
 
+    <script src="/admin-panel/js/supplier-alerts.js"></script>
     <script>
         const BASE_URL = window.location.origin && window.location.origin !== 'null'
             ? window.location.origin
@@ -384,6 +396,10 @@
                     <h3>售后待处理 / 已退款</h3>
                     <p class="number">${summary.on_hold_count || 0} / ${summary.refunded_count || 0}</p>
                 </div>
+                <div class="stat-card">
+                    <h3>待付款订单</h3>
+                    <p class="number">${summary.unpaid_count || 0}</p>
+                </div>
             `;
         }
 
@@ -529,10 +545,132 @@
             }
         });
 
+        // ==================== 新备货单在线提醒 ====================
+        const supplierAlertTracker = new SupplierAlertTracker();
+        const supplierDashboardTitle = document.title;
+        let alertPollBusy = false;
+        let pendingAlertCount = 0;
+        let newAlertCount = 0;
+        let newAlertUntil = 0;
+        let alertSoundContext = null;
+        let alertSoundEnabled = false;
+
+        function playSupplierAlertSound() {
+            if (!alertSoundEnabled || !alertSoundContext) return;
+            alertSoundContext.resume().then(() => {
+                const start = alertSoundContext.currentTime;
+                [0, 0.24].forEach(delay => {
+                    const oscillator = alertSoundContext.createOscillator();
+                    const volume = alertSoundContext.createGain();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = 880;
+                    volume.gain.setValueAtTime(0.001, start + delay);
+                    volume.gain.exponentialRampToValueAtTime(0.16, start + delay + 0.02);
+                    volume.gain.exponentialRampToValueAtTime(0.001, start + delay + 0.18);
+                    oscillator.connect(volume).connect(alertSoundContext.destination);
+                    oscillator.start(start + delay);
+                    oscillator.stop(start + delay + 0.19);
+                });
+            }).catch(() => {});
+        }
+
+        function updateSupplierAlertBanner(error = false) {
+            const banner = document.getElementById('supplier-order-alert');
+            const headline = document.getElementById('supplier-alert-title');
+            const detail = document.getElementById('supplier-alert-detail');
+            const showingNew = Date.now() < newAlertUntil;
+            banner.classList.toggle('has-pending', pendingAlertCount > 0);
+            banner.classList.toggle('has-new', showingNew);
+            document.title = pendingAlertCount ? `【${pendingAlertCount} 单待备货】${supplierDashboardTitle}` : supplierDashboardTitle;
+            headline.textContent = error ? '订单提醒暂时连接失败' :
+                showingNew ? `新备货单 ${newAlertCount} 单，请及时处理` :
+                pendingAlertCount ? `当前有 ${pendingAlertCount} 单待备货` : '当前没有待备货订单';
+            detail.textContent = error ? '请检查网络连接，页面会自动重试。' :
+                '仅提醒已付款且未进入售后处理的订单；保持后台页面打开。';
+        }
+
+        async function refreshSupplierOrderAlerts() {
+            if (alertPollBusy || !supplierToken) return;
+            alertPollBusy = true;
+            try {
+                const data = await fetchData(`/supplier/order-alerts?supplier_id=${currentSupplierId}`);
+                if (!data || !Array.isArray(data.pending_ids)) {
+                    updateSupplierAlertBanner(true);
+                    return;
+                }
+                const hadSnapshot = supplierAlertTracker.previousIds !== null;
+                const { pendingCount, newOrders } = supplierAlertTracker.update(data.pending_ids.map(id => ({ id })));
+                const listChanged = pendingCount !== pendingAlertCount;
+                pendingAlertCount = pendingCount;
+                if (newOrders.length) {
+                    newAlertCount = newOrders.length;
+                    newAlertUntil = Date.now() + 30000;
+                    playSupplierAlertSound();
+                    if (alertSoundEnabled && 'Notification' in window && Notification.permission === 'granted') {
+                        try {
+                            new Notification('鲜配居：收到新备货单', {
+                                body: `有 ${newOrders.length} 单新备货任务，请打开供应商后台处理。`,
+                                tag: `supplier-orders-${currentSupplierId}`
+                            });
+                        } catch (error) { console.warn('桌面提醒不可用:', error); }
+                    }
+                }
+                if (hadSnapshot && (listChanged || newOrders.length)
+                    && currentPage === 'supplier-orders' && currentSupplierOrderStatusFilter === '10') {
+                    await loadSupplierOrders();
+                }
+                updateSupplierAlertBanner();
+            } finally {
+                alertPollBusy = false;
+            }
+        }
+
+        document.getElementById('supplier-alert-enable').addEventListener('click', async function() {
+            let desktopPermissionRequest = null;
+            if ('Notification' in window && Notification.permission === 'default') {
+                try { desktopPermissionRequest = Notification.requestPermission(); } catch (error) {}
+            }
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass && !alertSoundContext) {
+                try {
+                    alertSoundContext = new AudioContextClass();
+                    await alertSoundContext.resume();
+                    alertSoundEnabled = true;
+                } catch (error) {
+                    console.warn('声音提醒不可用:', error);
+                }
+            }
+            if (desktopPermissionRequest) {
+                try { await desktopPermissionRequest; } catch (error) {}
+            }
+            const desktopEnabled = 'Notification' in window && Notification.permission === 'granted';
+            this.textContent = alertSoundEnabled
+                ? (desktopEnabled ? '声音与桌面提醒已开启' : '声音提醒已开启')
+                : (desktopEnabled ? '桌面提醒已开启' : '声音提醒不可用');
+            this.disabled = alertSoundEnabled || desktopEnabled;
+            if (pendingAlertCount > 0) playSupplierAlertSound();
+        });
+
+        document.getElementById('supplier-alert-view').addEventListener('click', () => {
+            document.querySelectorAll('.menu-item').forEach(item =>
+                item.classList.toggle('active', item.dataset.page === 'supplier-orders'));
+            document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(tab =>
+                tab.classList.toggle('active', tab.dataset.status === '10'));
+            currentPage = 'supplier-orders';
+            currentSupplierOrderStatusFilter = '10';
+            renderPage();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshSupplierOrderAlerts();
+        });
+
         // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('supplier-settlement-month').value = getCurrentMonthValue();
             renderPage();
+            refreshSupplierOrderAlerts();
+            setInterval(refreshSupplierOrderAlerts, 20000);
         });
 
     </script>

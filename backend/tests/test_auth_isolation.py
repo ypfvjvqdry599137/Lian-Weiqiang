@@ -652,6 +652,8 @@ class AuthIsolationTestCase(unittest.TestCase):
         supplier_headers = {'Authorization': f"Bearer {supplier_token.get_json()['token']}"}
         supplier_path = f'/supplier/orders/{supplier_order.id}/status?supplier_id={supplier.id}'
         supplier_list = f'/supplier/orders?supplier_id={supplier.id}'
+        self.assertEqual(self.client.get(f'/supplier/order-alerts?supplier_id={supplier.id}',
+                                         headers=supplier_headers).get_json()['pending_count'], 0)
         self.assertEqual(self.client.get(supplier_list + '&status=10', headers=supplier_headers).get_json()['supplier_orders'], [])
         paused = self.client.get(supplier_list + '&status=paused', headers=supplier_headers).get_json()['supplier_orders']
         self.assertEqual(paused[0]['status_text'], '退款处理中，暂停备货')
@@ -692,6 +694,8 @@ class AuthIsolationTestCase(unittest.TestCase):
         refunded = self.client.get(path + '&status=refunded', headers=supplier_headers).get_json()['supplier_orders']
         self.assertEqual(refunded[0]['status_text'], '已退款，停止备货')
         self.assertFalse(refunded[0]['can_prepare'])
+        self.assertEqual(self.client.get(f'/supplier/order-alerts?supplier_id={supplier.id}',
+                                         headers=supplier_headers).get_json()['pending_count'], 0)
         settlement = self.client.get(f'/supplier/settlement?supplier_id={supplier.id}',
                                      headers=supplier_headers).get_json()['summary']
         self.assertEqual(settlement['pending_count'], 0)
@@ -701,6 +705,40 @@ class AuthIsolationTestCase(unittest.TestCase):
                          .get_json()['orders'][0]['status_text'], '已退款')
         self.assertEqual(self.client.get('/admin/supplier-orders?status=10', headers=headers).get_json()['supplier_orders'], [])
         self.assertEqual(self.client.get('/admin/supplier-orders?status=refunded', headers=headers).get_json()['supplier_orders'][0]['status_text'], '已退款，停止备货')
+
+    def test_supplier_preparation_waits_until_payment_is_confirmed(self):
+        supplier = Supplier(name='付款提醒供应商', username='payment-alert-supplier',
+                            password='supplier-password', is_active=True, is_deleted=False)
+        db.session.add(supplier)
+        db.session.flush()
+        supplier_order = SupplierOrder(order_sn=self.order.order_sn, supplier_id=supplier.id, status=10)
+        db.session.add(supplier_order)
+        db.session.commit()
+
+        login = self.client.post('/supplier/login', json={
+            'username': supplier.username, 'password': 'supplier-password'
+        }).get_json()
+        supplier_headers = {'Authorization': f"Bearer {login['token']}"}
+        path = f'/supplier/orders?supplier_id={supplier.id}'
+        alerts_path = f'/supplier/order-alerts?supplier_id={supplier.id}'
+        self.assertEqual(self.client.get(alerts_path).status_code, 401)
+        self.assertEqual(self.client.get(alerts_path, headers=supplier_headers).get_json()['pending_count'], 0)
+        self.assertEqual(self.client.get(path + '&status=10', headers=supplier_headers)
+                         .get_json()['supplier_orders'], [])
+        unpaid = self.client.get(path + '&status=unpaid', headers=supplier_headers).get_json()['supplier_orders']
+        self.assertEqual(unpaid[0]['status_text'], '待付款，暂不备货')
+        self.assertFalse(unpaid[0]['can_prepare'])
+        self.assertEqual(self.client.put(f'/supplier/orders/{supplier_order.id}/status?supplier_id={supplier.id}',
+                                         headers=supplier_headers, json={'status': 20}).status_code, 409)
+
+        self.order.order_status = 20
+        db.session.commit()
+        ready = self.client.get(path + '&status=10', headers=supplier_headers).get_json()['supplier_orders']
+        self.assertEqual(len(ready), 1)
+        self.assertTrue(ready[0]['can_prepare'])
+        self.assertEqual(self.client.get(alerts_path, headers=supplier_headers).get_json()['pending_ids'], [supplier_order.id])
+        self.assertEqual(self.client.get(path + '&status=unpaid', headers=supplier_headers)
+                         .get_json()['supplier_orders'], [])
 
     def test_legacy_refund_success_is_also_removed_from_preparation(self):
         headers = self._paid_admin_headers()

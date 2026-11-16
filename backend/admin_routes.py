@@ -981,7 +981,7 @@ def update_supplier_order_status(order_id):
     if new_status not in [10, 20, 30, 40]:
         return jsonify({"message": "无效的备货单状态"}), 400
     if new_status != 40 and supplier_order_block_reason(order):
-        return jsonify({'message': '订单正在退款核验中，不能推进备货'}), 409
+        return jsonify({'message': '订单未付款或正在售后处理，不能推进备货'}), 409
     
     so.status = new_status
     order, order_status_updated = sync_order_status_after_supplier_update(so.order_sn)

@@ -62,6 +62,8 @@ def supplier_order_block_reason(order):
         return '已退款，停止备货'
     if order.order_status == 60:
         return '订单已取消，停止备货'
+    if order.order_status == 10:
+        return '待付款，暂不备货'
     if has_refund_hold(order):
         return '退款处理中，暂停备货'
     return None
@@ -73,6 +75,8 @@ def supplier_order_matches_filter(supplier_order, status_filter):
         return reason == '退款处理中，暂停备货'
     if status_filter == 'refunded':
         return reason == '已退款，停止备货'
+    if status_filter == 'unpaid':
+        return reason == '待付款，暂不备货'
     if status_filter in ('10', '20', '30'):
         return supplier_order.status == int(status_filter) and reason is None
     if status_filter == '40':
