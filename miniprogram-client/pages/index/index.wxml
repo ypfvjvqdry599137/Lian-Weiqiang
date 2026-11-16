@@ -33,7 +33,7 @@
         <text class="banner-text">新鲜直达 品质保证</text>
       </view>
     </swiper-item>
-    <swiper-item>
+    <swiper-item wx:if="{{flashProducts.length > 0}}">
       <view class="banner-item banner-2">
         <text class="banner-text">限时特惠 先到先得</text>
       </view>
@@ -77,6 +77,7 @@
           <view class="flash-price">
             <text class="price">￥{{item.price}}</text>
             <text class="unit">/ {{item.unit}}</text>
+            <text class="original-price">￥{{item.original_price}}</text>
           </view>
         </view>
       </view>

@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app, g
 from decimal import Decimal, ROUND_CEILING
+from decimal import InvalidOperation
 import random
 import string
 from datetime import datetime, timezone
@@ -7,6 +8,7 @@ import math
 from extensions import db
 from product_features import normalize_text, normalize_processing_options, product_feature_payload
 from product_images import thumbnail_url
+from promotions import effective_product_price, flash_payload
 from supplier_helpers import supplier_serves_zone
 from auth import CLIENT_TOKEN_AGE, issue_token, read_token, token_binding
 from sqlalchemy.exc import IntegrityError
@@ -319,6 +321,7 @@ def get_products():
         has_more = len(products) > page_size
         products = products[:page_size]
     result = []
+    pricing_time = datetime.utcnow()
     for product in products:
         available_stock = 0
         if product.stock:
@@ -330,8 +333,9 @@ def get_products():
             'description': product.description,
             'category_id': product.category_id,
             'category_name': product.category.name if product.category else None,
-            'price': str(product.price),
-            'original_price': str(product.original_price) if product.original_price else None,
+            'price': str(effective_product_price(product, pricing_time)),
+            'original_price': str(product.price) if flash_payload(product, pricing_time)['flash_active'] else (str(product.original_price) if product.original_price else None),
+            **flash_payload(product, pricing_time),
             'image_url': product.image_url,
             'thumbnail_url': thumbnail_url(product.image_url),
             'unit': product.unit,
@@ -351,6 +355,7 @@ def get_product_detail(product_id):
     available_stock = 0
     if product.stock:
         available_stock = product.stock.total_stock - product.stock.lock_stock
+    pricing_time = datetime.utcnow()
     
     return jsonify({
         'id': product.id,
@@ -358,8 +363,9 @@ def get_product_detail(product_id):
         'description': product.description,
         'category_id': product.category_id,
         'category_name': product.category.name if product.category else None,
-        'price': str(product.price),
-        'original_price': str(product.original_price) if product.original_price else None,
+        'price': str(effective_product_price(product, pricing_time)),
+        'original_price': str(product.price) if flash_payload(product, pricing_time)['flash_active'] else (str(product.original_price) if product.original_price else None),
+        **flash_payload(product, pricing_time),
         'image_url': product.image_url,
         'images': product.images,
         'unit': product.unit,
@@ -381,13 +387,15 @@ def get_cart():
     
     result = []
     total_price = Decimal('0.00')
+    pricing_time = datetime.utcnow()
     
     for item in cart_items:
         product = item.product
         if not product or not product.is_active:
             continue
         
-        item_price = product.price * item.quantity
+        effective_price = effective_product_price(product, pricing_time)
+        item_price = effective_price * item.quantity
         total_price += item_price
         
         result.append({
@@ -395,7 +403,7 @@ def get_cart():
             'product_id': product.id,
             'product_name': product.name,
             'product_image': product.image_url,
-            'price': str(product.price),
+            'price': str(effective_price),
             'unit': product.unit,
             'quantity': item.quantity,
             'processing_option': item.processing_option,
@@ -583,6 +591,7 @@ def create_order():
     # 计算总金额并检查库存
     total_amount = Decimal('0.00')
     order_items_data = []
+    pricing_time = datetime.utcnow()
     
     for item in cart_items:
         product = item.product
@@ -595,11 +604,13 @@ def create_order():
             if item.quantity > available:
                 return jsonify({'message': f'{product.name} 库存不足'}), 400
         
-        item_total = product.price * item.quantity
+        effective_price = effective_product_price(product, pricing_time)
+        item_total = effective_price * item.quantity
         total_amount += item_total
         
         order_items_data.append({
             'product': product,
+            'price': effective_price,
             'quantity': item.quantity,
             'processing_option': item.processing_option
         })
@@ -610,6 +621,13 @@ def create_order():
     # 计算最终金额（含配送费）
     delivery_fee = zone.delivery_fee
     final_amount = total_amount + delivery_fee
+    if data.get('expected_total_amount') is not None:
+        try:
+            expected_total = Decimal(str(data['expected_total_amount']))
+        except (InvalidOperation, ValueError, TypeError):
+            return jsonify({'message': '预览金额格式不正确'}), 400
+        if not expected_total.is_finite() or expected_total != final_amount:
+            return jsonify({'message': '商品价格已变化，请刷新结算页确认后再下单'}), 409
     
     # 创建订单
     order_sn = generate_order_sn()
@@ -642,7 +660,7 @@ def create_order():
             product_id=product.id,
             product_name=product.name,
             product_image=product.image_url,
-            price=product.price,
+            price=item_data['price'],
             quantity=quantity,
             unit=product.unit,
             processing_option=item_data.get('processing_option'),

@@ -11,13 +11,17 @@ from pathlib import Path
 from uuid import uuid4
 from extensions import db
 from product_features import normalize_text, product_feature_payload, serialize_processing_options
+from promotions import apply_flash_payload, flash_payload
 from status_utils import (
     display_order_status,
     get_order_status_text,
+    manual_refund_status_text,
     get_supplier_order_status_text,
     has_refund_hold,
     latest_manual_refund,
     serialize_manual_refund,
+    supplier_order_block_reason,
+    supplier_order_matches_filter,
     sync_order_status_after_supplier_update,
 )
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -887,15 +891,14 @@ def get_all_supplier_orders():
                 query = query.filter(OrderMaster.zone_id.is_(None))
             elif zone_id_filter.isdigit():
                 query = query.filter(OrderMaster.zone_id == int(zone_id_filter))
-        if include_status and status_filter and status_filter.isdigit():
-            query = query.filter(SupplierOrder.status == int(status_filter))
         return query
 
     query = apply_filters(SupplierOrder.query)
-    orders = query.order_by(SupplierOrder.created_at.desc()).all()
+    orders = [so for so in query.order_by(SupplierOrder.created_at.desc()).all()
+              if supplier_order_matches_filter(so, status_filter)]
     summary_query = apply_filters(SupplierOrder.query, include_status=False)
     summary_orders = summary_query.all()
-    today_orders = [so for so in summary_orders if so.status != 40 and is_today(so.created_at)]
+    today_orders = [so for so in summary_orders if so.status != 40 and not supplier_order_block_reason(so.order) and is_today(so.created_at)]
     supplier_totals = {}
     for so in today_orders:
         sid = so.supplier_id
@@ -909,7 +912,8 @@ def get_all_supplier_orders():
 
     output = []
     for so in orders:
-        status_text = get_supplier_order_status_text(so.status)
+        block_reason = supplier_order_block_reason(so.order)
+        status_text = block_reason or get_supplier_order_status_text(so.status)
 
         
         items_output = []
@@ -939,6 +943,8 @@ def get_all_supplier_orders():
             'station_address': so.order.zone.station.address if (so.order and so.order.zone and so.order.zone.station) else None,
             'status': so.status,
             'status_text': status_text,
+            'fulfillment_notice': block_reason,
+            'can_prepare': not block_reason and so.status in (10, 20),
             'notes': so.notes,
             'items': items_output,
             'total_cost': str(get_supplier_order_total(so)),
@@ -974,7 +980,7 @@ def update_supplier_order_status(order_id):
         new_status = None
     if new_status not in [10, 20, 30, 40]:
         return jsonify({"message": "无效的备货单状态"}), 400
-    if new_status != 40 and has_refund_hold(order):
+    if new_status != 40 and supplier_order_block_reason(order):
         return jsonify({'message': '订单正在退款核验中，不能推进备货'}), 409
     
     so.status = new_status
@@ -1312,9 +1318,13 @@ def get_all_orders():
     output = []
     for order in orders:
         display_status = display_order_status(order)
-        if requested_status is not None and display_status != requested_status:
+        refund_paused = display_status != 70 and has_refund_hold(order)
+        if status_filter == 'after_sale':
+            if display_status != 70 and not refund_paused:
+                continue
+        elif requested_status is not None and (display_status != requested_status or refund_paused):
             continue
-        status_text = get_order_status_text(display_status)
+        status_text = ('售后暂停' if refund_paused else get_order_status_text(display_status))
         refund = latest_manual_refund(order)
 
         
@@ -1339,6 +1349,7 @@ def get_all_orders():
             'has_fulfillment_issue': any(issue.status == 10 for issue in (order.fulfillment_issues or [])),
             'order_status': order.order_status,
             'display_status': display_status,
+            'fulfillment_notice': (manual_refund_status_text(order) or '退款处理中，暂停配货') if refund_paused else None,
             'refund_summary': serialize_manual_refund(refund) if refund else None,
             'can_request_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
                                   and not order.refund_status and not has_refund_hold(order),
@@ -1839,6 +1850,10 @@ def create_product():
         is_recommend=data.get('is_recommend', False),
         sort_order=data.get('sort_order', 0)
     )
+    try:
+        apply_flash_payload(product, data)
+    except ValueError as exc:
+        return jsonify({'message': str(exc)}), 400
     db.session.add(product)
     db.session.flush()
 
@@ -1880,6 +1895,7 @@ def get_products():
             'category_name': product.category.name if product.category else None,
             'price': str(product.price),
             'original_price': str(product.original_price) if product.original_price else None,
+            **flash_payload(product),
             'image_url': product.image_url,
             'unit': product.unit,
             'is_active': product.is_active,
@@ -1904,6 +1920,7 @@ def get_product(product_id):
         'category_id': product.category_id,
         'price': str(product.price),
         'original_price': str(product.original_price) if product.original_price else None,
+        **flash_payload(product),
         'image_url': product.image_url,
         'images': product.images,
         'unit': product.unit,
@@ -1932,6 +1949,10 @@ def update_product(product_id):
         product.price = Decimal(str(data['price'])) if data['price'] is not None else None
     if 'original_price' in data:
         product.original_price = Decimal(str(data['original_price'])) if data['original_price'] is not None else None
+    try:
+        apply_flash_payload(product, data)
+    except ValueError as exc:
+        return jsonify({'message': str(exc)}), 400
     product.image_url = data.get('image_url', product.image_url)
     product.images = data.get('images', product.images)
     product.unit = data.get('unit', product.unit)

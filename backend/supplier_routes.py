@@ -9,6 +9,8 @@ from status_utils import (
     get_order_status_text,
     get_supplier_order_status_text,
     has_refund_hold,
+    supplier_order_block_reason,
+    supplier_order_matches_filter,
     sync_order_status_after_supplier_update,
 )
 
@@ -162,15 +164,14 @@ def get_supplier_orders():
         return jsonify({'message': '未授权'}), 401
 
     query = SupplierOrder.query.filter_by(supplier_id=supplier_id)
-    if status_filter and status_filter.isdigit():
-        query = query.filter_by(status=int(status_filter))
-        
-    orders = query.order_by(SupplierOrder.created_at.desc()).all()
+    orders = [so for so in query.order_by(SupplierOrder.created_at.desc()).all()
+              if supplier_order_matches_filter(so, status_filter)]
     summary_orders = SupplierOrder.query.filter_by(supplier_id=supplier_id).all()
-    today_orders = [so for so in summary_orders if so.status != 40 and is_today(so.created_at)]
+    today_orders = [so for so in summary_orders if so.status != 40 and not supplier_order_block_reason(so.order) and is_today(so.created_at)]
     output = []
     for so in orders:
-        status_text = get_supplier_order_status_text(so.status)
+        block_reason = supplier_order_block_reason(so.order)
+        status_text = block_reason or get_supplier_order_status_text(so.status)
 
         
         items_output = []
@@ -199,6 +200,8 @@ def get_supplier_orders():
             'station_name': so.order.zone.station.station_name if (so.order and so.order.zone and so.order.zone.station) else None,
             'status': so.status,
             'status_text': status_text,
+            'fulfillment_notice': block_reason,
+            'can_prepare': not block_reason and so.status in (10, 20),
             'notes': so.notes,
             'items': items_output,
             'total_cost': str(get_supplier_order_total(so)),
@@ -223,7 +226,7 @@ def update_supplier_order_status(order_id):
 
     so = SupplierOrder.query.filter_by(id=order_id, supplier_id=supplier_id).first_or_404()
     order = OrderMaster.query.filter_by(order_sn=so.order_sn).populate_existing().with_for_update().first_or_404()
-    if has_refund_hold(order):
+    if supplier_order_block_reason(order):
         return jsonify({'message': '订单正在退款核验中，不能推进备货'}), 409
     data = request.get_json()
     
@@ -302,6 +305,8 @@ def get_supplier_settlement():
         'completed_count': 0,
         'pending_count': 0,
         'canceled_count': 0,
+        'on_hold_count': 0,
+        'refunded_count': 0,
         'total_cost': Decimal('0'),
         'payable_total': Decimal('0'),
         'pending_total': Decimal('0'),
@@ -312,6 +317,7 @@ def get_supplier_settlement():
 
     for order in orders:
         order_total = get_supplier_order_total(order)
+        block_reason = supplier_order_block_reason(order.order)
         created_at = to_business_datetime(order.created_at)
         day_key = created_at.strftime('%Y-%m-%d')
         daily = daily_totals.setdefault(day_key, {
@@ -325,7 +331,12 @@ def get_supplier_settlement():
         })
 
         daily['order_count'] += 1
-        if order.status == 30:
+        if block_reason and order.status in (10, 20, 30):
+            if block_reason.startswith('已退款'):
+                summary['refunded_count'] += 1
+            else:
+                summary['on_hold_count'] += 1
+        elif order.status == 30:
             summary['completed_count'] += 1
             summary['payable_total'] += order_total
             summary['total_cost'] += order_total
@@ -354,7 +365,7 @@ def get_supplier_settlement():
                 'total_price': str(item_total)
             })
 
-        status_text = get_supplier_order_status_text(order.status)
+        status_text = block_reason or get_supplier_order_status_text(order.status)
 
 
         orders_output.append({
@@ -367,6 +378,7 @@ def get_supplier_settlement():
             'status': order.status,
             'status_text': status_text,
             'total_cost': str(order_total),
+            'fulfillment_notice': block_reason,
             'items': items_output,
             'created_at': created_at.strftime('%Y-%m-%d %H:%M:%S')
         })

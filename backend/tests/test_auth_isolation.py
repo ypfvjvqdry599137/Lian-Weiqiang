@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -650,6 +651,17 @@ class AuthIsolationTestCase(unittest.TestCase):
                                           json={'username': supplier.username, 'password': 'supplier-test-password'})
         supplier_headers = {'Authorization': f"Bearer {supplier_token.get_json()['token']}"}
         supplier_path = f'/supplier/orders/{supplier_order.id}/status?supplier_id={supplier.id}'
+        supplier_list = f'/supplier/orders?supplier_id={supplier.id}'
+        self.assertEqual(self.client.get(supplier_list + '&status=10', headers=supplier_headers).get_json()['supplier_orders'], [])
+        paused = self.client.get(supplier_list + '&status=paused', headers=supplier_headers).get_json()['supplier_orders']
+        self.assertEqual(paused[0]['status_text'], '退款处理中，暂停备货')
+        self.assertFalse(paused[0]['can_prepare'])
+        self.assertEqual(self.client.get('/admin/orders?status=20', headers=headers).get_json()['orders'], [])
+        after_sale = self.client.get('/admin/orders?status=after_sale', headers=headers).get_json()['orders']
+        self.assertEqual(after_sale[0]['status_text'], '售后暂停')
+        self.assertTrue(after_sale[0]['fulfillment_notice'])
+        self.assertEqual(self.client.get('/admin/supplier-orders?status=10', headers=headers).get_json()['supplier_orders'], [])
+        self.assertEqual(len(self.client.get('/admin/supplier-orders?status=paused', headers=headers).get_json()['supplier_orders']), 1)
         self.assertEqual(self.client.put(supplier_path, headers=supplier_headers,
                                          json={'status': 20}).status_code, 409)
         self.assertEqual(self.client.put(f'/admin/supplier-orders/{supplier_order.id}/status', headers=headers,
@@ -663,6 +675,87 @@ class AuthIsolationTestCase(unittest.TestCase):
                                               headers=headers, json={'out_refund_no': 'REFUND_ORDER_A'}).status_code, 200)
         self.assertEqual(self.client.put(supplier_path, headers=supplier_headers,
                                          json={'status': 20}).status_code, 200)
+
+    def test_successful_refund_is_separate_from_supplier_preparation(self):
+        headers = self._paid_admin_headers()
+        supplier = Supplier(name='退款供应商', username='refunded-supplier', password='supplier-password', is_active=True, is_deleted=False)
+        db.session.add(supplier)
+        db.session.flush()
+        db.session.add(SupplierOrder(order_sn=self.order.order_sn, supplier_id=supplier.id, status=10))
+        db.session.add(ManualRefund(order_sn=self.order.order_sn, transaction_id='wechat-transaction-id',
+                                    order_total_fen=1600, refund_fen=1600, status='SUCCESS'))
+        db.session.commit()
+        login = self.client.post('/supplier/login', json={'username': supplier.username, 'password': 'supplier-password'}).get_json()
+        supplier_headers = {'Authorization': f"Bearer {login['token']}"}
+        path = f'/supplier/orders?supplier_id={supplier.id}'
+        self.assertEqual(self.client.get(path + '&status=10', headers=supplier_headers).get_json()['supplier_orders'], [])
+        refunded = self.client.get(path + '&status=refunded', headers=supplier_headers).get_json()['supplier_orders']
+        self.assertEqual(refunded[0]['status_text'], '已退款，停止备货')
+        self.assertFalse(refunded[0]['can_prepare'])
+        settlement = self.client.get(f'/supplier/settlement?supplier_id={supplier.id}',
+                                     headers=supplier_headers).get_json()['summary']
+        self.assertEqual(settlement['pending_count'], 0)
+        self.assertEqual(settlement['refunded_count'], 1)
+        self.assertEqual(self.client.get('/admin/orders?status=20', headers=headers).get_json()['orders'], [])
+        self.assertEqual(self.client.get('/admin/orders?status=after_sale', headers=headers)
+                         .get_json()['orders'][0]['status_text'], '已退款')
+        self.assertEqual(self.client.get('/admin/supplier-orders?status=10', headers=headers).get_json()['supplier_orders'], [])
+        self.assertEqual(self.client.get('/admin/supplier-orders?status=refunded', headers=headers).get_json()['supplier_orders'][0]['status_text'], '已退款，停止备货')
+
+    def test_legacy_refund_success_is_also_removed_from_preparation(self):
+        headers = self._paid_admin_headers()
+        supplier = Supplier(name='历史退款供应商', username='legacy-refund-supplier',
+                            password='supplier-password', is_active=True, is_deleted=False)
+        db.session.add(supplier)
+        db.session.flush()
+        self.order.refund_status = 30
+        db.session.add(SupplierOrder(order_sn=self.order.order_sn, supplier_id=supplier.id, status=10))
+        db.session.commit()
+        self.assertEqual(self.client.get('/admin/orders?status=20', headers=headers).get_json()['orders'], [])
+        self.assertEqual(self.client.get('/admin/orders?status=70', headers=headers)
+                         .get_json()['orders'][0]['status_text'], '已退款')
+        self.assertEqual(self.client.get('/admin/supplier-orders?status=10', headers=headers).get_json()['supplier_orders'], [])
+        self.assertEqual(self.client.get('/admin/supplier-orders?status=refunded', headers=headers)
+                         .get_json()['supplier_orders'][0]['status_text'], '已退款，停止备货')
+
+    def test_flash_sale_price_is_used_by_cart_and_order_snapshot(self):
+        headers = self._paid_admin_headers()
+        now = datetime.now(timezone.utc)
+        window = {
+            'flash_price': '5.00',
+            'flash_start_at': (now - timedelta(hours=1)).isoformat(),
+            'flash_end_at': (now + timedelta(hours=1)).isoformat(),
+        }
+        product_id = self.cart.product_id
+        bad = self.client.put(f'/admin/products/{product_id}', headers=headers,
+                              json={**window, 'flash_price': '9.00'})
+        self.assertEqual(bad.status_code, 400)
+        saved = self.client.put(f'/admin/products/{product_id}', headers=headers, json=window)
+        self.assertEqual(saved.status_code, 200, saved.get_json())
+        listed = self.client.get('/client/products').get_json()['products'][0]
+        self.assertTrue(listed['flash_active'])
+        self.assertEqual(listed['price'], '5.00')
+        cart = self.client.get('/client/cart', headers=self.a).get_json()
+        self.assertEqual(cart['total_price'], '10.00')
+
+        zone = DeliveryZone(zone_name='促销区域', center_lng=Decimal('116.1'), center_lat=Decimal('39.9'), delivery_fee=Decimal('0'))
+        db.session.add(zone)
+        db.session.commit()
+        with patch('client_routes.check_delivery_available', return_value={'available': True, 'zone': zone}):
+            changed = self.client.post('/client/orders', headers=self.a,
+                                       json={'address_id': self.address_id, 'expected_total_amount': '16.00'})
+            self.assertEqual(changed.status_code, 409)
+            placed = self.client.post('/client/orders', headers=self.a,
+                                      json={'address_id': self.address_id, 'expected_total_amount': '10.00'})
+        self.assertEqual(placed.status_code, 201, placed.get_json())
+        self.assertEqual(OrderItem.query.filter_by(order_sn=placed.get_json()['order_sn']).first().price, Decimal('5.00'))
+        expired = {**window,
+                   'flash_start_at': (now - timedelta(hours=3)).isoformat(),
+                   'flash_end_at': (now - timedelta(hours=1)).isoformat()}
+        self.assertEqual(self.client.put(f'/admin/products/{product_id}', headers=headers, json=expired).status_code, 200)
+        detail = self.client.get(f'/client/products/{product_id}').get_json()
+        self.assertFalse(detail['flash_active'])
+        self.assertEqual(detail['price'], '8.00')
 
     def test_admin_can_cancel_supplier_preparation_during_manual_refund(self):
         headers = self._paid_admin_headers()

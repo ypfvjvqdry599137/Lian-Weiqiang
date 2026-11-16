@@ -110,7 +110,7 @@ Page({
       success: (res) => {
         if (res.data && res.data.products) {
           const products = res.data.products;
-          const flashProducts = products.slice(0, 4);
+          const flashProducts = products.filter(product => product.flash_active).slice(0, 4);
           const displayProducts = this.filterProducts(products, this.data.searchKeyword);
           this.setData({
             products: products,

@@ -25,6 +25,8 @@ def latest_manual_refund(order):
 
 
 def display_order_status(order):
+    if order.refund_status == 30:
+        return 70
     if any(refund.status == 'SUCCESS' and refund.refund_fen == refund.order_total_fen
            for refund in order.manual_refunds):
         return 70
@@ -51,6 +53,31 @@ def has_refund_hold(order):
     if order.refund_status in (10, 20, 30):
         return True
     return any(refund.status != 'CLOSED' for refund in order.manual_refunds)
+
+
+def supplier_order_block_reason(order):
+    if not order:
+        return None
+    if display_order_status(order) == 70:
+        return '已退款，停止备货'
+    if order.order_status == 60:
+        return '订单已取消，停止备货'
+    if has_refund_hold(order):
+        return '退款处理中，暂停备货'
+    return None
+
+
+def supplier_order_matches_filter(supplier_order, status_filter):
+    reason = supplier_order_block_reason(supplier_order.order)
+    if status_filter == 'paused':
+        return reason == '退款处理中，暂停备货'
+    if status_filter == 'refunded':
+        return reason == '已退款，停止备货'
+    if status_filter in ('10', '20', '30'):
+        return supplier_order.status == int(status_filter) and reason is None
+    if status_filter == '40':
+        return supplier_order.status == 40 or reason == '订单已取消，停止备货'
+    return True
 
 
 def serialize_manual_refund(refund):

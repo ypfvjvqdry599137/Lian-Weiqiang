@@ -443,7 +443,7 @@ function renderStatusOptions(options, currentValue) {
 }
 
 function renderOrderStatusSelect(order) {
-    if (order.display_status === 70) {
+    if (order.display_status === 70 || order.fulfillment_notice) {
         return `
             <div class="status-control">
                 <span>订单状态</span>
@@ -463,6 +463,9 @@ function renderOrderStatusSelect(order) {
 }
 
 function renderSupplierOrderStatusSelect(order) {
+    if (order.fulfillment_notice) {
+        return `<span class="status-note">${escapeHtml(order.fulfillment_notice)}</span>`;
+    }
     return `
         <label class="status-control">
             <span>备货状态</span>
@@ -513,6 +516,9 @@ async function renderPage() {
             break;
         case 'products':
             await loadProducts();
+            break;
+        case 'flash-sales':
+            await loadFlashSales();
             break;
         case 'categories':
             await loadCategories();
@@ -611,6 +617,7 @@ async function loadProducts() {
                     '<h4>' + escapeHtml(product.name) + '</h4>' +
                     '<p>' + escapeHtml(product.description || '无描述') + '</p>' +
                     '<p class="price">¥' + escapeHtml(product.price) + ' / ' + escapeHtml(product.unit) + '</p>' +
+                    (product.flash_price ? '<p>限时特惠：¥' + escapeHtml(product.flash_price) + '，' + escapeHtml(product.flash_active ? '进行中' : '未开始或已结束') + '</p>' : '') +
                     ((product.is_preorder || product.has_processing_options)
                         ? '<p>' +
                             (product.is_preorder ? '预定商品' : '') +
@@ -630,6 +637,29 @@ async function loadProducts() {
         });
     }
     syncProductSelection();
+}
+
+async function loadFlashSales() {
+    const list = document.getElementById('flash-sales-list');
+    const data = await fetchData('/admin/products?is_active=true');
+    if (!data || !Array.isArray(data.products)) {
+        list.textContent = '商品加载失败，请稍后重试';
+        return;
+    }
+    list.innerHTML = '';
+    data.products.forEach(product => {
+        const card = document.createElement('div');
+        card.className = 'data-card';
+        const state = !product.flash_price ? '未设置' : product.flash_active ? '进行中' :
+            (new Date(product.flash_start_at) > new Date() ? '未开始' : '已结束');
+        card.innerHTML = `<div class="data-card-content">
+            <h4>${escapeHtml(product.name)}</h4>
+            <p>平时售价：¥${escapeHtml(product.price)}；特惠价：${product.flash_price ? '¥' + escapeHtml(product.flash_price) : '未设置'}；${state}</p>
+            ${product.flash_price ? `<p>活动：${escapeHtml(formatDate(product.flash_start_at))} 至 ${escapeHtml(formatDate(product.flash_end_at))}</p>` : ''}
+        </div><div class="data-card-actions"><button type="button" class="btn btn-sm btn-success" onclick="showProductModal(${product.id})">设置特惠</button></div>`;
+        list.appendChild(card);
+    });
+    if (!data.products.length) list.textContent = '暂无在售商品';
 }
 
 function updateProductImagePreview(url) {
@@ -766,6 +796,7 @@ async function showProductModal(productId = null) {
     const title = document.getElementById('product-modal-title');
     const form = document.getElementById('product-form');
     form.reset();
+    toggleProductFlashFields();
     document.getElementById('product-id').value = '';
     document.getElementById('product-recommend').checked = false;
     document.getElementById('product-active').checked = true;
@@ -787,6 +818,11 @@ async function showProductModal(productId = null) {
             document.getElementById('product-category-id').value = product.category_id;
             document.getElementById('product-price').value = product.price;
             document.getElementById('product-original-price').value = product.original_price;
+            document.getElementById('product-flash-enabled').checked = product.flash_price !== null;
+            document.getElementById('product-flash-price').value = product.flash_price || '';
+            document.getElementById('product-flash-start').value = toLocalDateTimeInput(product.flash_start_at);
+            document.getElementById('product-flash-end').value = toLocalDateTimeInput(product.flash_end_at);
+            toggleProductFlashFields();
             document.getElementById('product-image').value = product.image_url;
             updateProductImagePreview(product.image_url);
             document.getElementById('product-unit').value = product.unit;
@@ -807,6 +843,21 @@ async function showProductModal(productId = null) {
 document.getElementById('product-image').addEventListener('input', function() {
     updateProductImagePreview(this.value);
 });
+
+function toLocalDateTimeInput(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+}
+
+function toggleProductFlashFields() {
+    const enabled = document.getElementById('product-flash-enabled').checked;
+    document.getElementById('product-flash-fields').style.display = enabled ? '' : 'none';
+    ['product-flash-price', 'product-flash-start', 'product-flash-end'].forEach(id => {
+        document.getElementById(id).required = enabled;
+    });
+}
 
 document.getElementById('product-form').addEventListener('submit', async function(event) {
     event.preventDefault();
@@ -829,12 +880,20 @@ document.getElementById('product-form').addEventListener('submit', async functio
         is_recommend: document.getElementById('product-recommend').checked,
         is_active: document.getElementById('product-active').checked,
     };
+    if (document.getElementById('product-flash-enabled').checked) {
+        data.flash_price = document.getElementById('product-flash-price').value;
+        data.flash_start_at = new Date(document.getElementById('product-flash-start').value).toISOString();
+        data.flash_end_at = new Date(document.getElementById('product-flash-end').value).toISOString();
+    } else {
+        data.flash_price = data.flash_start_at = data.flash_end_at = null;
+    }
 
     const result = await fetchData(url, method, data);
     if (result) {
         alert('商品保存成功！');
         closeModal('product-modal');
-        await loadProducts();
+        if (currentPage === 'flash-sales') await loadFlashSales();
+        else await loadProducts();
         await loadDashboardStats();
     }
 });
@@ -1122,6 +1181,7 @@ async function loadOrders() {
         ordersData.orders.forEach(order => {
             const card = document.createElement('div');
             card.classList.add('data-card', `status-${order.display_status}`);
+            if (order.fulfillment_notice) card.classList.add('status-after-sale');
             const orderSnArg = escapeHtml(JSON.stringify(order.order_sn));
             const amountArg = escapeHtml(JSON.stringify(String(order.final_amount)));
             const refund = order.refund_summary;
@@ -1139,6 +1199,7 @@ async function loadOrders() {
             card.innerHTML = `
                 <div class="data-card-content">
                     <h4>订单号: ${escapeHtml(order.order_sn)} <span style="float:right;color:#666;">${escapeHtml(order.status_text)}</span></h4>
+                    ${order.fulfillment_notice ? `<p class="refund-warning">${escapeHtml(order.fulfillment_notice)}</p>` : ''}
                     <p>配送区域: ${escapeHtml(order.zone_name || order.zone_id || '未分配')} | 总金额: ¥${escapeHtml(order.total_amount)} | 配送费: ¥${escapeHtml(order.delivery_fee)} | 实付: ${formatCurrency(order.final_amount)}</p>
                     <p>收货人: ${escapeHtml(order.receiver_name)} | 电话: ${escapeHtml(order.receiver_phone)}</p>
                     <p>收货地址: ${escapeHtml(order.receiver_address)}</p>
@@ -1917,7 +1978,7 @@ function openSupplierOrdersForZone(zoneFilterValue) {
 }
 // ==================== 供应商备货单管理 (Supplier Orders) ====================
 
-let currentSupplierOrderStatusFilter = 'all';
+let currentSupplierOrderStatusFilter = '10';
 let currentSupplierOrderZoneFilter = 'all';
 
 document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(tab => {
@@ -1987,12 +2048,14 @@ async function loadSupplierOrders() {
         ordersData.supplier_orders.forEach(order => {
             const card = document.createElement('div');
             card.classList.add('data-card', `status-${order.status}`);
+            if (order.fulfillment_notice) card.classList.add('status-after-sale');
             const itemsHtml = order.items ? order.items.map(item => `
                 <p>${escapeHtml(item.ingredient_name)} x ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
             `).join('') : '';
             card.innerHTML = `
                 <div class="data-card-content">
-                    <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
+                    <h4>备货单 #${order.id} <span style="float:right;color:#666;">${escapeHtml(order.status_text)}</span></h4>
+                    ${order.fulfillment_notice ? `<p class="refund-warning">${escapeHtml(order.fulfillment_notice)}</p>` : ''}
                     <p>关联订单号: ${escapeHtml(order.order_sn)}</p>
                     <p>供应商: ${escapeHtml(order.supplier_name || '未知')} | 备货区域: ${escapeHtml(formatZoneName(order.zone_name))}</p>
                     <p>材料费用: ${formatCurrency(order.total_cost)}</p>

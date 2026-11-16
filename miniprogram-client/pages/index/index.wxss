@@ -272,6 +272,20 @@
   color: #666;
 }
 
+.flash-price .original-price {
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  color: #999;
+  text-decoration: line-through;
+}
+
+.flash-price .original-price {
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  color: #999;
+  text-decoration: line-through;
+}
+
 /* 商品网格 */
 .product-grid {
   display: flex;

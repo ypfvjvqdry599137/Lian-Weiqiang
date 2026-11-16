@@ -15,6 +15,20 @@ describe('首页 - 分类区域', () => {
     page = loadPage('pages/index/index');
   });
 
+  test('首页限时特惠只显示活动中的商品', () => {
+    const app = getApp();
+    const requestSpy = jest.spyOn(app, 'request').mockImplementation(options => {
+      options.success({ data: { products: [
+        { id: 1, name: '普通青菜', flash_active: false },
+        { id: 2, name: '活动番茄', flash_active: true },
+        { id: 3, name: '已过期白菜', flash_active: false }
+      ] } });
+    });
+    page.loadProducts();
+    expect(page.data.flashProducts.map(product => product.id)).toEqual([2]);
+    requestSpy.mockRestore();
+  });
+
   describe('category icons', () => {
     test('每个分类项含有完整的图片图标元数据', () => {
       expect(page.data.quickNavItems).toHaveLength(6);

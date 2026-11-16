@@ -172,6 +172,7 @@ Page({
         receiver_name: this.data.selectedAddress.receiver_name,
         receiver_phone: this.data.selectedAddress.receiver_phone,
         receiver_address: this.data.selectedAddress.address,
+        expected_total_amount: this.data.finalPrice,
         remark: this.data.remark
       },
       success: (res) => {
@@ -193,9 +194,9 @@ Page({
           });
         }
       },
-      fail: () => {
+      fail: (error) => {
         wx.hideLoading();
-        wx.showToast({ title: '订单提交失败', icon: 'none' });
+        if (error && error.statusCode === 409) this.loadCart();
       }
     });
   },

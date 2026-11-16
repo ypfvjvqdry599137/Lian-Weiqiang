@@ -24,6 +24,7 @@
                 <li class="menu-item" data-page="suppliers">4. 供应商管理</li>
                 <li class="menu-item" data-page="ingredients">5. 原料管理</li>
                 <li class="menu-item" data-page="products">6. 商品管理</li>
+                <li class="menu-item" data-page="flash-sales">限时特惠管理</li>
                 <li class="menu-item" data-page="zone-supply-rules">7. 配送站供货规则</li>
                 <li class="menu-item active" data-page="orders">订单管理</li>
                 <li class="menu-item" data-page="supplier-orders">供应商备货单</li>
@@ -70,6 +71,15 @@
                     <span class="product-bulk-hint">删除仅下架商品，不影响历史订单和已上传图片</span>
                 </div>
                 <div id="products-list" class="data-list"></div>
+            </div>
+
+            <div id="page-flash-sales" class="page">
+                <div class="page-header">
+                    <h2>限时特惠管理</h2>
+                    <button class="btn btn-primary" type="button" onclick="showProductModal()">添加商品并设置特惠</button>
+                </div>
+                <p class="form-help">点击商品“设置特惠”，在编辑窗口填写特惠价和活动起止时间。未到开始时间或已结束的活动不会展示在小程序限时特惠区。</p>
+                <div id="flash-sales-list" class="data-list"></div>
             </div>
 
             <!-- 分类管理 -->
@@ -201,10 +211,12 @@
             <div id="page-supplier-orders" class="page">
                 <h2>📋 供应商备货单</h2>
                 <div class="tabs">
-                    <button class="tab active" data-status="all">全部</button>
-                    <button class="tab" data-status="10">待备货</button>
+                    <button class="tab" data-status="all">全部</button>
+                    <button class="tab active" data-status="10">待备货</button>
                     <button class="tab" data-status="20">备货中</button>
                     <button class="tab" data-status="30">已完成</button>
+                    <button class="tab" data-status="paused">售后暂停</button>
+                    <button class="tab" data-status="refunded">已退款</button>
                 </div>
                 <div class="settlement-controls" style="margin-bottom:15px;">
                     <select id="supplier-order-zone-filter"><option value="all">全部区域</option></select>
@@ -224,6 +236,7 @@
                     <button class="tab" data-status="30">配送中</button>
                     <button class="tab" data-status="40">已送达</button>
                     <button class="tab" data-status="50">已完成</button>
+                    <button class="tab" data-status="after_sale">售后/退款</button>
                     <button class="tab" data-status="60">已取消</button>
                     <button class="tab" data-status="70">已退款</button>
                 </div>
@@ -283,6 +296,16 @@
                 <div class="form-group">
                     <label>原价</label>
                     <input type="number" step="0.01" id="product-original-price">
+                </div>
+                <div class="form-group checkbox">
+                    <input type="checkbox" id="product-flash-enabled" onchange="toggleProductFlashFields()">
+                    <label>加入首页限时特惠</label>
+                </div>
+                <div id="product-flash-fields" style="display:none;">
+                    <div class="form-group"><label>特惠价（元）</label><input type="number" min="0.01" step="0.01" id="product-flash-price"></div>
+                    <div class="form-group"><label>开始时间</label><input type="datetime-local" id="product-flash-start"></div>
+                    <div class="form-group"><label>结束时间</label><input type="datetime-local" id="product-flash-end"></div>
+                    <p class="form-help">按本机时间填写；活动期间商品详情、购物车和下单使用特惠价。到期自动恢复售价。</p>
                 </div>
                 <div class="form-group">
                     <label>图片URL</label>

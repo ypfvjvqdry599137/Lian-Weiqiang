@@ -29,10 +29,12 @@
             <div id="page-supplier-orders" class="page active">
                 <h2>📋 备货单管理</h2>
                 <div class="tabs">
-                    <button class="tab active" data-status="all">全部</button>
-                    <button class="tab" data-status="10">待备货</button>
+                    <button class="tab" data-status="all">全部</button>
+                    <button class="tab active" data-status="10">待备货</button>
                     <button class="tab" data-status="20">备货中</button>
                     <button class="tab" data-status="30">已完成</button>
+                    <button class="tab" data-status="paused">售后暂停</button>
+                    <button class="tab" data-status="refunded">已退款</button>
                     <button class="tab" data-status="40">已取消</button>
                 </div>
                 <div id="supplier-orders-summary" class="stats" style="margin-bottom: 20px;"></div>
@@ -237,7 +239,7 @@
 
         // ==================== 备货单管理 ====================
 
-        let currentSupplierOrderStatusFilter = 'all';
+        let currentSupplierOrderStatusFilter = '10';
 
         document.querySelectorAll('#page-supplier-orders .tabs .tab').forEach(tab => {
             tab.addEventListener('click', function() {
@@ -292,12 +294,14 @@
                 ordersData.supplier_orders.forEach(order => {
                     const card = document.createElement('div');
                     card.classList.add('data-card', `status-${order.status}`);
+                    if (order.fulfillment_notice) card.classList.add('status-after-sale');
                     const itemsHtml = order.items ? order.items.map(item => `
                         <p>${item.ingredient_name} x ${item.quantity} ${item.unit} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
                     `).join('') : '';
                     card.innerHTML = `
                         <div class="data-card-content">
-                            <h4>备货单 #${order.id} <span style="float:right;color:#666;">${getSupplierOrderStatusText(order.status)}</span></h4>
+                            <h4>备货单 #${order.id} <span style="float:right;color:#666;">${order.status_text}</span></h4>
+                            ${order.fulfillment_notice ? `<p class="refund-warning">${order.fulfillment_notice}</p>` : ''}
                             <p>关联订单号: ${order.order_sn} | 备货区域: ${formatZoneName(order.zone_name)}</p>
                             <p>材料费用: ${formatCurrency(order.total_cost)}</p>
                             <p>备注: ${order.notes || '无'}</p>
@@ -316,6 +320,9 @@
         }
 
         function renderSupplierOrderActions(order) {
+            if (order.fulfillment_notice) {
+                return `<span class="status-note">${order.fulfillment_notice}</span>`;
+            }
             const status = Number(order.status);
             if (status === 10) {
                 return `
@@ -373,6 +380,10 @@
                     <h3>已完成 / 待确认</h3>
                     <p class="number">${summary.completed_count || 0} / ${summary.pending_count || 0}</p>
                 </div>
+                <div class="stat-card">
+                    <h3>售后待处理 / 已退款</h3>
+                    <p class="number">${summary.on_hold_count || 0} / ${summary.refunded_count || 0}</p>
+                </div>
             `;
         }
 
@@ -410,6 +421,7 @@
             orders.forEach(order => {
                 const card = document.createElement('div');
                 card.classList.add('data-card', `status-${order.status}`);
+                if (order.fulfillment_notice) card.classList.add('status-after-sale');
                 const itemsHtml = order.items ? order.items.map(item => `
                     <p>${item.ingredient_name} x ${item.quantity} ${item.unit} | 单价 ${formatCurrency(item.unit_price)} | 小计 ${formatCurrency(item.total_price)}</p>
                 `).join('') : '';

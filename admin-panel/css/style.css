@@ -509,6 +509,7 @@ h2 {
 .status-50 { border-left-color: #4CAF50; } /* 已完成 */
 .status-60 { border-left-color: #9E9E9E; } /* 已取消 */
 .status-70 { border-left-color: #64748B; } /* 已退款 */
+.status-after-sale { border-left-color: #c45429; }
 
 .map-modal-content {
     max-width: 860px;
