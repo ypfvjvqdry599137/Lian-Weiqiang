@@ -99,6 +99,28 @@ jobs:
             sleep 3
             sudo systemctl status "$SERVICE_NAME" --no-pager
 
+            sudo tee /etc/systemd/system/fresh-produce-refunds.service >/dev/null <<EOF
+            [Unit]
+            Description=Fresh Produce WeChat refund status reconciliation
+            After=network-online.target mysql.service
+            Wants=network-online.target
+
+            [Service]
+            Type=simple
+            User=$(id -un)
+            WorkingDirectory=$PROJECT_DIR/backend
+            ExecStart=$PROJECT_DIR/backend/venv/bin/python $PROJECT_DIR/backend/refund_reconcile_worker.py
+            Restart=on-failure
+            RestartSec=10
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable fresh-produce-refunds.service
+            sudo systemctl restart fresh-produce-refunds.service
+            sudo systemctl is-active fresh-produce-refunds.service
+
             sudo tee /etc/systemd/system/fresh-produce-pushplus.service >/dev/null <<EOF
             [Unit]
             Description=Fresh Produce PushPlus supplier alerts
