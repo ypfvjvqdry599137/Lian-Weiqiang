@@ -512,6 +512,9 @@ async function renderPage() {
         case 'suppliers':
             await loadSuppliers();
             break;
+        case 'push-templates':
+            await loadPushTemplates();
+            break;
         case 'ingredients':
             await loadIngredients();
             break;
@@ -1435,6 +1438,82 @@ async function deleteOrder(orderSn) {
         await loadDashboardStats();
     }
 }
+// ==================== 供应商微信通知模板 ====================
+async function loadPushTemplates() {
+    const list = document.getElementById('push-templates-list');
+    const data = await fetchData('/admin/pushplus/templates', 'GET', null, true);
+    if (!data) return;
+    list.replaceChildren();
+
+    const sample = {
+        order_sn: 'ORD202611170001',
+        supplier_order_id: '123',
+        items: '青菜 2斤、猪肉 1斤',
+        supplier_url: 'https://admin.xianpeiju.site/admin-panel/supplier_login.html'
+    };
+    data.templates.forEach(template => {
+        const card = document.createElement('section');
+        card.className = 'push-template-card';
+        const heading = document.createElement('h3');
+        heading.textContent = template.label;
+        const title = document.createElement('p');
+        title.className = 'form-help';
+        title.textContent = `消息标题：${template.title}`;
+        const label = document.createElement('label');
+        label.textContent = '消息正文';
+        const textarea = document.createElement('textarea');
+        textarea.value = template.content;
+        textarea.maxLength = 1000;
+        textarea.rows = 4;
+        textarea.setAttribute('aria-label', `${template.label}消息正文`);
+        const previewLabel = document.createElement('p');
+        previewLabel.className = 'form-help';
+        previewLabel.textContent = '预览（示例订单）：';
+        const preview = document.createElement('p');
+        preview.className = 'push-template-preview';
+        const updatePreview = () => {
+            const previewValues = {
+                ...sample,
+                reason: template.kind === 'stop' ? '已退款，停止备货' : '退款处理中，暂停备货'
+            };
+            preview.textContent = textarea.value.replace(/\{([a-z_]+)\}/g, (match, key) =>
+                Object.prototype.hasOwnProperty.call(previewValues, key) ? previewValues[key] : match);
+        };
+        textarea.addEventListener('input', updatePreview);
+        updatePreview();
+
+        const actions = document.createElement('div');
+        actions.className = 'push-template-actions';
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'btn btn-primary';
+        save.textContent = '保存内容';
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'btn';
+        reset.textContent = '恢复默认';
+        const status = document.createElement('span');
+        status.className = 'form-help';
+        status.setAttribute('aria-live', 'polite');
+        save.addEventListener('click', async () => {
+            save.disabled = true;
+            const result = await fetchData(`/admin/pushplus/templates/${template.kind}`, 'PUT',
+                { content: textarea.value }, true);
+            save.disabled = false;
+            if (result) status.textContent = result.message;
+        });
+        reset.addEventListener('click', async () => {
+            reset.disabled = true;
+            const result = await fetchData(`/admin/pushplus/templates/${template.kind}`, 'DELETE', null, true);
+            if (result) await loadPushTemplates();
+            else reset.disabled = false;
+        });
+        actions.append(save, reset, status);
+        card.append(heading, title, label, textarea, previewLabel, preview, actions);
+        list.appendChild(card);
+    });
+}
+
 // ==================== 供应商管理 (Suppliers) ====================
 
 async function loadSuppliers() {

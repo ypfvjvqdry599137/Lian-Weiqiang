@@ -11,8 +11,8 @@ from perk_pushplus import HttpResponse, PushPlusClient, PushPlusError
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from extensions import db
-from models import OrderMaster, Supplier, SupplierOrder, SupplierOrderItem, SupplierPushNotice, User
-from pushplus_worker import activation_time, collect_notices, dispatch_one, send_message
+from models import OrderMaster, Supplier, SupplierOrder, SupplierOrderItem, SupplierPushNotice, SupplierPushTemplate, User
+from pushplus_worker import activation_time, collect_notices, dispatch_one, notice_for, send_message
 
 
 class PushplusWorkerTestCase(unittest.TestCase):
@@ -160,7 +160,6 @@ class PushplusWorkerTestCase(unittest.TestCase):
 
     def test_official_sdk_sends_to_supplier_topic(self):
         import json
-        from pushplus_worker import notice_for
 
         class FakeHttp:
             def __init__(self):
@@ -182,6 +181,16 @@ class PushplusWorkerTestCase(unittest.TestCase):
         self.assertEqual(body['topic'], 'vegetables_private')
         self.assertEqual(body['channel'], 'wechat')
         self.assertEqual(body['template'], 'txt')
+
+    def test_custom_template_changes_new_notice_only(self):
+        first = notice_for(self.supplier_order, 'new', 'vegetables_private')
+        self.assertEqual(first.title, '鲜配居：新备货单')
+        db.session.add(SupplierPushTemplate(kind='new', content='订单 {order_sn}：请备货 {items}'))
+        db.session.commit()
+        second = notice_for(self.supplier_order, 'new', 'vegetables_private')
+        self.assertIn('订单 PUSHPLUS_ORDER：请备货 青菜 2.00斤', second.content)
+        self.assertNotEqual(first.content, second.content)
+        self.assertEqual(first.title, second.title)
 
 
 if __name__ == '__main__':

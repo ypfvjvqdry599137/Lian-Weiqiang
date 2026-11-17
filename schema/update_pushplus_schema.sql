@@ -10,3 +10,9 @@ SET @add_pushplus_index = IF(
      AND TABLE_NAME = 'supplier' AND INDEX_NAME = 'uq_supplier_pushplus_topic') = 0,
     'ALTER TABLE supplier ADD UNIQUE INDEX uq_supplier_pushplus_topic (pushplus_topic)', 'SELECT 1');
 PREPARE stmt FROM @add_pushplus_index; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS supplier_push_template (
+    kind VARCHAR(16) NOT NULL PRIMARY KEY,
+    content TEXT NOT NULL,
+    updated_at DATETIME NOT NULL
+);

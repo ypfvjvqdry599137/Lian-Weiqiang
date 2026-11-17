@@ -127,6 +127,33 @@ class SupplierRoutingTestCase(unittest.TestCase):
         self.assertIsNone(self.client.get(f'/admin/suppliers/{supplier_id}', headers=self.headers)
                           .get_json()['pushplus_topic'])
 
+    def test_pushplus_message_templates_are_editable_by_admin(self):
+        url = '/admin/pushplus/templates'
+        self.assertEqual(self.client.get(url).status_code, 401)
+        defaults = self.client.get(url, headers=self.headers)
+        self.assertEqual(defaults.status_code, 200)
+        rows = defaults.get_json()['templates']
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(row['title'].startswith('鲜配居：') for row in rows))
+        self.assertTrue(all(not row['is_custom'] for row in rows))
+
+        edit_url = f'{url}/new'
+        self.assertEqual(self.client.put(edit_url, json={'content': '订单 {order_sn}'}).status_code, 401)
+        for invalid in ('无订单号', '订单 {order_sn.__class__}', '订单 {unknown}', '订单 {order_sn'):
+            response = self.client.put(edit_url, headers=self.headers, json={'content': invalid})
+            self.assertEqual(response.status_code, 400, invalid)
+        custom = '订单 {order_sn} 已付款，备货单 {supplier_order_id}：{items}。'
+        response = self.client.put(edit_url, headers=self.headers, json={'content': custom})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        rows = self.client.get(url, headers=self.headers).get_json()['templates']
+        self.assertEqual(rows[0]['content'], custom)
+        self.assertTrue(rows[0]['is_custom'])
+        self.assertEqual(self.client.delete(edit_url, headers=self.headers).status_code, 200)
+        rows = self.client.get(url, headers=self.headers).get_json()['templates']
+        self.assertFalse(rows[0]['is_custom'])
+        self.assertEqual(self.client.put(f'{url}/wrong', headers=self.headers,
+                                         json={'content': custom}).status_code, 404)
+
     def test_rule_does_not_route_vegetables_to_meat_supplier(self):
         vegetables_id = self.create_supplier('蔬菜供应商', 'vegetable-supplier', self.vegetables.id)
         meat_id = self.create_supplier('肉类供应商', 'meat-supplier', self.meat.id)

@@ -10,6 +10,7 @@ from perk_pushplus import Channel, PushPlusClient, PushPlusError, SendRequest, T
 from app import create_app
 from extensions import db
 from models import OrderMaster, Supplier, SupplierOrder, SupplierPushNotice
+from pushplus_templates import render_notice
 from status_utils import supplier_order_block_reason
 from sqlalchemy import or_
 
@@ -31,16 +32,14 @@ def activation_time(value):
 
 
 def notice_for(supplier_order, kind, topic, reason=None):
-    if kind == 'new':
-        items = '、'.join(f'{item.ingredient_name} {item.quantity}{item.unit}' for item in supplier_order.items[:8])
-        title = '鲜配局：新备货单'
-        content = f'订单 {supplier_order.order_sn} 已付款，请安排备货。备货单 #{supplier_order.id}。{items}。登录核对：{SUPPLIER_URL}'
-    elif kind == 'resume':
-        title = '鲜配局：恢复备货'
-        content = f'订单 {supplier_order.order_sn} 的退款暂停已解除，请登录后台核对后继续备货：{SUPPLIER_URL}'
-    else:
-        title = '鲜配局：暂停备货' if kind == 'hold' else '鲜配局：停止备货'
-        content = f'订单 {supplier_order.order_sn}：{reason}。请立即登录后台核对：{SUPPLIER_URL}'
+    items = '、'.join(f'{item.ingredient_name} {item.quantity}{item.unit}' for item in supplier_order.items[:8])
+    title, content = render_notice(kind, {
+        'order_sn': supplier_order.order_sn,
+        'supplier_order_id': supplier_order.id,
+        'items': items,
+        'reason': reason or '',
+        'supplier_url': SUPPLIER_URL,
+    })
     return SupplierPushNotice(
         supplier_order_id=supplier_order.id, kind=kind, topic=topic,
         title=title, content=content,

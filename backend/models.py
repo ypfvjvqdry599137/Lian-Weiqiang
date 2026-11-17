@@ -155,6 +155,12 @@ class SupplierPushNotice(db.Model):
     supplier_order = db.relationship('SupplierOrder', backref=db.backref('push_notices', lazy=True))
 
 
+class SupplierPushTemplate(db.Model):
+    kind = db.Column(db.String(16), primary_key=True)
+    content = db.Column(db.Text, nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ============================================
 # 供应商备货单项模型
 # ============================================

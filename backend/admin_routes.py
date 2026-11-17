@@ -51,6 +51,40 @@ def normalize_pushplus_topic(value):
     return value.strip()
 
 
+@admin_bp.route('/pushplus/templates', methods=['GET'])
+def get_pushplus_templates():
+    from pushplus_templates import PLACEHOLDERS, template_rows
+
+    return jsonify({'templates': template_rows(), 'placeholders': sorted(PLACEHOLDERS)}), 200
+
+
+@admin_bp.route('/pushplus/templates/<kind>', methods=['PUT', 'DELETE'])
+def update_pushplus_template(kind):
+    from models import SupplierPushTemplate
+    from pushplus_templates import NOTICE_KINDS, validate_template
+
+    if kind not in NOTICE_KINDS:
+        return jsonify({'message': '未知的通知类型'}), 404
+    row = db.session.get(SupplierPushTemplate, kind)
+    if request.method == 'DELETE':
+        if row:
+            db.session.delete(row)
+            db.session.commit()
+        return jsonify({'message': '已恢复默认内容'}), 200
+
+    data = request.get_json(silent=True) or {}
+    try:
+        content = validate_template(kind, data.get('content'))
+    except ValueError as exc:
+        return jsonify({'message': str(exc)}), 400
+    if row is None:
+        db.session.add(SupplierPushTemplate(kind=kind, content=content))
+    else:
+        row.content = content
+    db.session.commit()
+    return jsonify({'message': '已保存，后续生成的通知将使用新内容'}), 200
+
+
 @admin_bp.before_request
 def authenticate_admin():
     if request.endpoint == 'admin.admin_login':

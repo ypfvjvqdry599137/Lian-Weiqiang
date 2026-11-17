@@ -812,8 +812,8 @@ def get_order_detail(order_sn):
 def build_wechat_order_description(order):
     names = [item.product_name for item in order.items if item.product_name]
     if names:
-        return ('鲜配局订单：' + ' / '.join(names[:2]))[:127]
-    return f'鲜配局订单：{order.order_sn}'
+        return ('鲜配居订单：' + ' / '.join(names[:2]))[:127]
+    return f'鲜配居订单：{order.order_sn}'
 
 
 def locked_order(order_sn, user_id=None):

@@ -41,6 +41,7 @@ body {
     background: white;
     border-right: 1px solid #e8e8e8;
     padding: 20px 0;
+    overflow-y: auto;
 }
 
 .menu {
@@ -123,6 +124,62 @@ body {
 
 .page.active {
     display: block;
+}
+
+.push-template-help {
+    margin-bottom: 12px;
+    line-height: 1.6;
+}
+
+.push-template-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr));
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.push-template-card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    min-width: 0;
+}
+
+.push-template-card h3 {
+    margin-bottom: 10px;
+}
+
+.push-template-card label {
+    display: block;
+    margin: 14px 0 8px;
+}
+
+.push-template-card textarea {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    resize: vertical;
+    font: inherit;
+}
+
+.push-template-preview {
+    min-height: 56px;
+    margin: 8px 0 14px;
+    padding: 10px;
+    background: #f4f7f4;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.push-template-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .page-header {

@@ -22,6 +22,7 @@
                 <li class="menu-item" data-page="delivery-zones">配送区域</li>
                 <li class="menu-item" data-page="stations">配送站管理</li>
                 <li class="menu-item" data-page="suppliers">供应商管理</li>
+                <li class="menu-item" data-page="push-templates">供应商通知模板</li>
                 <li class="menu-item" data-page="ingredients">原料管理</li>
                 <li class="menu-item" data-page="products">商品管理</li>
                 <li class="menu-item" data-page="flash-sales">限时特惠管理</li>
@@ -162,6 +163,13 @@
                     <button class="btn btn-primary" onclick="showSupplierModal()">+ 添加供应商</button>
                 </div>
                 <div id="suppliers-list" class="data-list"></div>
+            </div>
+
+            <div id="page-push-templates" class="page">
+                <h2>供应商通知模板</h2>
+                <p class="form-help push-template-help">分别编辑新单、退款暂停、恢复和停止备货的微信消息正文。标题固定使用“鲜配居”；修改只影响保存后新生成的通知，已经排队的消息不会改动。每条内容必须保留 {order_sn}。</p>
+                <p class="form-help push-template-help">可用变量：{order_sn} 订单号、{supplier_order_id} 备货单号、{items} 原料清单、{reason} 暂停或停止原因、{supplier_url} 供应商后台地址。请勿填写顾客姓名、电话或收货地址。</p>
+                <div id="push-templates-list" class="push-template-list"></div>
             </div>
 
             <!-- 原料管理 -->
