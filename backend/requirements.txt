@@ -5,3 +5,4 @@ PyMySQL==1.0.2
 cryptography
 Pillow==11.3.0
 gunicorn==26.2.0
+perk-pushplus-sdk==1.2.5

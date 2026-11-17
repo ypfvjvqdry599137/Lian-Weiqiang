@@ -1,10 +1,11 @@
 """Server-side PushPlus supplier alerts. Run as a single dedicated worker process."""
 
-import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.request import Request, urlopen
+from functools import lru_cache
+
+from perk_pushplus import Channel, PushPlusClient, PushPlusError, SendRequest, Template
 
 from app import create_app
 from extensions import db
@@ -14,7 +15,6 @@ from sqlalchemy import or_
 
 
 LOG = logging.getLogger(__name__)
-SEND_URL = 'https://www.pushplus.plus/send'
 SUPPLIER_URL = 'https://admin.xianpeiju.site/admin-panel/supplier_login.html'
 
 
@@ -92,18 +92,17 @@ def collect_notices(cutoff):
     db.session.commit()
 
 
+@lru_cache(maxsize=1)
+def pushplus_client(token):
+    return (PushPlusClient.builder().token(token)
+            .connect_timeout(5).read_timeout(5).build())
+
+
 def send_message(token, notice):
-    payload = {
-        'token': token, 'title': notice.title, 'content': notice.content,
-        'topic': notice.topic, 'channel': 'wechat', 'template': 'txt',
-    }
-    request = Request(SEND_URL, data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-                      headers={'Content-Type': 'application/json'}, method='POST')
-    with urlopen(request, timeout=5) as response:
-        result = json.load(response)
-    if not isinstance(result, dict):
-        raise ValueError('PushPlus response is not an object')
-    return result
+    return pushplus_client(token).send(SendRequest(
+        title=notice.title, content=notice.content, topic=notice.topic,
+        channel=Channel.WECHAT, template=Template.TXT,
+    ))
 
 
 def dispatch_one(token, now=None):
@@ -146,28 +145,19 @@ def dispatch_one(token, now=None):
 
     notice.attempts += 1
     try:
-        result = send_message(token, notice)
-        if result.get('code') != 200:
-            code = result.get('code')
-            raise PushplusRejected(code, str(result.get('msg') or '请求被拒绝'))
+        short_code = send_message(token, notice)
         notice.status = 'accepted'
-        notice.pushplus_code = str(result.get('data') or '')[:64] or None
+        notice.pushplus_code = str(short_code or '')[:64] or None
         notice.accepted_at = now
         notice.last_error = None
         LOG.info('PushPlus accepted supplier notice %s, receipt %s', notice.id, notice.pushplus_code)
     except Exception as exc:
-        delay = timedelta(hours=24) if isinstance(exc, PushplusRejected) and exc.code in (900, 903, 905) else timedelta(seconds=min(3600, 30 * 2 ** min(notice.attempts, 7)))
+        delay = timedelta(hours=24) if isinstance(exc, PushPlusError) and exc.code in (900, 903, 905) else timedelta(seconds=min(3600, 30 * 2 ** min(notice.attempts, 7)))
         notice.next_attempt_at = now + delay
         notice.last_error = str(exc)[:255]
         LOG.warning('PushPlus supplier notice %s failed: %s', notice.id, type(exc).__name__)
     db.session.commit()
     return True
-
-
-class PushplusRejected(Exception):
-    def __init__(self, code, message):
-        self.code = code
-        super().__init__(f'{code}: {message}')
 
 
 def main():

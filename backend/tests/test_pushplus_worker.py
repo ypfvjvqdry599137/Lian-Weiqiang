@@ -6,12 +6,13 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from flask import Flask
+from perk_pushplus import HttpResponse, PushPlusClient, PushPlusError
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from extensions import db
 from models import OrderMaster, Supplier, SupplierOrder, SupplierOrderItem, SupplierPushNotice, User
-from pushplus_worker import activation_time, collect_notices, dispatch_one
+from pushplus_worker import activation_time, collect_notices, dispatch_one, send_message
 
 
 class PushplusWorkerTestCase(unittest.TestCase):
@@ -63,7 +64,7 @@ class PushplusWorkerTestCase(unittest.TestCase):
         self.assertEqual(notice.topic, 'vegetables_private')
         self.assertNotIn('13900000000', notice.content)
         self.assertNotIn('private delivery address', notice.content)
-        with patch('pushplus_worker.send_message', return_value={'code': 200, 'data': 'receipt-1'}) as send:
+        with patch('pushplus_worker.send_message', return_value='receipt-1') as send:
             self.assertTrue(dispatch_one('secret-token', self.now + timedelta(minutes=1)))
             send.assert_called_once()
         self.assertEqual(notice.status, 'accepted')
@@ -71,7 +72,7 @@ class PushplusWorkerTestCase(unittest.TestCase):
         db.session.commit()
         collect_notices(self.cutoff)
         stop = SupplierPushNotice.query.filter_by(kind='stop').one()
-        with patch('pushplus_worker.send_message', return_value={'code': 200, 'data': 'receipt-2'}):
+        with patch('pushplus_worker.send_message', return_value='receipt-2'):
             self.assertTrue(dispatch_one('secret-token', self.now + timedelta(minutes=2)))
         self.assertEqual(stop.status, 'accepted')
         collect_notices(self.cutoff)
@@ -82,28 +83,28 @@ class PushplusWorkerTestCase(unittest.TestCase):
         self.order.paid_at = self.now
         db.session.commit()
         collect_notices(self.cutoff)
-        with patch('pushplus_worker.send_message', return_value={'code': 200, 'data': 'new'}):
+        with patch('pushplus_worker.send_message', return_value='new'):
             dispatch_one('secret-token', self.now + timedelta(minutes=1))
 
         self.order.refund_status = 10
         db.session.commit()
         collect_notices(self.cutoff)
         self.assertEqual(SupplierPushNotice.query.filter_by(kind='hold').count(), 1)
-        with patch('pushplus_worker.send_message', return_value={'code': 200, 'data': 'hold'}):
+        with patch('pushplus_worker.send_message', return_value='hold'):
             dispatch_one('secret-token', self.now + timedelta(minutes=2))
 
         self.order.refund_status = 0
         db.session.commit()
         collect_notices(self.cutoff)
         self.assertEqual(SupplierPushNotice.query.filter_by(kind='resume').count(), 1)
-        with patch('pushplus_worker.send_message', return_value={'code': 200, 'data': 'resume'}):
+        with patch('pushplus_worker.send_message', return_value='resume'):
             dispatch_one('secret-token', self.now + timedelta(minutes=3))
 
         self.order.refund_status = 30
         db.session.commit()
         collect_notices(self.cutoff)
         self.assertEqual(SupplierPushNotice.query.filter_by(kind='stop').count(), 1)
-        with patch('pushplus_worker.send_message', return_value={'code': 200, 'data': 'stop'}):
+        with patch('pushplus_worker.send_message', return_value='stop'):
             dispatch_one('secret-token', self.now + timedelta(minutes=4))
         self.assertEqual(SupplierPushNotice.query.filter_by(status='accepted').count(), 4)
 
@@ -143,7 +144,7 @@ class PushplusWorkerTestCase(unittest.TestCase):
         self.order.paid_at = self.now
         db.session.commit()
         collect_notices(self.cutoff)
-        with patch('pushplus_worker.send_message', return_value={'code': 900, 'msg': 'limited'}):
+        with patch('pushplus_worker.send_message', side_effect=PushPlusError('limited', code=900)):
             self.assertTrue(dispatch_one('secret-token', self.now + timedelta(minutes=1)))
         notice = SupplierPushNotice.query.one()
         self.assertEqual(notice.status, 'pending')
@@ -156,6 +157,31 @@ class PushplusWorkerTestCase(unittest.TestCase):
         self.assertEqual(activation_time('2026-11-17T08:00:00+08:00'), datetime(2026, 11, 17))
         with self.assertRaises(ValueError):
             activation_time('2026-11-17T08:00:00')
+
+    def test_official_sdk_sends_to_supplier_topic(self):
+        import json
+        from pushplus_worker import notice_for
+
+        class FakeHttp:
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, method, url, headers, body):
+                self.calls.append((method, url, json.loads(body)))
+                return HttpResponse(200, '{"code":200,"msg":"ok","data":"sdk-receipt"}')
+
+        http = FakeHttp()
+        client = PushPlusClient.builder().token('secret-token').http_requester(http).build()
+        notice = notice_for(self.supplier_order, 'new', 'vegetables_private')
+        with patch('pushplus_worker.pushplus_client', return_value=client):
+            self.assertEqual(send_message('secret-token', notice), 'sdk-receipt')
+        method, url, body = http.calls[0]
+        self.assertEqual(method, 'POST')
+        self.assertEqual(url, 'https://www.pushplus.plus/send')
+        self.assertEqual(body['token'], 'secret-token')
+        self.assertEqual(body['topic'], 'vegetables_private')
+        self.assertEqual(body['channel'], 'wechat')
+        self.assertEqual(body['template'], 'txt')
 
 
 if __name__ == '__main__':

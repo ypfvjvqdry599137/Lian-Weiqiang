@@ -1,5 +1,7 @@
 # 供应商 PushPlus 微信提醒接入
 
+后端通过 [PushPlus 官方 Python SDK](https://github.com/pushplus/perk-pushplus-python-sdk) 发送消息，依赖已锁定在 `backend/requirements.txt`。仅发送消息需要 `PUSHPLUS_TOKEN`；无需配置开放接口的 Secret Key。
+
 ## 准备接收群组
 
 1. 在 PushPlus 会员账号的“发送消息 → 一对多消息”中，为每个供应商创建一个**私密群组**，记下群组编码。
