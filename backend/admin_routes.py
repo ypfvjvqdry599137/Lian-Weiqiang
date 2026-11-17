@@ -43,6 +43,14 @@ from supplier_helpers import (
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 
+def normalize_pushplus_topic(value):
+    if value is None or value == '':
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', value.strip()):
+        raise ValueError('PushPlus 群组编码只能使用字母、数字、下划线或短横线，最多 80 字符')
+    return value.strip()
+
+
 @admin_bp.before_request
 def authenticate_admin():
     if request.endpoint == 'admin.admin_login':
@@ -403,6 +411,12 @@ def create_supplier():
         password=generate_password_hash(password, method='pbkdf2:sha256:600000'),
         is_active=data.get('is_active', True)
     )
+    try:
+        supplier.pushplus_topic = normalize_pushplus_topic(data.get('pushplus_topic'))
+    except ValueError as exc:
+        return jsonify({'message': str(exc)}), 400
+    if supplier.pushplus_topic and Supplier.query.filter_by(pushplus_topic=supplier.pushplus_topic).first():
+        return jsonify({'message': '该 PushPlus 群组已分配给其他供应商'}), 409
     db.session.add(supplier)
     try:
         set_supplier_service_zones(supplier, data.get('service_zone_ids'))
@@ -413,6 +427,8 @@ def create_supplier():
         db.session.commit()
     except IntegrityError as exc:
         db.session.rollback()
+        if 'pushplus_topic' in str(exc.orig).lower():
+            return jsonify({'message': '该 PushPlus 群组已分配给其他供应商'}), 409
         if 'username' not in str(exc.orig).lower():
             raise
         return jsonify({"message": "供应商登录账号已存在，请换一个账号"}), 409
@@ -432,6 +448,7 @@ def get_suppliers():
             'contact_person': supplier.contact_person,
             'phone': supplier.phone,
             'username': supplier.username,
+            'pushplus_topic': supplier.pushplus_topic,
             'is_active': supplier.is_active,
             'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             **zone_payload,
@@ -451,6 +468,7 @@ def get_supplier(supplier_id):
         'contact_person': supplier.contact_person,
         'phone': supplier.phone,
         'username': supplier.username,
+        'pushplus_topic': supplier.pushplus_topic,
         'is_active': supplier.is_active,
         'created_at': supplier.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         **zone_payload,
@@ -467,7 +485,15 @@ def update_supplier(supplier_id):
     supplier.contact_person = data.get('contact_person', supplier.contact_person)
     supplier.phone = data.get('phone', supplier.phone)
     supplier.is_active = data.get('is_active', supplier.is_active)
-    
+    if 'pushplus_topic' in data:
+        try:
+            next_pushplus_topic = normalize_pushplus_topic(data['pushplus_topic'])
+        except ValueError as exc:
+            return jsonify({'message': str(exc)}), 400
+        if next_pushplus_topic and Supplier.query.filter(
+                Supplier.pushplus_topic == next_pushplus_topic, Supplier.id != supplier_id).first():
+            return jsonify({'message': '该 PushPlus 群组已分配给其他供应商'}), 409
+        supplier.pushplus_topic = next_pushplus_topic
     if 'password' in data and data['password']:
         supplier.password = generate_password_hash(data['password'], method='pbkdf2:sha256:600000')
     
@@ -495,6 +521,8 @@ def update_supplier(supplier_id):
         db.session.commit()
     except IntegrityError as exc:
         db.session.rollback()
+        if 'pushplus_topic' in str(exc.orig).lower():
+            return jsonify({'message': '该 PushPlus 群组已分配给其他供应商'}), 409
         if 'username' not in str(exc.orig).lower():
             raise
         return jsonify({"message": "供应商登录账号已存在，请换一个账号"}), 409
@@ -529,6 +557,7 @@ def delete_supplier(supplier_id):
         )
         supplier.service_zones = []
         supplier.is_active = False
+        supplier.pushplus_topic = None
         supplier.is_deleted = True
         supplier.deleted_at = datetime.utcnow()
         supplier.username = f"deleted_{supplier.id}_{int(supplier.deleted_at.timestamp())}"

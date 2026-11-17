@@ -21,12 +21,15 @@ supplier_category = db.Table(
 )
 
 class Supplier(db.Model):
+    __table_args__ = (db.UniqueConstraint('pushplus_topic', name='uq_supplier_pushplus_topic'),)
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, comment='供应商ID')
     name = db.Column(db.String(200), nullable=False, comment='供应商名称')
     contact_person = db.Column(db.String(100), nullable=True, comment='联系人')
     phone = db.Column(db.String(20), nullable=True, comment='联系电话')
     username = db.Column(db.String(50), unique=True, nullable=False, comment='登录账号')
     password = db.Column(db.String(255), nullable=False, comment='登录密码（简单存储，实际生产建议加密）')
+    pushplus_topic = db.Column(db.String(80), nullable=True, comment='PushPlus 私密群组编码')
     is_active = db.Column(db.Boolean, default=True, comment='是否启用')
     is_deleted = db.Column(db.Boolean, nullable=False, default=False, comment='是否已删除')
     created_at = db.Column(db.DateTime, default=datetime.utcnow, comment='创建时间')
@@ -130,6 +133,27 @@ class SupplierOrder(db.Model):
 
     def __repr__(self):
         return f'<SupplierOrder {self.id}>'
+
+
+class SupplierPushNotice(db.Model):
+    __table_args__ = (db.UniqueConstraint('supplier_order_id', 'kind', name='uq_supplier_push_notice_kind'),)
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    supplier_order_id = db.Column(db.Integer, db.ForeignKey('supplier_order.id'), nullable=False)
+    kind = db.Column(db.String(16), nullable=False)  # new / hold / resume / stop
+    topic = db.Column(db.String(80), nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(16), nullable=False, default='pending')
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    next_attempt_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    pushplus_code = db.Column(db.String(64), nullable=True)
+    last_error = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    accepted_at = db.Column(db.DateTime, nullable=True)
+
+    supplier_order = db.relationship('SupplierOrder', backref=db.backref('push_notices', lazy=True))
+
 
 # ============================================
 # 供应商备货单项模型

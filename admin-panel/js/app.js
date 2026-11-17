@@ -1451,6 +1451,7 @@ async function loadSuppliers() {
                     <h4>${supplier.name}</h4>
                     <p>联系人: ${supplier.contact_person || '无'} | 电话: ${supplier.phone || '无'}</p>
                     <p>登录账号: ${supplier.username}</p>
+                    <p>微信备货提醒: ${supplier.pushplus_topic ? '已配置群组 ' + escapeHtml(supplier.pushplus_topic) : '未配置'}</p>
                     <p>服务区域: ${formatSupplierServiceZones(supplier.service_zone_names)}</p>
                     <p>供货品类: ${(supplier.supply_category_names && supplier.supply_category_names.length > 0) ? supplier.supply_category_names.join('、') : '全部品类（未限制）'}</p>
                     <p>供应商后台: <a href="/admin-panel/supplier_login.html" target="_blank">打开登录入口</a></p>
@@ -1495,6 +1496,7 @@ async function showSupplierModal(supplierId = null) {
             document.getElementById('supplier-contact').value = supplier.contact_person || '';
             document.getElementById('supplier-phone').value = supplier.phone || '';
             document.getElementById('supplier-username').value = supplier.username;
+            document.getElementById('supplier-pushplus-topic').value = supplier.pushplus_topic || '';
             document.getElementById('supplier-active').checked = supplier.is_active;
             selectedServiceZoneIds = supplier.service_zone_ids || [];
             selectedSupplyCategoryIds = supplier.supply_category_ids || [];
@@ -1517,6 +1519,7 @@ document.getElementById('supplier-form').addEventListener('submit', async functi
         contact_person: document.getElementById('supplier-contact').value || null,
         phone: document.getElementById('supplier-phone').value || null,
         username: document.getElementById('supplier-username').value,
+        pushplus_topic: document.getElementById('supplier-pushplus-topic').value.trim() || null,
         is_active: document.getElementById('supplier-active').checked,
         service_zone_ids: getSelectedNumberValues('supplier-service-zone-ids'),
         supply_category_ids: getSelectedNumberValues('supplier-supply-category-ids'),

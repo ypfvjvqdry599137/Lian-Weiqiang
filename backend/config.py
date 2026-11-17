@@ -43,4 +43,6 @@ class Config:
     TENCENT_MAP_KEY = os.environ.get('TENCENT_MAP_KEY')
     TENCENT_MAP_JS_KEY = os.environ.get('TENCENT_MAP_JS_KEY') or os.environ.get('TENCENT_MAP_WEB_KEY') or TENCENT_MAP_KEY
     TENCENT_MAP_SERVER_KEY = os.environ.get('TENCENT_MAP_SERVER_KEY') or TENCENT_MAP_KEY
+    PUSHPLUS_TOKEN = os.environ.get('PUSHPLUS_TOKEN', '').strip()
+    PUSHPLUS_ACTIVATED_AT = os.environ.get('PUSHPLUS_ACTIVATED_AT', '').strip()
     MAX_CONTENT_LENGTH = int(os.environ.get('MAX_UPLOAD_MB', '8')) * 1024 * 1024

@@ -1,0 +1,203 @@
+"""Server-side PushPlus supplier alerts. Run as a single dedicated worker process."""
+
+import json
+import logging
+import time
+from datetime import datetime, timedelta, timezone
+from urllib.request import Request, urlopen
+
+from app import create_app
+from extensions import db
+from models import OrderMaster, Supplier, SupplierOrder, SupplierPushNotice
+from status_utils import supplier_order_block_reason
+from sqlalchemy import or_
+
+
+LOG = logging.getLogger(__name__)
+SEND_URL = 'https://www.pushplus.plus/send'
+SUPPLIER_URL = 'https://admin.xianpeiju.site/admin-panel/supplier_login.html'
+
+
+def activation_time(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            raise ValueError('timezone required')
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    except ValueError as exc:
+        raise ValueError('PUSHPLUS_ACTIVATED_AT must be an ISO 8601 timestamp with timezone') from exc
+
+
+def notice_for(supplier_order, kind, topic, reason=None):
+    if kind == 'new':
+        items = '、'.join(f'{item.ingredient_name} {item.quantity}{item.unit}' for item in supplier_order.items[:8])
+        title = '鲜配局：新备货单'
+        content = f'订单 {supplier_order.order_sn} 已付款，请安排备货。备货单 #{supplier_order.id}。{items}。登录核对：{SUPPLIER_URL}'
+    elif kind == 'resume':
+        title = '鲜配局：恢复备货'
+        content = f'订单 {supplier_order.order_sn} 的退款暂停已解除，请登录后台核对后继续备货：{SUPPLIER_URL}'
+    else:
+        title = '鲜配局：暂停备货' if kind == 'hold' else '鲜配局：停止备货'
+        content = f'订单 {supplier_order.order_sn}：{reason}。请立即登录后台核对：{SUPPLIER_URL}'
+    return SupplierPushNotice(
+        supplier_order_id=supplier_order.id, kind=kind, topic=topic,
+        title=title, content=content,
+    )
+
+
+def current_block_reason(supplier_order):
+    if not supplier_order or not supplier_order.order:
+        return '备货单不存在'
+    if supplier_order.status == 40:
+        return '备货单已取消，停止备货'
+    return supplier_order_block_reason(supplier_order.order)
+
+
+def collect_notices(cutoff):
+    """Build a durable, deduplicated outbox from committed order state."""
+    candidates = (SupplierOrder.query.join(Supplier, Supplier.id == SupplierOrder.supplier_id)
+                  .join(OrderMaster, OrderMaster.order_sn == SupplierOrder.order_sn)
+                  .filter(OrderMaster.paid_at >= cutoff,
+                          SupplierOrder.status.in_([10, 20]),
+                          Supplier.is_active.is_(True), Supplier.is_deleted.is_(False),
+                          Supplier.pushplus_topic.isnot(None))
+                  .order_by(SupplierOrder.id).all())
+    for so in candidates:
+        if (not so.supplier or not so.supplier.pushplus_topic or not so.order
+                or not so.order.paid_at or so.order.paid_at < cutoff
+                or so.order.order_status != 20
+                or current_block_reason(so)):
+            continue
+        exists = SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind='new').first()
+        if not exists:
+            db.session.add(notice_for(so, 'new', so.supplier.pushplus_topic))
+    db.session.commit()
+
+    accepted = (SupplierPushNotice.query.filter_by(kind='new', status='accepted')
+                .filter(SupplierPushNotice.created_at >= cutoff).all())
+    for first in accepted:
+        so = first.supplier_order
+        if not so or not so.order:
+            continue
+        reason = current_block_reason(so)
+        if reason:
+            kind = 'hold' if reason == '退款处理中，暂停备货' else 'stop'
+            if not SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind=kind).first():
+                db.session.add(notice_for(so, kind, first.topic, reason))
+        elif SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind='hold', status='accepted').first():
+            if not SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind='resume').first():
+                db.session.add(notice_for(so, 'resume', first.topic))
+    db.session.commit()
+
+
+def send_message(token, notice):
+    payload = {
+        'token': token, 'title': notice.title, 'content': notice.content,
+        'topic': notice.topic, 'channel': 'wechat', 'template': 'txt',
+    }
+    request = Request(SEND_URL, data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+                      headers={'Content-Type': 'application/json'}, method='POST')
+    with urlopen(request, timeout=5) as response:
+        result = json.load(response)
+    if not isinstance(result, dict):
+        raise ValueError('PushPlus response is not an object')
+    return result
+
+
+def dispatch_one(token, now=None):
+    now = now or datetime.utcnow()
+    account_pause = (SupplierPushNotice.query.filter_by(status='pending')
+                     .filter(SupplierPushNotice.next_attempt_at > now,
+                             or_(SupplierPushNotice.last_error.like('900:%'),
+                                 SupplierPushNotice.last_error.like('903:%'),
+                                 SupplierPushNotice.last_error.like('905:%')))
+                     .first())
+    if account_pause:
+        return False
+    notice = (SupplierPushNotice.query.filter_by(status='pending')
+              .filter(SupplierPushNotice.next_attempt_at <= now)
+              .order_by(SupplierPushNotice.id).first())
+    if not notice:
+        return False
+    so = notice.supplier_order
+    reason = current_block_reason(so)
+    if notice.kind == 'new' and (reason or so.status not in (10, 20)
+                                 or so.order.order_status != 20):
+        if reason == '退款处理中，暂停备货':
+            notice.next_attempt_at = now + timedelta(minutes=5)
+        else:
+            notice.status = 'skipped'
+        db.session.commit()
+        return False
+    if notice.kind == 'hold' and reason != '退款处理中，暂停备货':
+        notice.status = 'skipped'
+        db.session.commit()
+        return False
+    if notice.kind == 'stop' and reason not in ('已退款，停止备货', '订单已取消，停止备货', '备货单已取消，停止备货'):
+        notice.status = 'skipped'
+        db.session.commit()
+        return False
+    if notice.kind == 'resume' and reason:
+        notice.status = 'skipped'
+        db.session.commit()
+        return False
+
+    notice.attempts += 1
+    try:
+        result = send_message(token, notice)
+        if result.get('code') != 200:
+            code = result.get('code')
+            raise PushplusRejected(code, str(result.get('msg') or '请求被拒绝'))
+        notice.status = 'accepted'
+        notice.pushplus_code = str(result.get('data') or '')[:64] or None
+        notice.accepted_at = now
+        notice.last_error = None
+        LOG.info('PushPlus accepted supplier notice %s, receipt %s', notice.id, notice.pushplus_code)
+    except Exception as exc:
+        delay = timedelta(hours=24) if isinstance(exc, PushplusRejected) and exc.code in (900, 903, 905) else timedelta(seconds=min(3600, 30 * 2 ** min(notice.attempts, 7)))
+        notice.next_attempt_at = now + delay
+        notice.last_error = str(exc)[:255]
+        LOG.warning('PushPlus supplier notice %s failed: %s', notice.id, type(exc).__name__)
+    db.session.commit()
+    return True
+
+
+class PushplusRejected(Exception):
+    def __init__(self, code, message):
+        self.code = code
+        super().__init__(f'{code}: {message}')
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)
+    app = create_app()
+    with app.app_context():
+        token = app.config.get('PUSHPLUS_TOKEN')
+        try:
+            cutoff = activation_time(app.config.get('PUSHPLUS_ACTIVATED_AT'))
+        except ValueError as exc:
+            LOG.error('%s', exc)
+            return
+        if not token or not cutoff:
+            LOG.info('PushPlus worker idle: configure PUSHPLUS_TOKEN and PUSHPLUS_ACTIVATED_AT')
+            return
+        next_scan = 0
+        while True:
+            try:
+                if time.monotonic() >= next_scan:
+                    collect_notices(cutoff)
+                    next_scan = time.monotonic() + 15
+                sent = dispatch_one(token)
+                db.session.remove()
+                time.sleep(2.1 if sent else 5)
+            except Exception:
+                db.session.rollback()
+                db.session.remove()
+                LOG.exception('PushPlus worker cycle failed')
+                time.sleep(10)
+
+
+if __name__ == '__main__':
+    main()

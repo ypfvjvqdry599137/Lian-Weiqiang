@@ -107,6 +107,26 @@ class SupplierRoutingTestCase(unittest.TestCase):
         self.assertEqual(reused.status_code, 409)
         self.assertIn('已存在', reused.get_json()['message'])
 
+    def test_pushplus_topic_is_admin_controlled(self):
+        supplier_id = self.create_supplier('蔬菜提醒', 'vegetable-alert', self.vegetables.id)
+        response = self.client.put(f'/admin/suppliers/{supplier_id}', headers=self.headers,
+                                   json={'pushplus_topic': 'vegetables_private'})
+        self.assertEqual(response.status_code, 200)
+        saved = self.client.get(f'/admin/suppliers/{supplier_id}', headers=self.headers).get_json()
+        self.assertEqual(saved['pushplus_topic'], 'vegetables_private')
+        other_id = self.create_supplier('肉类提醒', 'meat-alert', self.meat.id)
+        duplicate = self.client.put(f'/admin/suppliers/{other_id}', headers=self.headers,
+                                    json={'pushplus_topic': 'vegetables_private'})
+        self.assertEqual(duplicate.status_code, 409)
+        bad = self.client.put(f'/admin/suppliers/{supplier_id}', headers=self.headers,
+                              json={'pushplus_topic': 'wrong group/code'})
+        self.assertEqual(bad.status_code, 400)
+        cleared = self.client.put(f'/admin/suppliers/{supplier_id}', headers=self.headers,
+                                  json={'pushplus_topic': None})
+        self.assertEqual(cleared.status_code, 200)
+        self.assertIsNone(self.client.get(f'/admin/suppliers/{supplier_id}', headers=self.headers)
+                          .get_json()['pushplus_topic'])
+
     def test_rule_does_not_route_vegetables_to_meat_supplier(self):
         vegetables_id = self.create_supplier('蔬菜供应商', 'vegetable-supplier', self.vegetables.id)
         meat_id = self.create_supplier('肉类供应商', 'meat-supplier', self.meat.id)
