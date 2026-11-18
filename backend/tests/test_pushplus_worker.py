@@ -11,7 +11,7 @@ from perk_pushplus import HttpResponse, PushPlusClient, PushPlusError
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from extensions import db
-from models import OrderMaster, Supplier, SupplierOrder, SupplierOrderItem, SupplierPushNotice, SupplierPushTemplate, User
+from models import ManualRefund, OrderMaster, Supplier, SupplierOrder, SupplierOrderItem, SupplierPushNotice, SupplierPushTemplate, User
 from pushplus_worker import activation_time, collect_notices, dispatch_one, notice_for, send_message
 
 
@@ -78,7 +78,7 @@ class PushplusWorkerTestCase(unittest.TestCase):
         collect_notices(self.cutoff)
         self.assertEqual(SupplierPushNotice.query.count(), 2)
 
-    def test_refund_hold_resume_and_success_stop(self):
+    def test_refund_request_sends_one_stop_and_never_resumes(self):
         self.order.order_status = 20
         self.order.paid_at = self.now
         db.session.commit()
@@ -89,26 +89,23 @@ class PushplusWorkerTestCase(unittest.TestCase):
         self.order.refund_status = 10
         db.session.commit()
         collect_notices(self.cutoff)
-        self.assertEqual(SupplierPushNotice.query.filter_by(kind='hold').count(), 1)
-        with patch('pushplus_worker.send_message', return_value='hold'):
+        stop = SupplierPushNotice.query.filter_by(kind='stop').one()
+        self.assertIn('停止备货', stop.content)
+        with patch('pushplus_worker.send_message', return_value='stop'):
             dispatch_one('secret-token', self.now + timedelta(minutes=2))
 
         self.order.refund_status = 0
         db.session.commit()
         collect_notices(self.cutoff)
-        self.assertEqual(SupplierPushNotice.query.filter_by(kind='resume').count(), 1)
-        with patch('pushplus_worker.send_message', return_value='resume'):
-            dispatch_one('secret-token', self.now + timedelta(minutes=3))
+        self.assertEqual(SupplierPushNotice.query.count(), 2)
 
         self.order.refund_status = 30
         db.session.commit()
         collect_notices(self.cutoff)
         self.assertEqual(SupplierPushNotice.query.filter_by(kind='stop').count(), 1)
-        with patch('pushplus_worker.send_message', return_value='stop'):
-            dispatch_one('secret-token', self.now + timedelta(minutes=4))
-        self.assertEqual(SupplierPushNotice.query.filter_by(status='accepted').count(), 4)
+        self.assertEqual(SupplierPushNotice.query.filter_by(status='accepted').count(), 2)
 
-    def test_refund_hold_suppresses_pending_new_notice(self):
+    def test_refund_request_skips_pending_new_notice(self):
         self.order.order_status = 20
         self.order.paid_at = self.now
         db.session.commit()
@@ -118,11 +115,57 @@ class PushplusWorkerTestCase(unittest.TestCase):
         with patch('pushplus_worker.send_message') as send:
             self.assertFalse(dispatch_one('secret-token', self.now + timedelta(minutes=1)))
             send.assert_not_called()
-        self.assertEqual(SupplierPushNotice.query.one().status, 'pending')
+        self.assertEqual(SupplierPushNotice.query.one().status, 'skipped')
         self.order.refund_status = 30
         db.session.commit()
-        self.assertFalse(dispatch_one('secret-token', self.now + timedelta(minutes=6)))
-        self.assertEqual(SupplierPushNotice.query.one().status, 'skipped')
+        collect_notices(self.cutoff)
+        self.assertEqual(SupplierPushNotice.query.filter_by(kind='new').count(), 1)
+        self.assertEqual(SupplierPushNotice.query.filter_by(kind='stop').count(), 1)
+        with patch('pushplus_worker.send_message', return_value='stop') as send:
+            self.assertTrue(dispatch_one('secret-token', self.now + timedelta(minutes=6)))
+            send.assert_called_once()
+
+    def test_manual_refund_request_stops_preparation_even_if_refund_closes(self):
+        self.order.order_status = 20
+        self.order.paid_at = self.now
+        db.session.commit()
+        collect_notices(self.cutoff)
+        with patch('pushplus_worker.send_message', return_value='new'):
+            dispatch_one('secret-token', self.now + timedelta(minutes=1))
+
+        refund = ManualRefund(order_sn=self.order.order_sn, transaction_id='test-transaction',
+                              order_total_fen=900, refund_fen=900, status='REQUESTED')
+        db.session.add(refund)
+        db.session.commit()
+        collect_notices(self.cutoff)
+        stop = SupplierPushNotice.query.filter_by(kind='stop').one()
+        self.assertIn('停止备货', stop.content)
+        with patch('pushplus_worker.send_message', return_value='stop'):
+            dispatch_one('secret-token', self.now + timedelta(minutes=2))
+        refund.status = 'CLOSED'
+        db.session.commit()
+        collect_notices(self.cutoff)
+        self.assertEqual(SupplierPushNotice.query.count(), 2)
+        self.assertEqual(stop.status, 'accepted')
+        from status_utils import supplier_order_block_reason
+        self.assertEqual(supplier_order_block_reason(self.order), '订单申请退款，停止备货')
+
+    def test_legacy_pause_and_resume_notices_are_retired(self):
+        self.order.order_status = 20
+        self.order.paid_at = self.now
+        db.session.add_all([
+            SupplierPushNotice(supplier_order_id=self.supplier_order.id, kind='hold',
+                               topic='vegetables_private', title='旧暂停', content='旧暂停'),
+            SupplierPushNotice(supplier_order_id=self.supplier_order.id, kind='resume',
+                               topic='vegetables_private', title='旧恢复', content='旧恢复'),
+        ])
+        db.session.commit()
+        # An old queue may still contain these kinds after deployment.
+        with patch('pushplus_worker.send_message') as send:
+            self.assertFalse(dispatch_one('secret-token', self.now + timedelta(minutes=1)))
+            self.assertFalse(dispatch_one('secret-token', self.now + timedelta(minutes=1)))
+            send.assert_not_called()
+        self.assertEqual(SupplierPushNotice.query.filter_by(status='skipped').count(), 2)
 
     def test_old_unpaid_order_paid_after_activation_is_notified(self):
         self.supplier_order.created_at = self.cutoff - timedelta(days=1)

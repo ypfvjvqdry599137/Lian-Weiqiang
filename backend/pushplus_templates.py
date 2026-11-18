@@ -11,16 +11,6 @@ NOTICE_KINDS = {
         'title': '鲜配居：新备货单',
         'default': '订单 {order_sn} 已付款，请安排备货。备货单 #{supplier_order_id}。{items}。登录核对：{supplier_url}',
     },
-    'hold': {
-        'label': '暂停备货',
-        'title': '鲜配居：暂停备货',
-        'default': '订单 {order_sn}：{reason}。请立即登录后台核对：{supplier_url}',
-    },
-    'resume': {
-        'label': '恢复备货',
-        'title': '鲜配居：恢复备货',
-        'default': '订单 {order_sn} 的退款暂停已解除，请登录后台核对后继续备货：{supplier_url}',
-    },
     'stop': {
         'label': '停止备货',
         'title': '鲜配居：停止备货',

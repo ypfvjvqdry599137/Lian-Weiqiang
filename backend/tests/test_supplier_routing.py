@@ -133,7 +133,7 @@ class SupplierRoutingTestCase(unittest.TestCase):
         defaults = self.client.get(url, headers=self.headers)
         self.assertEqual(defaults.status_code, 200)
         rows = defaults.get_json()['templates']
-        self.assertEqual(len(rows), 4)
+        self.assertEqual([row['kind'] for row in rows], ['new', 'stop'])
         self.assertTrue(all(row['title'].startswith('鲜配居：') for row in rows))
         self.assertTrue(all(not row['is_custom'] for row in rows))
 

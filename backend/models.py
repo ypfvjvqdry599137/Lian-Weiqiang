@@ -140,7 +140,7 @@ class SupplierPushNotice(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     supplier_order_id = db.Column(db.Integer, db.ForeignKey('supplier_order.id'), nullable=False)
-    kind = db.Column(db.String(16), nullable=False)  # new / hold / resume / stop
+    kind = db.Column(db.String(16), nullable=False)  # new / stop (legacy hold/resume rows remain)
     topic = db.Column(db.String(80), nullable=False)
     title = db.Column(db.String(100), nullable=False)
     content = db.Column(db.Text, nullable=False)

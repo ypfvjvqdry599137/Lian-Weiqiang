@@ -1381,13 +1381,13 @@ def get_all_orders():
     output = []
     for order in orders:
         display_status = display_order_status(order)
-        refund_paused = display_status != 70 and has_refund_hold(order)
+        refund_stopped = display_status != 70 and has_refund_hold(order)
         if status_filter == 'after_sale':
-            if display_status != 70 and not refund_paused:
+            if display_status != 70 and not refund_stopped:
                 continue
-        elif requested_status is not None and (display_status != requested_status or refund_paused):
+        elif requested_status is not None and (display_status != requested_status or refund_stopped):
             continue
-        status_text = ('售后暂停' if refund_paused else get_order_status_text(display_status))
+        status_text = ('售后停止' if refund_stopped else get_order_status_text(display_status))
         refund = latest_manual_refund(order)
 
         
@@ -1412,7 +1412,7 @@ def get_all_orders():
             'has_fulfillment_issue': any(issue.status == 10 for issue in (order.fulfillment_issues or [])),
             'order_status': order.order_status,
             'display_status': display_status,
-            'fulfillment_notice': (manual_refund_status_text(order) or '退款处理中，暂停配货') if refund_paused else None,
+            'fulfillment_notice': (manual_refund_status_text(order) or '退款处理中，已停止配货') if refund_stopped else None,
             'refund_summary': serialize_manual_refund(refund) if refund else None,
             'can_request_refund': order.order_status in (20, 30, 40, 50) and bool(order.transaction_id)
                                   and not order.refund_status and not has_refund_hold(order),
@@ -1474,7 +1474,7 @@ def request_manual_refund(order_sn):
     db.session.add(refund)
     db.session.commit()
     return jsonify({
-        'message': '已创建人工退款待办并暂停履约；尚未向微信发起退款，请到商户平台人工操作',
+        'message': '已创建人工退款待办并停止履约；尚未向微信发起退款，请到商户平台人工操作',
         'refund': serialize_manual_refund(refund),
     }), 201
 
@@ -1572,7 +1572,7 @@ def request_wechat_refund(order_sn):
     except WeChatPayError as exc:
         current_app.logger.error('微信退款申请未能确认: %s / %s: %s', order_sn, refund_no, exc)
         return jsonify({
-            'message': '微信退款申请结果未确认，订单已暂停。请查询原退款单；若需重试，系统会沿用相同商户退款单号，切勿另开退款单',
+            'message': '微信退款申请结果未确认，订单已停止履约。请查询原退款单；若需重试，系统会沿用相同商户退款单号，切勿另开退款单',
             'refund': serialize_manual_refund(refund),
         }), 502
 

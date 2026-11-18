@@ -167,8 +167,8 @@
 
             <div id="page-push-templates" class="page">
                 <h2>供应商通知模板</h2>
-                <p class="form-help push-template-help">分别编辑新单、退款暂停、恢复和停止备货的微信消息正文。标题固定使用“鲜配居”；修改只影响保存后新生成的通知，已经排队的消息不会改动。每条内容必须保留 {order_sn}。</p>
-                <p class="form-help push-template-help">可用变量：{order_sn} 订单号、{supplier_order_id} 备货单号、{items} 原料清单、{reason} 暂停或停止原因、{supplier_url} 供应商后台地址。请勿填写顾客姓名、电话或收货地址。</p>
+                <p class="form-help push-template-help">分别编辑新备货单和停止备货的微信消息正文。标题固定使用“鲜配居”；修改只影响保存后新生成的通知，已经排队的消息不会改动。每条内容必须保留 {order_sn}。</p>
+                <p class="form-help push-template-help">可用变量：{order_sn} 订单号、{supplier_order_id} 备货单号、{items} 原料清单、{reason} 停止原因、{supplier_url} 供应商后台地址。请勿填写顾客姓名、电话或收货地址。</p>
                 <div id="push-templates-list" class="push-template-list"></div>
             </div>
 
@@ -224,7 +224,7 @@
                     <button class="tab" data-status="unpaid">待付款</button>
                     <button class="tab" data-status="20">备货中</button>
                     <button class="tab" data-status="30">已完成</button>
-                    <button class="tab" data-status="paused">售后暂停</button>
+                    <button class="tab" data-status="stopped">售后停止</button>
                     <button class="tab" data-status="refunded">已退款</button>
                 </div>
                 <div class="settlement-controls" style="margin-bottom:15px;">

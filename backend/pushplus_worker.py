@@ -17,6 +17,8 @@ from sqlalchemy import or_
 
 LOG = logging.getLogger(__name__)
 SUPPLIER_URL = 'https://admin.xianpeiju.site/admin-panel/supplier_login.html'
+STOP_REASONS = ('订单申请退款，停止备货', '已退款，停止备货',
+                '订单已取消，停止备货', '备货单已取消，停止备货')
 
 
 def activation_time(value):
@@ -74,20 +76,16 @@ def collect_notices(cutoff):
             db.session.add(notice_for(so, 'new', so.supplier.pushplus_topic))
     db.session.commit()
 
-    accepted = (SupplierPushNotice.query.filter_by(kind='new', status='accepted')
-                .filter(SupplierPushNotice.created_at >= cutoff).all())
-    for first in accepted:
+    initial_notices = (SupplierPushNotice.query.filter_by(kind='new')
+                       .filter(SupplierPushNotice.created_at >= cutoff).all())
+    for first in initial_notices:
         so = first.supplier_order
         if not so or not so.order:
             continue
         reason = current_block_reason(so)
-        if reason:
-            kind = 'hold' if reason == '退款处理中，暂停备货' else 'stop'
-            if not SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind=kind).first():
-                db.session.add(notice_for(so, kind, first.topic, reason))
-        elif SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind='hold', status='accepted').first():
-            if not SupplierPushNotice.query.filter_by(supplier_order_id=so.id, kind='resume').first():
-                db.session.add(notice_for(so, 'resume', first.topic))
+        if reason in STOP_REASONS and not SupplierPushNotice.query.filter_by(
+                supplier_order_id=so.id, kind='stop').first():
+            db.session.add(notice_for(so, 'stop', first.topic, reason))
     db.session.commit()
 
 
@@ -121,23 +119,17 @@ def dispatch_one(token, now=None):
         return False
     so = notice.supplier_order
     reason = current_block_reason(so)
+    if notice.kind not in ('new', 'stop'):
+        # Retire hold/resume messages already queued by older worker versions.
+        notice.status = 'skipped'
+        db.session.commit()
+        return False
     if notice.kind == 'new' and (reason or so.status not in (10, 20)
                                  or so.order.order_status != 20):
-        if reason == '退款处理中，暂停备货':
-            notice.next_attempt_at = now + timedelta(minutes=5)
-        else:
-            notice.status = 'skipped'
-        db.session.commit()
-        return False
-    if notice.kind == 'hold' and reason != '退款处理中，暂停备货':
         notice.status = 'skipped'
         db.session.commit()
         return False
-    if notice.kind == 'stop' and reason not in ('已退款，停止备货', '订单已取消，停止备货', '备货单已取消，停止备货'):
-        notice.status = 'skipped'
-        db.session.commit()
-        return False
-    if notice.kind == 'resume' and reason:
+    if notice.kind == 'stop' and reason not in STOP_REASONS:
         notice.status = 'skipped'
         db.session.commit()
         return False

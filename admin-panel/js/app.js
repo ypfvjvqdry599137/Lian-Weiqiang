@@ -1282,12 +1282,12 @@ async function loadOrders() {
             const amountArg = escapeHtml(JSON.stringify(String(order.final_amount)));
             const refund = order.refund_summary;
             const refundLabels = {
-                REQUESTED: '待人工退款，配送已暂停',
-                APPLYING: '退款申请待确认，配送已暂停',
-                PROCESSING: '退款处理中',
+                REQUESTED: '待人工退款，已停止配送',
+                APPLYING: '退款申请待确认，已停止配送',
+                PROCESSING: '退款处理中，已停止配送',
                 SUCCESS: '退款成功',
-                CLOSED: '退款已关闭',
-                ABNORMAL: '退款异常，需人工处理'
+                CLOSED: '退款已关闭，订单仍停止配送',
+                ABNORMAL: '退款异常，订单已停止配送，需人工处理'
             };
             const itemsHtml = order.items ? order.items.map(item => `
                 <p>${escapeHtml(item.product_name)} x ${escapeHtml(item.quantity)}</p>
@@ -1376,9 +1376,9 @@ async function refreshWechatRefund(orderSn, refundNo) {
 }
 
 async function requestManualRefund(orderSn) {
-    const note = prompt('填写退款原因和操作人员（不要填写密码或密钥）。创建后立即暂停备货和配送，但不会向微信发起退款。');
+    const note = prompt('填写退款原因和操作人员（不要填写密码或密钥）。创建后立即停止备货和配送，但不会向微信发起退款。');
     if (note === null || !note.trim()) return;
-    if (!confirm('确认先暂停这笔订单的履约？创建待办本身不会转钱，随后仍须去微信商户平台人工退款。')) return;
+    if (!confirm('确认停止这笔订单的履约？创建待办本身不会转钱，随后仍须去微信商户平台人工退款。')) return;
 
     const result = await fetchData(`/admin/orders/${orderSn}/manual-refund-requests`, 'POST', {
         operator_note: note.trim()
@@ -1474,7 +1474,7 @@ async function loadPushTemplates() {
         const updatePreview = () => {
             const previewValues = {
                 ...sample,
-                reason: template.kind === 'stop' ? '已退款，停止备货' : '退款处理中，暂停备货'
+                reason: '订单申请退款，停止备货'
             };
             preview.textContent = textarea.value.replace(/\{([a-z_]+)\}/g, (match, key) =>
                 Object.prototype.hasOwnProperty.call(previewValues, key) ? previewValues[key] : match);

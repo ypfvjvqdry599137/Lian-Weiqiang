@@ -40,19 +40,21 @@ def manual_refund_status_text(order):
     if not refund:
         return None
     return {
-        'REQUESTED': '待人工退款，配送已暂停',
-        'APPLYING': '退款申请待确认，配送已暂停',
-        'PROCESSING': '退款处理中',
+        'REQUESTED': '待人工退款，已停止配送',
+        'APPLYING': '退款申请待确认，已停止配送',
+        'PROCESSING': '退款处理中，已停止配送',
         'SUCCESS': '退款成功',
-        'CLOSED': '退款已关闭',
-        'ABNORMAL': '退款异常，请联系客服',
+        'CLOSED': '退款已关闭，订单仍停止配送，请联系客服',
+        'ABNORMAL': '退款异常，订单已停止配送，请联系客服',
     }.get(refund.status)
 
 
 def has_refund_hold(order):
     if order.refund_status in (10, 20, 30):
         return True
-    return any(refund.status != 'CLOSED' for refund in order.manual_refunds)
+    # A refund attempt ends fulfillment for this order, even if the payment
+    # provider later closes the refund. The customer must place a new order.
+    return bool(order.manual_refunds)
 
 
 def supplier_order_block_reason(order):
@@ -65,14 +67,14 @@ def supplier_order_block_reason(order):
     if order.order_status == 10:
         return '待付款，暂不备货'
     if has_refund_hold(order):
-        return '退款处理中，暂停备货'
+        return '订单申请退款，停止备货'
     return None
 
 
 def supplier_order_matches_filter(supplier_order, status_filter):
     reason = supplier_order_block_reason(supplier_order.order)
-    if status_filter == 'paused':
-        return reason == '退款处理中，暂停备货'
+    if status_filter in ('stopped', 'paused'):
+        return reason == '订单申请退款，停止备货'
     if status_filter == 'refunded':
         return reason == '已退款，停止备货'
     if status_filter == 'unpaid':

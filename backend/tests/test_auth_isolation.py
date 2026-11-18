@@ -497,7 +497,7 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
                                          headers=headers, json={'status': 30}).status_code, 409)
         self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
-                         .get_json()['manual_refund_status_text'], '待人工退款，配送已暂停')
+                         .get_json()['manual_refund_status_text'], '待人工退款，已停止配送')
         self.assertFalse(self.client.get('/admin/orders', headers=headers).get_json()['orders'][0]['can_request_refund'])
         self.assertEqual(self.client.post(path, headers=headers, json={'operator_note': '重复请求'}).status_code, 409)
         self.assertEqual(ManualRefund.query.count(), 1)
@@ -545,7 +545,7 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()['refund']['status'], 'PROCESSING')
         self.assertEqual(ManualRefund.query.count(), 1)
         self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
-                         .get_json()['manual_refund_status_text'], '退款处理中')
+                         .get_json()['manual_refund_status_text'], '退款处理中，已停止配送')
         self.assertEqual(self.client.get(f'/client/orders/{self.order.order_sn}', headers=self.a)
                          .get_json()['order_status'], 20)
         self.assertEqual(self.client.put(f'/admin/orders/{self.order.order_sn}/status',
@@ -655,15 +655,15 @@ class AuthIsolationTestCase(unittest.TestCase):
         self.assertEqual(self.client.get(f'/supplier/order-alerts?supplier_id={supplier.id}',
                                          headers=supplier_headers).get_json()['pending_count'], 0)
         self.assertEqual(self.client.get(supplier_list + '&status=10', headers=supplier_headers).get_json()['supplier_orders'], [])
-        paused = self.client.get(supplier_list + '&status=paused', headers=supplier_headers).get_json()['supplier_orders']
-        self.assertEqual(paused[0]['status_text'], '退款处理中，暂停备货')
-        self.assertFalse(paused[0]['can_prepare'])
+        stopped = self.client.get(supplier_list + '&status=stopped', headers=supplier_headers).get_json()['supplier_orders']
+        self.assertEqual(stopped[0]['status_text'], '订单申请退款，停止备货')
+        self.assertFalse(stopped[0]['can_prepare'])
         self.assertEqual(self.client.get('/admin/orders?status=20', headers=headers).get_json()['orders'], [])
         after_sale = self.client.get('/admin/orders?status=after_sale', headers=headers).get_json()['orders']
-        self.assertEqual(after_sale[0]['status_text'], '售后暂停')
+        self.assertEqual(after_sale[0]['status_text'], '售后停止')
         self.assertTrue(after_sale[0]['fulfillment_notice'])
         self.assertEqual(self.client.get('/admin/supplier-orders?status=10', headers=headers).get_json()['supplier_orders'], [])
-        self.assertEqual(len(self.client.get('/admin/supplier-orders?status=paused', headers=headers).get_json()['supplier_orders']), 1)
+        self.assertEqual(len(self.client.get('/admin/supplier-orders?status=stopped', headers=headers).get_json()['supplier_orders']), 1)
         self.assertEqual(self.client.put(supplier_path, headers=supplier_headers,
                                          json={'status': 20}).status_code, 409)
         self.assertEqual(self.client.put(f'/admin/supplier-orders/{supplier_order.id}/status', headers=headers,
@@ -676,7 +676,8 @@ class AuthIsolationTestCase(unittest.TestCase):
             self.assertEqual(self.client.post(f'/admin/orders/{self.order.order_sn}/manual-refunds',
                                               headers=headers, json={'out_refund_no': 'REFUND_ORDER_A'}).status_code, 200)
         self.assertEqual(self.client.put(supplier_path, headers=supplier_headers,
-                                         json={'status': 20}).status_code, 200)
+                                         json={'status': 20}).status_code, 409)
+        self.assertEqual(self.client.get(supplier_list + '&status=10', headers=supplier_headers).get_json()['supplier_orders'], [])
 
     def test_successful_refund_is_separate_from_supplier_preparation(self):
         headers = self._paid_admin_headers()
